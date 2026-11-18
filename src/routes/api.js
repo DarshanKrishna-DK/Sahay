@@ -261,6 +261,12 @@ function createApiRouter() {
           userUid: v.userUid,
           language: business.language,
         });
+        // The owner may have pressed End while /join was in flight: stop the agent we just
+        // started instead of attaching it to a call record that no longer exists.
+        if (voice.get(businessId) !== v) {
+          await agent.stopAgent(started.agentId).catch(() => {});
+          throw new HttpError(409, "CALL_ENDED", "The call was ended while the assistant was joining.");
+        }
         v.agentId = started.agentId;
         repo.updateSession(businessId, v.sessionId, { agent_id: started.agentId, status: "active" });
         try {

@@ -530,6 +530,77 @@ img { max-width: 100%; display: block; }
 .actor-agent { color: var(--amber); border-color: var(--amber-line); background: var(--amber-tint); }
 .actor-vendor { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); background: var(--info-tint); }
 
+/* ------------------------------------------------------------- onboarding */
+.onboard { width: calc(100% - 2 * var(--gutter)); max-width: 560px; margin: 32px auto 48px; padding: 26px 28px; gap: 20px; }
+.onboard .panel-title { font-size: 28px; }
+#onboard-form { display: grid; gap: 18px; }
+.field { display: grid; gap: 6px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.field > label, .field > legend { font-weight: 700; font-size: 15.5px; padding: 0; }
+.field .optional { font-weight: 500; color: var(--text-muted); }
+.field-hint { font-size: 14px; color: var(--text-muted); margin-bottom: 4px; }
+.field input[type="text"] {
+  font: inherit; font-size: 17px; color: var(--text);
+  min-height: 50px; padding: 10px 14px; width: 100%;
+  border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--bg-raised);
+}
+.field input[type="text"]:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; border-color: var(--amber); }
+.field input[aria-invalid="true"], fieldset[aria-invalid="true"] .choice { border-color: var(--terra); }
+.field input:disabled { opacity: .6; }
+.field-error { font-size: 14.5px; font-weight: 600; color: var(--terra); }
+.choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.choice {
+  position: relative; display: grid; gap: 0; justify-items: center; text-align: center;
+  padding: 12px 8px; min-height: 64px; align-content: center; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--r-control); background: var(--bg-raised);
+  font-size: 18px; font-weight: 600;
+}
+.choice:hover { background: var(--bg-hover); }
+.choice input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.choice-sub { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.choice:has(input:checked) { background: var(--amber-tint); border-color: var(--amber-fill); box-shadow: inset 0 0 0 1px var(--amber-fill); }
+.choice:has(input:checked) .choice-sub { color: var(--amber); }
+.choice:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* -------------------------------------------- requirement history, quotes */
+.earlier { border-top: 1px solid var(--line); padding-top: 10px; }
+.earlier summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--text-muted); min-height: 32px; display: flex; align-items: center; }
+.earlier-list { display: grid; gap: 6px; margin-top: 8px; }
+.earlier-list li { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; font-size: 15px; }
+.quote-vendor { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; }
+.quote-table td .row-meta { margin-top: 4px; font-size: 13.5px; font-family: var(--font-text); }
+
+/* ------------------------------------------------ negotiation: join + listen */
+.info-notice { border-color: color-mix(in srgb, var(--info) 45%, transparent); background: var(--info-tint); flex-wrap: wrap; }
+.info-notice svg { color: var(--info); }
+.join-link { font-size: 14px; overflow-wrap: anywhere; color: var(--info); }
+.listen { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; }
+.listen .body { display: grid; gap: 2px; flex: 1 1 200px; min-width: 0; font-size: 14.5px; }
+.listen .body span { color: var(--text-muted); }
+.listen.live { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--jade-line); background: var(--jade-tint); }
+.listen.live strong { color: var(--jade); }
+.listen-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--jade-fill); box-shadow: 0 0 0 4px var(--jade-tint); animation: blink 1.4s ease-in-out infinite; flex: 0 0 auto; }
+.listen .field-error { flex-basis: 100%; }
+
+/* ------------------------------------------------ order: follow-ups, telegram */
+.followup-block { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.fu-title { font-size: 12.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+.followups li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; }
+.followups li svg { margin-top: 4px; color: var(--amber); }
+.followups li[data-status="fired"] svg { color: var(--jade); }
+.followups li[data-status="cancelled"] { opacity: .7; }
+.fu-body { display: grid; gap: 2px; min-width: 0; }
+.fu-kind { font-weight: 700; }
+.telegram {
+  display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--line-strong);
+}
+.telegram .body { display: grid; gap: 2px; flex: 1 1 220px; min-width: 0; font-size: 15px; }
+.telegram .body span { color: var(--text-muted); font-size: 14.5px; }
+.telegram-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.telegram .field-error { flex-basis: 100%; }
+.telegram.linked { border-style: solid; border-color: var(--jade-line); background: var(--jade-tint); }
+.telegram.linked svg { color: var(--jade); flex: 0 0 auto; }
+
 /* ------------------------------------------------------------------ banner */
 .banner {
   display: grid; gap: 10px;
@@ -582,6 +653,8 @@ img { max-width: 100%; display: block; }
   .console { padding-top: 16px; gap: 16px; }
   .col-call, .col-work { gap: 16px; }
   .panel { padding: 16px; }
+  .onboard { margin-top: 16px; padding: 20px 16px; }
+  .onboard .panel-title { font-size: 24px; }
   .panel-title { font-size: 22px; }
   .orb { width: 160px; height: 160px; }
   .orb-core { width: 104px; height: 104px; }

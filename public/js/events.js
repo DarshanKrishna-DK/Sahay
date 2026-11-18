@@ -1,19 +1,12 @@
-// Server-sent events from GET /api/events, typed per docs/build/architecture.md:
-// { id, ts, businessId, type, data }. The server may send them as unnamed "message"
-// events or as named events (event: <type>); both are handled and de-duplicated by id.
-
-export const EVENT_TYPES = [
-  "session.started", "session.ended", "transcript", "requirement.saved",
-  "job.started", "job.progress", "job.done", "job.failed", "vendor.found",
-  "negotiation.turn", "negotiation.ended", "quote.recorded",
-  "approval.requested", "approval.decided", "order.created", "payment.link",
-  "followup.fired", "error",
-];
+// Server-sent events from GET /api/events (src/events.js). Every event is a default
+// "message" event (no `event:` line) with an `id:` line and data JSON
+// { id, ts, businessId, sessionId, actor, type, data }. On reconnect the browser sends
+// Last-Event-ID and the server replays what was missed; ids are de-duplicated here.
 
 const MAX_BACKOFF_MS = 30000;
 
 /**
- * connectEvents({ onEvent, onStatus }) -> { close() }
+ * connectEvents({ onEvent, onStatus }) -> { close(), retryNow() }
  * onStatus(state, info): state is "connecting" | "open" | "reconnecting" | "closed".
  * info.resumed is true on an open that follows a drop, so the caller can resync state.
  */
@@ -27,7 +20,7 @@ export function connectEvents({ onEvent, onStatus }) {
   const seenOrder = [];
 
   function remember(id) {
-    if (id === undefined || id === null) return true;
+    if (id === undefined || id === null || id === "") return true;
     const key = String(id);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -36,14 +29,20 @@ export function connectEvents({ onEvent, onStatus }) {
     return true;
   }
 
-  function handle(raw, namedType) {
+  function handle(raw) {
     let evt;
     try { evt = JSON.parse(raw.data); } catch { return; }
-    if (!evt || typeof evt !== "object") return;
-    const type = typeof evt.type === "string" ? evt.type : namedType;
-    if (!type) return;
-    if (!remember(evt.id ?? raw.lastEventId ?? null)) return;
-    onEvent({ id: evt.id ?? null, ts: evt.ts ?? null, type, data: evt.data ?? {} });
+    if (!evt || typeof evt !== "object" || typeof evt.type !== "string") return;
+    const id = evt.id ?? (raw.lastEventId || null);
+    if (!remember(id)) return;
+    onEvent({
+      id,
+      ts: evt.ts ?? null,
+      type: evt.type,
+      actor: typeof evt.actor === "string" ? evt.actor : null,
+      sessionId: evt.sessionId ?? null,
+      data: evt.data && typeof evt.data === "object" ? evt.data : {},
+    });
   }
 
   function open() {
@@ -61,12 +60,11 @@ export function connectEvents({ onEvent, onStatus }) {
       attempt = 0;
       onStatus("open", { resumed });
     };
-    source.onmessage = (e) => handle(e, null);
-    for (const t of EVENT_TYPES) source.addEventListener(t, (e) => handle(e, t));
+    source.onmessage = handle;
     source.onerror = () => {
       if (closedByUs) return;
-      // CONNECTING: the browser retries on its own. CLOSED: the server refused (e.g. 401,
-      // 404, wrong content type), so retry ourselves with backoff.
+      // CONNECTING: the browser retries on its own. CLOSED: the server refused (e.g. 401),
+      // so retry ourselves with backoff.
       if (source.readyState === EventSource.CLOSED) {
         source.close();
         scheduleRetry();

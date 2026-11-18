@@ -4,7 +4,7 @@
 
 import * as api from "./api.js";
 import { connectEvents } from "./events.js";
-import { VoiceCall, preloadSdks, scriptOf } from "./voice.js";
+import { VoiceCall, NegotiationListener, preloadSdks, scriptOf } from "./voice.js";
 
 /* ===================================================================== helpers */
 
@@ -164,11 +164,13 @@ function setCount(id, n) {
 /* ======================================================================= store */
 
 const state = {
-  boot: "loading",
+  boot: "loading", // loading | onboarding | ready | error
   bootError: null,
+  onboard: { busy: false, error: null, fieldErrors: {} },
   business: null,
   stream: "connecting",
   requirement: null,
+  requirements: [],
   adapt: [],
   jobs: new Map(),
   vendors: new Map(),
@@ -177,9 +179,14 @@ const state = {
   approvals: new Map(),
   approvalUi: new Map(),
   orders: new Map(),
-  followups: [],
+  followups: new Map(),
   audit: new Map(),
   serverErrors: [],
+  voiceServer: null, // GET /api/state `voice`: { channel, agentId, active } or null
+  voiceServerUi: { busy: false, error: null },
+  telegram: { linked: false, busy: false, error: null, link: null, blocked: false },
+  listen: { negotiationId: null, status: "idle", error: null, speakers: 0, note: null },
+  copyUi: new Map(),
   call: {
     status: "idle", agentState: null, muted: false, lang: null, langSource: null,
     error: null, note: null, autoplay: false, issues: [], metrics: {}, transcriptLink: true,
@@ -189,6 +196,7 @@ const state = {
 
 function resetData() {
   state.requirement = null;
+  state.requirements = [];
   state.adapt = [];
   state.jobs.clear();
   state.vendors.clear();
@@ -196,8 +204,15 @@ function resetData() {
   state.quotes.clear();
   state.approvals.clear();
   state.orders.clear();
-  state.followups = [];
+  state.followups.clear();
   state.audit.clear();
+}
+
+/** A new requirement replaces the vendor, negotiation and quote views (the server scopes them to the latest requirement). */
+function clearRequirementScoped() {
+  state.vendors.clear();
+  state.negotiations.clear();
+  state.quotes.clear();
 }
 
 const dirty = new Set();
@@ -218,8 +233,10 @@ function flush() {
 }
 
 /* ================================================================ normalizers */
-// Field names follow src/db/schema.sql (snake_case) with camelCase accepted too, because
-// architecture.md does not yet pin event payload shapes.
+// Snapshot rows follow src/db/schema.sql (snake_case, JSON columns already parsed by the
+// server); event payloads follow the emitters (camelCase). Both are accepted.
+
+function bool(v) { return v === true || v === 1 || v === "1"; }
 
 function normRequirement(d) {
   const r = d && d.requirement && typeof d.requirement === "object" ? d.requirement : d;
@@ -236,26 +253,46 @@ function normRequirement(d) {
     notes: pick(r, "notes"),
     missing: asArray(pick(d, "missing") ?? pick(r, "missing")),
     status: pick(r, "status"),
+    createdAt: pick(r, "created_at", "createdAt"),
   };
 }
 
+/** Jobs: a snapshot row has progress as an array of { ts, message, data? } and no input;
+ *  job.* events carry { jobId, kind, input? | message, data? | result | error }. */
 function normJob(d) {
   const j = d && d.job && typeof d.job === "object" ? d.job : d;
+  const input = parseMaybeJson(pick(j, "input"));
+  const progress = parseMaybeJson(pick(j, "progress"));
+  const entries = Array.isArray(progress) ? progress.filter((e) => e && typeof e === "object") : [];
+  let last = entries.length ? entries[entries.length - 1] : null;
+  if (typeof pick(j, "message") === "string") last = { message: j.message, data: j.data && typeof j.data === "object" ? j.data : null };
+  let joinUrl = null;
+  for (const e of [...entries, last]) {
+    const u = e && e.data && typeof e.data === "object" ? e.data.joinUrl : null;
+    if (typeof u === "string") joinUrl = u;
+  }
+  const inp = input && typeof input === "object" ? input : {};
   return {
     id: pick(j, "jobId", "job_id", "id"),
     kind: pick(j, "kind"),
     status: pick(j, "status"),
-    progress: parseMaybeJson(pick(j, "progress")),
+    progressMessage: last && typeof last.message === "string" ? last.message : undefined,
+    progressData: last && last.data && typeof last.data === "object" ? last.data : undefined,
     error: pick(j, "error"),
     createdAt: pick(j, "created_at", "createdAt"),
     updatedAt: pick(j, "updated_at", "updatedAt"),
-    vendorId: pick(j, "vendorId", "vendor_id"),
+    requirementId: pick(j, "requirement_id") ?? pick(inp, "requirementId"),
+    vendorId: pick(inp, "vendorId"),
+    negotiationId: pick(inp, "negotiationId"),
+    counterpart: pick(inp, "counterpart"),
+    joinUrl: joinUrl ?? undefined,
   };
 }
 
 function normVendor(v) {
   return {
     id: pick(v, "vendorId", "vendor_id", "id"),
+    requirementId: pick(v, "requirement_id", "requirementId"),
     name: pick(v, "name"),
     city: pick(v, "city"),
     itemTitle: pick(v, "item_title", "itemTitle"),
@@ -269,10 +306,41 @@ function normVendor(v) {
   };
 }
 
+/** A negotiation turn, from a negotiations.transcript entry or a negotiation.turn event. */
+function normTurn(t, fallbackTs) {
+  const ts = pick(t, "ts") ?? fallbackTs ?? null;
+  const speaker = speakerOf(t);
+  const text = pick(t, "text");
+  return {
+    key: `${ts}|${speaker}|${typeof text === "string" ? text : ""}`,
+    ts,
+    speaker,
+    text,
+    offer: num(pick(t, "offer")),
+    unit: pick(t, "unit"),
+    round: num(pick(t, "round")),
+  };
+}
+
+function normNegotiationRow(r) {
+  return {
+    id: pick(r, "id"),
+    requirementId: pick(r, "requirement_id"),
+    vendorId: pick(r, "vendor_id"),
+    counterpart: pick(r, "counterpart"),
+    status: pick(r, "status"),
+    outcome: parseMaybeJson(pick(r, "outcome")),
+    createdAt: pick(r, "created_at"),
+    endedAt: pick(r, "ended_at"),
+    turns: asArray(parseMaybeJson(pick(r, "transcript"))).map((t) => normTurn(t)),
+  };
+}
+
+/** A quotes row, a quote.recorded event (the same row) or a ranked deal from GET /api/state. */
 function normQuote(q) {
-  const sim = pick(q, "simulated");
   return {
     id: pick(q, "quoteId", "quote_id", "id"),
+    requirementId: pick(q, "requirement_id", "requirementId"),
     vendorId: pick(q, "vendorId", "vendor_id"),
     vendorName: pick(q, "vendorName", "vendor_name"),
     negotiationId: pick(q, "negotiationId", "negotiation_id"),
@@ -282,7 +350,12 @@ function normQuote(q) {
     leadTimeDays: num(pick(q, "lead_time_days", "leadTimeDays")),
     freight: num(pick(q, "freight")),
     landedCost: num(pick(q, "landed_cost", "landedCost")),
-    simulated: sim === true || sim === 1 || sim === "1",
+    goodsCost: num(pick(q, "goodsCost")),
+    paymentTerms: pick(q, "payment_terms"),
+    simulated: q && "simulated" in q ? bool(q.simulated) : undefined,
+    rank: num(pick(q, "rank")),
+    dealStatus: pick(q, "rank") !== undefined ? pick(q, "status") : undefined,
+    reason: pick(q, "reason"),
     createdAt: pick(q, "created_at", "createdAt"),
   };
 }
@@ -296,20 +369,38 @@ function normApproval(a) {
     totalAmount: num(pick(a, "total_amount", "totalAmount")),
     requestedAt: pick(a, "requested_at", "requestedAt"),
     decidedAt: pick(a, "decided_at", "decidedAt"),
-    decidedVia: pick(a, "decided_via", "decidedVia"),
+    decidedVia: pick(a, "decided_via", "decidedVia", "via"),
     evidence: pick(a, "evidence_utterance", "evidenceUtterance"),
+    reason: pick(a, "reason"),
+    simulated: a && "simulated" in a ? bool(a.simulated) : undefined,
   };
 }
 
 function normOrder(o) {
   return {
     id: pick(o, "orderId", "order_id", "id"),
+    quoteId: pick(o, "quote_id", "quoteId"),
     poNumber: pick(o, "po_number", "poNumber"),
     status: pick(o, "status"),
     amount: num(pick(o, "amount")),
-    pdfUrl: pick(o, "pdfUrl", "pdf_url"),
+    currency: pick(o, "currency"),
+    vendorName: pick(o, "vendor"),
+    pdfUrl: pick(o, "pdfUrl"),
     paymentUrl: pick(o, "payment_link_url", "paymentLinkUrl"),
+    simulated: o && "simulated" in o ? bool(o.simulated) : undefined,
     createdAt: pick(o, "created_at", "createdAt"),
+  };
+}
+
+function normFollowup(f) {
+  return {
+    id: pick(f, "followupId", "id"),
+    orderId: pick(f, "orderId", "order_id"),
+    kind: pick(f, "kind"),
+    status: pick(f, "status"),
+    message: pick(f, "message"),
+    dueAt: pick(f, "due_at", "dueAt"),
+    firedAt: pick(f, "fired_at", "firedAt"),
   };
 }
 
@@ -333,6 +424,7 @@ const TYPE_LABEL = {
   "job.progress": "Job progress",
   "job.done": "Job finished",
   "job.failed": "Job failed",
+  "job.cancelled": "Job cancelled",
   "vendor.found": "Vendor found",
   "negotiation.turn": "Negotiation turn",
   "negotiation.ended": "Negotiation ended",
@@ -340,10 +432,33 @@ const TYPE_LABEL = {
   "approval.requested": "Approval requested",
   "approval.decided": "Approval decided",
   "order.created": "Order created",
+  "order.status": "Order status",
   "payment.link": "Payment link created",
-  "followup.fired": "Follow-up due",
+  "followup.fired": "Follow-up sent",
+  "telegram.linked": "Telegram linked",
   "error": "Error",
 };
+
+const NEGO_STATUS = {
+  open: "In progress", running: "In progress", starting: "Starting",
+  agreed: "Agreed", walked_away: "Sahay walked away", no_deal: "No deal",
+};
+function negotiationRunning(n) {
+  return !n.endedAt && (!n.status || n.status === "open" || n.status === "running" || n.status === "starting");
+}
+
+const ORDER_STATUS = {
+  confirmed: "Confirmed", paid: "Paid", in_transit: "In transit",
+  delivered: "Delivered", closed: "Closed", cancelled: "Cancelled",
+};
+const FOLLOWUP_KIND = { payment_due: "Payment reminder", delivery_check: "Delivery check" };
+
+let resyncTimer = 0;
+/** Some changes are only visible in GET /api/state (ranked deals, scheduled follow-ups). */
+function scheduleResync() {
+  clearTimeout(resyncTimer);
+  resyncTimer = setTimeout(() => { if (state.boot === "ready") resync(); }, 700);
+}
 
 function applyEvent(evt, { live = true } = {}) {
   const { type } = evt;
@@ -357,20 +472,24 @@ function applyEvent(evt, { live = true } = {}) {
       if (prev && r.id !== undefined && String(prev.id) === String(r.id)) {
         const changes = describeRequirementChange(prev, r);
         if (changes) state.adapt.push({ ts: evt.ts, text: changes });
+      } else if (prev && live) {
+        clearRequirementScoped();
       }
       state.requirement = r;
-      invalidate("requirement", "plan");
+      const i = state.requirements.findIndex((x) => String(x.id) === String(r.id));
+      if (i === -1) state.requirements.push(r); else state.requirements[i] = r;
+      invalidate("requirement", "plan", "vendors", "negotiation", "quotes");
       break;
     }
     case "job.started":
     case "job.progress":
     case "job.done":
-    case "job.failed": {
+    case "job.failed":
+    case "job.cancelled": {
       const j = normJob(d);
-      if (!j.status) j.status = type === "job.done" ? "done" : type === "job.failed" ? "failed" : "running";
-      if (type === "job.done") j.status = "done";
-      if (type === "job.failed") { j.status = "failed"; j.error = j.error || pick(d, "message"); }
-      if (!j.createdAt && type === "job.started") j.createdAt = evt.ts;
+      j.status = { "job.done": "done", "job.failed": "failed", "job.cancelled": "cancelled" }[type] || "running";
+      if (type === "job.started") j.createdAt = j.createdAt || evt.ts;
+      if (type === "job.failed") j.error = j.error || pick(d, "message");
       j.updatedAt = evt.ts || j.updatedAt;
       const prev = j.id !== undefined ? state.jobs.get(String(j.id)) : null;
       if (type === "job.started" && !prev) {
@@ -383,88 +502,96 @@ function applyEvent(evt, { live = true } = {}) {
       break;
     }
     case "vendor.found": {
-      const list = Array.isArray(d.vendors) ? d.vendors : [d.vendor && typeof d.vendor === "object" ? d.vendor : d];
-      for (const v of list) merge(state.vendors, normVendor(v));
+      const v = d.vendor && typeof d.vendor === "object" ? d.vendor : null;
+      if (v) merge(state.vendors, { ...normVendor(v), requirementId: pick(v, "requirement_id") ?? pick(d, "requirementId") });
       invalidate("vendors", "plan", "negotiation", "quotes");
       break;
     }
     case "negotiation.turn": {
-      const nid = pick(d, "negotiationId", "negotiation_id");
+      const nid = pick(d, "negotiationId");
       if (nid === undefined) break;
       const n = ensureNegotiation(nid, d);
-      const turn = {
-        eid: evt.id,
-        ts: evt.ts,
-        speaker: speakerOf(d),
-        text: pick(d, "text", "utterance", "message"),
-        offer: num(pick(d, "offer", "unit_price", "unitPrice", "price")),
-        unit: pick(d, "unit"),
-        round: num(pick(d, "round")),
-      };
-      if (turn.eid === null || turn.eid === undefined || !n.turns.some((t) => t.eid === turn.eid)) n.turns.push(turn);
-      if (!n.status) n.status = "running";
+      const turn = normTurn(d, evt.ts);
+      if (!n.turns.some((t) => t.key === turn.key)) n.turns.push(turn);
+      if (!n.status) n.status = "open";
       invalidate("negotiation", "plan");
       break;
     }
     case "negotiation.ended": {
-      const nid = pick(d, "negotiationId", "negotiation_id", "id");
+      const nid = pick(d, "negotiationId");
       if (nid === undefined) break;
       const n = ensureNegotiation(nid, d);
       n.status = pick(d, "status") || "ended";
       n.outcome = parseMaybeJson(pick(d, "outcome")) ?? n.outcome;
-      n.endedAt = evt.ts;
+      n.endedAt = n.endedAt || evt.ts || new Date().toISOString();
+      if (live && state.listen.negotiationId === String(nid) && state.listen.status !== "idle") {
+        listener.stop().then(() => { state.listen.note = "The negotiation ended, so listening stopped."; invalidate("negotiation"); });
+      }
       invalidate("negotiation", "plan");
       break;
     }
     case "quote.recorded": {
-      merge(state.quotes, normQuote(d.quote && typeof d.quote === "object" ? d.quote : d));
+      merge(state.quotes, normQuote(d));
+      if (live) scheduleResync();
       invalidate("quotes", "plan");
       break;
     }
     case "approval.requested":
     case "approval.decided": {
       const a = normApproval(d);
-      if (type === "approval.requested" && !a.status) a.status = "pending";
-      if (type === "approval.requested" && !a.requestedAt) a.requestedAt = evt.ts;
-      if (type === "approval.decided" && !a.decidedAt) a.decidedAt = evt.ts;
-      if (type === "approval.decided" && !a.status) {
-        const dec = pick(d, "decision");
-        if (dec === "approve") a.status = "approved";
-        if (dec === "reject") a.status = "rejected";
-      }
+      if (type === "approval.requested") { a.status = a.status || "pending"; a.requestedAt = a.requestedAt || evt.ts; }
+      if (type === "approval.decided") a.decidedAt = a.decidedAt || evt.ts;
       const rec = merge(state.approvals, a);
       if (rec && type === "approval.decided") state.approvalUi.delete(String(rec.id));
-      invalidate("approval", "plan");
+      invalidate("approval", "plan", "order");
       break;
     }
     case "order.created": {
-      const o = normOrder(d.order && typeof d.order === "object" ? d.order : d);
-      if (!o.createdAt) o.createdAt = evt.ts;
+      const o = normOrder(d);
+      o.createdAt = o.createdAt || evt.ts;
       merge(state.orders, o);
+      if (live) scheduleResync();
       invalidate("order", "plan");
       break;
     }
+    case "order.status": {
+      const oid = pick(d, "orderId");
+      if (oid !== undefined) merge(state.orders, { id: oid, poNumber: pick(d, "poNumber"), status: pick(d, "to") });
+      invalidate("order");
+      break;
+    }
     case "payment.link": {
-      const oid = pick(d, "orderId", "order_id");
-      const url = pick(d, "url", "payment_link_url", "paymentLinkUrl");
-      if (oid !== undefined) merge(state.orders, { id: oid, paymentUrl: url });
+      const oid = pick(d, "orderId");
+      if (oid !== undefined) merge(state.orders, { id: oid, poNumber: pick(d, "poNumber"), paymentUrl: pick(d, "url") });
       invalidate("order", "plan");
       break;
     }
     case "followup.fired": {
-      state.followups.push({
-        eid: evt.id, ts: evt.ts,
-        orderId: pick(d, "orderId", "order_id"),
-        kind: pick(d, "kind"),
-        message: pick(d, "message", "say"),
-        dueAt: pick(d, "due_at", "dueAt"),
-      });
+      const f = normFollowup(d);
+      f.status = "fired";
+      f.firedAt = f.firedAt || evt.ts;
+      if (f.id !== undefined) merge(state.followups, f);
       invalidate("order", "plan");
+      break;
+    }
+    case "telegram.linked": {
+      state.telegram.linked = true;
+      state.telegram.link = null;
+      state.telegram.error = null;
+      invalidate("order");
+      break;
+    }
+    case "session.started":
+    case "session.ended": {
+      if (pick(d, "kind") === "owner") {
+        state.voiceServer = type === "session.started" ? { channel: pick(d, "channel"), active: true } : null;
+        invalidate("call");
+      }
       break;
     }
     case "error": {
       if (live) {
-        state.serverErrors.unshift({ ts: evt.ts, code: pick(d, "code"), message: pick(d, "message", "say") || "The server reported an error." });
+        state.serverErrors.unshift({ ts: evt.ts, code: pick(d, "code"), message: pick(d, "message") || "The server reported an error." });
         state.serverErrors = state.serverErrors.slice(0, 3);
         invalidate("banner");
       }
@@ -474,12 +601,10 @@ function applyEvent(evt, { live = true } = {}) {
       break;
   }
 
-  if (type !== "transcript") {
-    const key = evt.id !== null && evt.id !== undefined ? String(evt.id) : `local-${state.audit.size}-${type}`;
-    if (!state.audit.has(key)) {
-      state.audit.set(key, { id: key, ts: evt.ts, actor: evt.actor || actorFor(type, d), type, data: d });
-      invalidate("audit");
-    }
+  const key = evt.id !== null && evt.id !== undefined ? String(evt.id) : `local-${state.audit.size}-${type}`;
+  if (!state.audit.has(key)) {
+    state.audit.set(key, { id: key, ts: evt.ts, actor: evt.actor || "system", type, data: d });
+    invalidate("audit");
   }
 }
 
@@ -490,30 +615,20 @@ function kindLabel(kind) {
 }
 
 function speakerOf(d) {
-  const s = String(pick(d, "speaker", "role", "actor", "from") || "").toLowerCase();
-  if (["agent", "sahay", "buyer", "negotiator", "assistant"].includes(s)) return "agent";
-  if (["vendor", "seller", "counterpart", "supplier"].includes(s)) return "vendor";
+  const s = String(pick(d, "speaker") || "").toLowerCase();
+  if (s === "agent") return "agent";
+  if (s === "vendor") return "vendor";
   return s || "unknown";
-}
-
-function actorFor(type, d) {
-  const explicit = pick(d, "actor");
-  if (typeof explicit === "string") return explicit;
-  if (type === "approval.decided") return "owner";
-  if (type === "negotiation.turn") return speakerOf(d) === "vendor" ? "vendor" : "agent";
-  if (type === "requirement.saved" || type === "approval.requested" || type === "job.started") return "agent";
-  return "system";
 }
 
 function ensureNegotiation(nid, d) {
   const key = String(nid);
   let n = state.negotiations.get(key);
   if (!n) {
-    n = { id: key, turns: [], status: null, outcome: null, vendorId: null, vendorName: null, counterpart: null };
+    n = { id: key, turns: [], status: null, outcome: null, vendorId: null, counterpart: null, endedAt: null };
     state.negotiations.set(key, n);
   }
   n.vendorId = n.vendorId ?? pick(d, "vendorId", "vendor_id") ?? null;
-  n.vendorName = n.vendorName ?? pick(d, "vendorName", "vendor_name") ?? null;
   n.counterpart = n.counterpart ?? pick(d, "counterpart") ?? null;
   return n;
 }
@@ -528,36 +643,98 @@ function describeRequirementChange(a, b) {
   return parts.length ? `Changed ${parts.join(", ")}` : null;
 }
 
-/** GET /api/state -> rebuild everything. Audit rows are the persisted events, so replaying
- *  them restores negotiation turns and follow-ups, which the snapshot does not list. */
+/**
+ * GET /api/state -> rebuild everything. The audit rows (newest 200, oldest first) are
+ * replayed for the audit trail and the "Adapt" history; then every collection the snapshot
+ * returns replaces what the replay produced, because the snapshot is authoritative.
+ */
 function applySnapshot(snap) {
+  snap = snap && typeof snap === "object" ? snap : {};
   resetData();
-  const audit = asArray(snap && snap.audit).slice().sort((x, y) => {
-    const a = num(x.id), b = num(y.id);
-    if (a !== null && b !== null) return a - b;
-    return String(x.ts).localeCompare(String(y.ts));
-  });
+  const audit = asArray(snap.audit).slice().sort((x, y) => (num(x.id) ?? 0) - (num(y.id) ?? 0));
   for (const row of audit) {
-    applyEvent({ id: row.id, ts: row.ts, type: row.type, actor: row.actor, data: parseMaybeJson(row.detail) || {} }, { live: false });
+    applyEvent({ id: row.id, ts: row.ts, type: row.type, actor: row.actor, data: parseMaybeJson(row.data ?? row.detail) || {} }, { live: false });
   }
-  if (snap && snap.requirement) state.requirement = normRequirement(snap.requirement);
-  for (const j of asArray(snap && snap.jobs)) merge(state.jobs, normJob(j));
-  for (const v of asArray(snap && snap.vendors)) merge(state.vendors, normVendor(v));
-  for (const q of asArray(snap && snap.deals)) merge(state.quotes, normQuote(q));
-  for (const a of asArray(snap && snap.approvals)) merge(state.approvals, normApproval(a));
-  for (const o of asArray(snap && snap.orders)) merge(state.orders, normOrder(o));
+
+  if (snap.business && typeof snap.business === "object") state.business = snap.business;
+  state.requirements = asArray(snap.requirements).map(normRequirement).filter(Boolean);
+  state.requirement = snap.requirement ? normRequirement(snap.requirement) : null;
+
+  state.jobs.clear();
+  for (const j of asArray(snap.jobs)) merge(state.jobs, normJob(j));
+
+  clearRequirementScoped();
+  for (const v of asArray(snap.vendors)) merge(state.vendors, normVendor(v));
+  for (const r of asArray(snap.negotiations)) {
+    const n = normNegotiationRow(r);
+    if (n.id !== undefined) state.negotiations.set(String(n.id), { ...n, id: String(n.id) });
+  }
+  for (const q of asArray(snap.quotes)) merge(state.quotes, normQuote(q));
+  for (const q of asArray(snap.deals)) merge(state.quotes, normQuote(q));
+
+  state.approvals.clear();
+  for (const a of asArray(snap.approvals)) merge(state.approvals, normApproval(a));
+  state.orders.clear();
+  for (const o of asArray(snap.orders)) merge(state.orders, normOrder(o));
+  state.followups.clear();
+  for (const f of asArray(snap.followups)) merge(state.followups, normFollowup(f));
+
+  state.voiceServer = snap.voice && typeof snap.voice === "object" ? snap.voice : null;
+  state.telegram.linked = snap.telegramLinked === true;
+  if (state.telegram.linked) state.telegram.link = null;
   invalidateAll();
 }
 
 /* ================================================================== renderers */
 
+const LANG_NAME = { "hi-IN": "Hindi", "kn-IN": "Kannada", "en-IN": "English" };
+const LANG_SHORT = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
+
+RENDERERS.onboarding = () => {
+  const onboarding = state.boot === "onboarding";
+  const card = $("onboarding");
+  const wasHidden = card.hidden;
+  card.hidden = !onboarding;
+  $("main").hidden = onboarding;
+  $("call-skip").hidden = onboarding;
+  if (!onboarding) return;
+
+  const ob = state.onboard;
+  const fields = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-language" };
+  for (const [key, id] of Object.entries(fields)) {
+    const msg = ob.fieldErrors[key] || "";
+    const err = $(`${id}-error`);
+    err.textContent = msg;
+    err.hidden = !msg;
+    const target = key === "language" ? $("ob-language") : $(id);
+    if (msg) target.setAttribute("aria-invalid", "true");
+    else target.removeAttribute("aria-invalid");
+  }
+  const formError = $("ob-form-error");
+  formError.replaceChildren();
+  formError.hidden = !ob.error;
+  if (ob.error) {
+    append(formError, [icon("alert", 20), h("div", { class: "body" },
+      h("strong", { text: "Sahay could not save your business" }), h("span", { text: ob.error }))]);
+  }
+  for (const el of $("onboard-form").elements) el.disabled = ob.busy;
+  const submit = $("ob-submit");
+  submit.replaceChildren();
+  if (ob.busy) append(submit, [h("span", { class: "spinner", "aria-hidden": "true" }), "Saving"]);
+  else submit.textContent = "Continue";
+  if (wasHidden) requestAnimationFrame(() => $("ob-name").focus());
+};
+
 RENDERERS.header = () => {
   const el = $("business-name");
-  const name = state.business && pick(state.business, "name");
+  const b = state.business;
+  const name = b && pick(b, "name");
+  const where = b && pick(b, "city");
   el.hidden = !name;
-  el.textContent = name ? String(name) : "";
+  el.textContent = name ? [name, where].filter(Boolean).join(" · ") : "";
 
   const s = $("stream-status");
+  s.hidden = state.boot === "onboarding";
   s.dataset.state = state.stream;
   $("stream-text").textContent = {
     connecting: "Connecting to live updates",
@@ -584,14 +761,14 @@ RENDERERS.banner = () => {
         scripted("span", e.message)),
       h("button", { class: "btn btn-small", type: "button", text: "Dismiss", on: { click: () => { state.serverErrors = state.serverErrors.filter((x) => x !== e); invalidate("banner"); } } })));
   }
-  el.hidden = items.length === 0;
+  el.hidden = items.length === 0 || state.boot === "onboarding";
   el.replaceChildren(...items);
 };
 
 const ORB = {
   idle: ["idle", "Ready to call", "Press Start call, then tell Sahay what you need to buy."],
   mic: ["connecting", "Allow the microphone", "Your browser will ask for microphone access."],
-  connecting: ["connecting", "Connecting", "Starting Sahay and joining the call."],
+  connecting: ["connecting", "Connecting", "Joining the call channel."],
   waiting: ["waiting", "Waiting for Sahay", "Sahay is joining. It will introduce itself as an automated assistant."],
   reconnecting: ["reconnecting", "Reconnecting", "The network dropped. Trying to rejoin; your call is still open."],
   ending: ["connecting", "Ending call", "Hanging up and releasing the microphone."],
@@ -615,13 +792,14 @@ RENDERERS.call = () => {
   $("orb-label").textContent = label;
   $("orb-sub").textContent = c.status === "idle" && c.note ? `${c.note} ${sub}` : sub;
 
+  const ready = state.boot === "ready";
   const btn = $("call-btn");
   btn.replaceChildren();
   btn.disabled = false;
   if (c.status === "idle" || c.status === "error") {
     btn.className = "btn btn-primary";
     btn.textContent = c.status === "error" && c.error && c.error.retry ? "Try again" : "Start call";
-    btn.disabled = c.status === "error" && c.error && c.error.retry === false;
+    btn.disabled = !ready || (c.status === "error" && c.error && c.error.retry === false);
   } else if (c.status === "mic" || c.status === "connecting") {
     btn.className = "btn btn-primary";
     btn.disabled = true;
@@ -642,12 +820,15 @@ RENDERERS.call = () => {
   mic.setAttribute("aria-label", c.muted ? "Unmute microphone" : "Mute microphone");
   mic.title = c.muted ? "Unmute microphone" : "Mute microphone";
 
+  // Before the owner speaks, show the business's chosen language.
+  const businessLang = state.business ? LANG_SHORT[pick(state.business, "language")] : null;
+  const shown = c.lang || businessLang;
   for (const el of document.querySelectorAll("#lang-row .lang")) {
-    el.setAttribute("aria-current", String(el.dataset.lang === c.lang));
+    el.setAttribute("aria-current", String(el.dataset.lang === shown));
   }
   $("lang-note").textContent = c.lang
     ? (c.langSource === "asr" ? "Detected by speech recognition." : "Detected from the script of your last sentence.")
-    : "Detected from your speech once you talk.";
+    : businessLang ? "Your business language. Sahay answers in whichever language you speak." : "Detected from your speech once you talk.";
 
   $("audio-unlock").hidden = !c.autoplay;
 
@@ -659,6 +840,17 @@ RENDERERS.call = () => {
   pipe.replaceChildren(...chips);
 
   const issues = [];
+  const vs = state.voiceServer;
+  if ((c.status === "idle" || c.status === "error") && vs && vs.active) {
+    const ui = state.voiceServerUi;
+    issues.push(h("div", { class: "notice warn" }, icon("alert", 20),
+      h("div", { class: "body" },
+        h("strong", { text: "An earlier call is still open" }),
+        h("span", { text: "Sahay is still in a call started earlier, perhaps in another tab. Start call rejoins it, or end it here." }),
+        ui.error ? h("span", { class: "field-error", text: ui.error }) : null),
+      h("button", { class: "btn btn-small", type: "button", disabled: ui.busy ? true : undefined, on: { click: endServerCall } },
+        ui.busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : null, ui.busy ? "Ending" : "End that call")));
+  }
   if (inCall && !c.transcriptLink) {
     issues.push(h("div", { class: "notice warn" }, icon("wifi", 20),
       h("div", { class: "body" }, h("strong", { text: "Transcript link interrupted" }),
@@ -670,6 +862,19 @@ RENDERERS.call = () => {
   }
   $("call-issues").replaceChildren(...issues);
 };
+
+async function endServerCall() {
+  state.voiceServerUi = { busy: true, error: null };
+  invalidate("call");
+  try {
+    await api.stopVoice();
+    state.voiceServer = null;
+    state.voiceServerUi = { busy: false, error: null };
+  } catch (err) {
+    state.voiceServerUi = { busy: false, error: err.message || "The server did not end the call." };
+  }
+  invalidate("call");
+}
 
 function issueTitle(source) {
   return {
@@ -755,8 +960,9 @@ function computePlan() {
   let confirm = { status: "upcoming", detail: null };
   const lastOrder = orders.slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
   if (lastOrder) {
-    const fu = state.followups[state.followups.length - 1];
-    confirm = { status: "done", detail: fu ? `Follow-up: ${fu.message || fu.kind || "due"}` : (lastOrder.poNumber ? `PO ${lastOrder.poNumber}` : "Order raised") };
+    const fired = [...state.followups.values()].filter((f) => f.status === "fired").sort((a, b) => String(a.firedAt || "").localeCompare(String(b.firedAt || "")));
+    const fu = fired[fired.length - 1];
+    confirm = { status: "done", detail: fu ? `Follow-up: ${FOLLOWUP_KIND[fu.kind] || fu.kind || "sent"}` : (lastOrder.poNumber ? `PO ${lastOrder.poNumber}` : "Order raised") };
   } else if (pending) {
     confirm = { status: "active", detail: "Waiting for your yes" };
   } else if (approved) {
@@ -773,19 +979,21 @@ function computePlan() {
 }
 
 function progressText(job) {
-  const p = job && job.progress;
-  if (!p) return null;
-  if (typeof p === "string") return p;
-  return pick(p, "message", "say", "step", "stage") || null;
+  return job && typeof job.progressMessage === "string" && job.progressMessage ? job.progressMessage : null;
 }
 function progressFraction(job) {
-  const p = job && job.progress;
+  const p = job && job.progressData;
   if (!p || typeof p !== "object") return null;
-  const pct = num(pick(p, "pct", "percent"));
+  const pct = num(pick(p, "pct"));
   if (pct !== null) return Math.max(0, Math.min(1, pct > 1 ? pct / 100 : pct));
-  const done = num(pick(p, "done", "current")), total = num(pick(p, "total"));
+  const done = num(pick(p, "done")), total = num(pick(p, "total"));
   if (done !== null && total) return Math.max(0, Math.min(1, done / total));
   return null;
+}
+
+function formatWhen(v) {
+  if (!v) return null;
+  return /^\d{4}-\d{2}-\d{2}/.test(String(v)) && dateTime(v) ? dateTime(v) : String(v);
 }
 
 RENDERERS.requirement = () => {
@@ -802,14 +1010,22 @@ RENDERERS.requirement = () => {
     ["Deliver to", r.city, false],
     ["Price ceiling", perUnit(r.maxPrice, r.unit), true],
     ["Target price", perUnit(r.targetPrice, r.unit), true],
-    ["Needed by", r.deliveryBy ? (/^\d{4}-\d{2}-\d{2}/.test(String(r.deliveryBy)) && dateTime(r.deliveryBy) ? dateTime(r.deliveryBy) : String(r.deliveryBy)) : null, false],
+    ["Needed by", formatWhen(r.deliveryBy), false],
   ].filter(([, v]) => v);
   const missing = r.missing.filter((m) => typeof m === "string");
+  const earlier = state.requirements
+    .filter((x) => String(x.id) !== String(r.id))
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   box.replaceChildren(
     h("dl", { class: "facts" }, ...facts.map(([k, v, mono]) => h("div", { class: "fact" }, h("dt", { text: k }), scripted("dd", v, { class: mono ? "mono" : undefined })))),
     r.notes ? scripted("p", r.notes, { class: "row-meta" }) : null,
     missing.length ? h("div", { class: "notice warn" }, icon("alert", 20),
-      h("div", { class: "body" }, h("strong", { text: "Sahay still needs" }), h("span", { text: missing.join(", ") }))) : null);
+      h("div", { class: "body" }, h("strong", { text: "Sahay still needs" }), h("span", { text: missing.join(", ") }))) : null,
+    earlier.length ? h("details", { class: "earlier" },
+      h("summary", { text: `Earlier requests (${earlier.length})` }),
+      h("ul", { class: "earlier-list" }, ...earlier.map((x) => h("li", {},
+        scripted("span", [x.item, qty(x.quantity, x.unit), x.city].filter(Boolean).join(", ") || "Requirement without details"),
+        x.createdAt ? h("span", { class: "row-meta mono", text: dateTime(x.createdAt) || "" }) : null)))) : null);
 };
 
 const JOB_CHIP = { queued: "", running: "amber", done: "jade", failed: "terra", cancelled: "" };
@@ -835,7 +1051,7 @@ RENDERERS.jobs = () => {
       status === "failed"
         ? scripted("p", j.error ? String(j.error) : "The job stopped with an error.", { class: "row-meta", style: "color:var(--terra)" })
         : (progressText(j) ? scripted("p", progressText(j), { class: "row-meta" }) : null),
-      status === "failed" ? null : h("div", { class: `bar${bar === null && status === "running" ? " indeterminate" : ""}`, role: "progressbar", "aria-label": `${kindLabel(j.kind)} progress`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": bar === null ? undefined : String(Math.round(bar * 100)) },
+      status === "failed" || status === "cancelled" ? null : h("div", { class: `bar${bar === null && status === "running" ? " indeterminate" : ""}`, role: "progressbar", "aria-label": `${kindLabel(j.kind)} progress`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": bar === null ? undefined : String(Math.round(bar * 100)) },
         h("span", { style: bar === null ? undefined : `width:${Math.round(bar * 100)}%` })),
       h("p", { class: "row-meta mono", style: "font-size:13px" }, j.createdAt ? `Started ${clock(j.createdAt) || ""}` : "", j.updatedAt && j.updatedAt !== j.createdAt ? ` · updated ${clock(j.updatedAt) || ""}` : ""));
   })));
@@ -848,12 +1064,12 @@ RENDERERS.vendors = () => {
   setCount("vendors-count", vendors.length);
   if (bootStates(box, "vendors")) return;
   if (!vendors.length) {
-    const sourcing = [...state.jobs.values()].find((j) => j.kind === "sourcing" && (j.status === "running" || j.status === "queued"));
-    const failed = [...state.jobs.values()].find((j) => j.kind === "sourcing" && j.status === "failed");
-    if (sourcing) {
+    const sourcing = [...state.jobs.values()].filter((j) => j.kind === "sourcing")
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+    if (sourcing && (sourcing.status === "running" || sourcing.status === "queued")) {
       box.replaceChildren(stateView("loading", { title: "Searching IndiaMART", text: progressText(sourcing) || "Looking up real listings for your requirement." }));
-    } else if (failed) {
-      box.replaceChildren(stateView("error", { title: "Sourcing failed", text: failed.error ? String(failed.error) : "Sahay could not fetch vendor listings. Ask Sahay to try again." }));
+    } else if (sourcing && sourcing.status === "failed") {
+      box.replaceChildren(stateView("error", { title: "Sourcing failed", text: sourcing.error ? String(sourcing.error) : "Sahay could not fetch vendor listings. Ask Sahay to try again." }));
     } else {
       box.replaceChildren(stateView("empty", { icon: "store", title: "No vendors yet", text: "Vendors appear here once Sahay starts sourcing. Every card links to its real IndiaMART listing." }));
     }
@@ -865,7 +1081,7 @@ RENDERERS.vendors = () => {
     return h("li", { class: "vendor" },
       h("div", { class: "row-head" },
         h("span", { class: "vendor-rank mono", text: `#${i + 1}` }),
-        simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : null,
+        simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : v.kind === "human" ? h("span", { class: "chip info", text: "Joins by link" }) : null,
         v.score !== null ? h("span", { class: "chip", text: `Score ${qtyFmt.format(v.score)}` }) : null),
       scripted("p", v.name || "Unnamed listing", { class: "vendor-name" }),
       v.city ? scripted("p", v.city, { class: "vendor-city" }) : null,
@@ -880,7 +1096,7 @@ RENDERERS.vendors = () => {
 
 RENDERERS.negotiation = () => {
   const box = $("nego-body");
-  const negos = [...state.negotiations.values()].reverse();
+  const negos = [...state.negotiations.values()].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   setCount("nego-count", negos.length);
   if (bootStates(box, "negotiations")) return;
   if (!negos.length) {
@@ -894,14 +1110,18 @@ RENDERERS.negotiation = () => {
   }
   box.replaceChildren(...negos.map((n) => {
     const vendor = n.vendorId ? state.vendors.get(String(n.vendorId)) : null;
-    const name = (vendor && vendor.name) || n.vendorName || "Vendor";
+    const name = (vendor && vendor.name) || (n.outcome && n.outcome.vendorName) || "Vendor";
     const simulated = n.counterpart === "simulated" || (vendor && vendor.kind === "simulated");
-    const ended = n.status && n.status !== "running";
+    const running = negotiationRunning(n);
+    const job = [...state.jobs.values()].find((j) => j.negotiationId !== undefined && String(j.negotiationId) === n.id);
+    const joinUrl = running && n.counterpart === "human" && job ? safeUrl(job.joinUrl) : null;
     return h("article", { class: "nego" },
       h("div", { class: "nego-head" },
         scripted("span", name, { class: "row-title" }),
         simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : n.counterpart === "human" ? h("span", { class: "chip info", text: "Human vendor" }) : n.counterpart === "phone" ? h("span", { class: "chip info", text: "Phone call" }) : null,
-        h("span", { class: `chip ${ended ? "" : "amber"}`, text: n.status || "running" })),
+        h("span", { class: `chip ${running ? "amber" : n.status === "agreed" ? "jade" : ""}`, text: NEGO_STATUS[n.status] || (running ? "In progress" : String(n.status || "Ended")) })),
+      joinUrl ? joinLinkView(n.id, joinUrl) : null,
+      running ? listenView(n) : (state.listen.note && state.listen.lastId === n.id ? h("p", { class: "row-meta", text: state.listen.note }) : null),
       n.turns.length
         ? h("ol", { class: "timeline" }, ...n.turns.map((t) => {
             const who = t.speaker === "agent" ? "Sahay" : t.speaker === "vendor" ? (simulated ? "Simulated vendor" : name) : "Unknown speaker";
@@ -910,19 +1130,65 @@ RENDERERS.negotiation = () => {
               t.offer !== null ? h("span", { class: "tl-offer", text: perUnit(t.offer, t.unit) }) : null,
               t.text ? scripted("p", String(t.text), { class: "tl-text" }) : null);
           }))
-        : stateView("loading", { title: "Waiting for the first offer", text: null }),
-      ended ? outcomeView(n) : null);
+        : running
+          ? stateView("loading", { title: "Waiting for the first offer", text: n.counterpart === "human" ? "The call starts when the vendor opens the join link." : null })
+          : h("p", { class: "row-meta", text: "No turns were recorded for this negotiation." }),
+      running ? null : outcomeView(n));
   }));
 };
 
+function joinLinkView(nid, url) {
+  const copied = state.copyUi.get(nid);
+  return h("div", { class: "notice info-notice" }, icon("external", 20),
+    h("div", { class: "body" },
+      h("strong", { text: "Send this link to the vendor" }),
+      h("span", { text: "They join the call from their phone browser. The page tells them they are talking to Sahay's automated buyer assistant." }),
+      h("a", { class: "join-link mono", href: url, target: "_blank", rel: "noopener noreferrer", text: url })),
+    h("button", { class: "btn btn-small", type: "button", on: { click: () => copyText(nid, url) } },
+      copied === "ok" ? "Copied" : copied === "fail" ? "Copy failed" : "Copy link"));
+}
+
+async function copyText(key, text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    state.copyUi.set(key, "ok");
+  } catch {
+    state.copyUi.set(key, "fail");
+  }
+  invalidate("negotiation");
+  setTimeout(() => { state.copyUi.delete(key); invalidate("negotiation"); }, 2500);
+}
+
+function listenView(n) {
+  const L = state.listen;
+  const mine = L.negotiationId === n.id;
+  const status = mine ? L.status : "idle";
+  if (status === "listening") {
+    return h("div", { class: "listen live" },
+      h("span", { class: "listen-dot", "aria-hidden": "true" }),
+      h("div", { class: "body", role: "status" },
+        h("strong", { text: "Listening in" }),
+        h("span", { text: L.speakers ? "You hear both sides. They cannot hear you." : "Connected. Audio plays as soon as someone speaks. They cannot hear you." })),
+      h("button", { class: "btn btn-small btn-stop", type: "button", on: { click: () => listener.stop() }, text: "Stop listening" }));
+  }
+  return h("div", { class: "listen" },
+    h("button", { class: "btn btn-small", type: "button", disabled: status === "joining" ? true : undefined, on: { click: () => { state.listen.note = null; listener.start(n.id); } } },
+      status === "joining" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("wifi", 18),
+      status === "joining" ? "Joining" : "Listen in"),
+    h("span", { class: "row-meta", text: "Hear the call live. Your microphone stays off." }),
+    status === "error" && L.error ? h("p", { class: "field-error", role: "alert", text: L.error }) : null);
+}
+
 function outcomeView(n) {
   const o = n.outcome && typeof n.outcome === "object" ? n.outcome : {};
-  const price = num(pick(o, "unit_price", "unitPrice", "agreed_price", "agreedPrice", "price"));
-  const agreed = pick(o, "agreed", "deal");
-  const ok = agreed === true || (price !== null && agreed !== false) || n.status === "agreed" || n.status === "done";
-  const text = pick(o, "summary", "say", "reason");
-  const head = price !== null ? `${ok ? "Agreed at" : "Last offer"} ${perUnit(price, pick(o, "unit"))}` : (ok ? "Negotiation finished" : "No deal");
-  return h("div", { class: `outcome ${ok ? "ok" : "bad"}` }, head, text ? h("span", { style: "display:block;font-weight:500" }, scripted("span", String(text))) : null);
+  const price = num(pick(o, "unitPrice"));
+  const ok = o.agreed === true || n.status === "agreed";
+  const head = ok
+    ? (price !== null ? `Agreed at ${perUnit(price, pick(o, "unit"))}` : "Agreed")
+    : n.status === "walked_away" ? "Sahay walked away: the price stayed above your limit" : "No deal";
+  const rounds = num(pick(o, "rounds"));
+  return h("div", { class: `outcome ${ok ? "ok" : "bad"}` }, head,
+    rounds !== null ? h("span", { style: "display:block;font-weight:500", text: `${rounds} round${rounds === 1 ? "" : "s"}` }) : null);
 }
 
 RENDERERS.approval = () => {
@@ -945,6 +1211,7 @@ RENDERERS.approval = () => {
 
   const ui = state.approvalUi.get(String(latest.id)) || {};
   const parts = [
+    latest.simulated ? h("p", {}, h("span", { class: "chip sim", text: "Simulated vendor" })) : null,
     latest.readback ? scripted("p", String(latest.readback), { class: "readback" }) : h("p", { class: "row-meta", text: "The server did not send a read-back sentence for this approval." }),
     latest.totalAmount !== null ? h("p", { class: "decided" }, "Total", h("span", { class: "total", text: money(latest.totalAmount) })) : null,
   ];
@@ -964,6 +1231,7 @@ RENDERERS.approval = () => {
       status === "rejected" ? "Rejected" : "Approved",
       latest.decidedVia ? ` by ${latest.decidedVia === "voice" ? "voice" : "button"}` : "",
       latest.decidedAt ? h("span", { class: "mono" }, " at ", timeEl(latest.decidedAt)) : null));
+    if (latest.reason) parts.push(scripted("p", String(latest.reason), { class: "row-meta" }));
     if (latest.evidence) parts.push(h("p", { class: "evidence" }, "Your words: ", h("q", {}, scripted("span", String(latest.evidence)))));
   }
   box.replaceChildren(...parts);
@@ -984,22 +1252,33 @@ async function decide(id, decision) {
   invalidate("approval", "plan");
 }
 
+const DEAL_CHIP = { demoted: ["amber", "Outside your limits"], unrankable: ["", "Not comparable"], freight_unknown: ["", "Freight unknown"] };
+
 RENDERERS.quotes = () => {
   const box = $("quotes-body");
-  const quotes = [...state.quotes.values()].sort((a, b) => (a.landedCost ?? Infinity) - (b.landedCost ?? Infinity));
+  const quotes = [...state.quotes.values()].sort((a, b) =>
+    (a.rank ?? Infinity) - (b.rank ?? Infinity) || (a.landedCost ?? Infinity) - (b.landedCost ?? Infinity));
   setCount("quotes-count", quotes.length);
   if (bootStates(box, "quotes")) return;
   if (!quotes.length) {
     box.replaceChildren(stateView("empty", { icon: "scale", title: "No quotes yet", text: "Quotes appear after Sahay talks to vendors. Freight a vendor did not state shows as not quoted, never as zero." }));
     return;
   }
-  const best = quotes[0] && quotes[0].landedCost !== null ? quotes[0].id : null;
+  const top = quotes[0];
+  const best = top && top.rank === 1 && (top.dealStatus === undefined || top.dealStatus === "ranked") ? top.id : null;
   const rows = quotes.map((q) => {
     const vendor = q.vendorId ? state.vendors.get(String(q.vendorId)) : null;
     const name = (vendor && vendor.name) || q.vendorName || "Vendor";
     const isBest = q.id === best && quotes.length > 1;
+    const simulated = q.simulated === true || (vendor && vendor.kind === "simulated");
+    const dc = DEAL_CHIP[q.dealStatus];
     return h("tr", { class: isBest ? "best" : undefined },
-      h("td", {}, scripted("span", name), " ", q.simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : null, isBest ? h("span", { class: "chip jade", text: "Best" }) : null),
+      h("td", {},
+        h("div", { class: "quote-vendor" }, scripted("span", name),
+          simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : null,
+          isBest ? h("span", { class: "chip jade", text: "Best" }) : null,
+          dc ? h("span", { class: `chip ${dc[0]}`, text: dc[1] }) : null),
+        q.reason ? scripted("p", String(q.reason), { class: "row-meta" }) : null),
       h("td", { class: "num", text: perUnit(q.unitPrice, q.unit) ?? "Not quoted" }),
       h("td", { class: "num hide-sm", text: q.freight === null ? "Not quoted" : money(q.freight) }),
       h("td", { class: "num", text: money(q.landedCost) ?? "Needs freight" }),
@@ -1020,34 +1299,104 @@ RENDERERS.order = () => {
   const box = $("order-body");
   const orders = [...state.orders.values()].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   if (bootStates(box, "orders")) return;
+  const tg = telegramView();
   if (!orders.length) {
     const approved = [...state.approvals.values()].find((a) => a.status === "approved");
     if (approved) {
-      box.replaceChildren(stateView("loading", { title: "Raising the purchase order", text: "Approval received. Sahay is creating the PO and payment link." }));
+      box.replaceChildren(stateView("loading", { title: "Raising the purchase order", text: "Approval received. Sahay is creating the PO and payment link." }), tg);
     } else {
-      box.replaceChildren(stateView("empty", { icon: "doc", title: "No order yet", text: "After you approve, Sahay raises a purchase order with a PDF and a Razorpay test-mode payment link." }));
+      box.replaceChildren(stateView("empty", { icon: "doc", title: "No order yet", text: "After you approve, Sahay raises a purchase order with a PDF and a Razorpay test-mode payment link." }), tg);
     }
     return;
   }
+  const followups = [...state.followups.values()];
   box.replaceChildren(...orders.map((o) => {
     const pdf = safeUrl(o.pdfUrl) || (o.id ? safeUrl(api.poPdfUrl(o.id)) : null);
     const pay = safeUrl(o.paymentUrl);
-    const fus = state.followups.filter((f) => f.orderId === undefined || String(f.orderId) === String(o.id));
+    const quote = o.quoteId ? state.quotes.get(String(o.quoteId)) : null;
+    const vendor = quote && quote.vendorId ? state.vendors.get(String(quote.vendorId)) : null;
+    const vendorName = o.vendorName || (vendor && vendor.name) || (quote && quote.vendorName) || null;
+    const fus = followups.filter((f) => String(f.orderId) === String(o.id))
+      .sort((a, b) => String(a.dueAt || "").localeCompare(String(b.dueAt || "")));
     return h("article", { class: "order" },
       h("div", { class: "row-head" },
         h("div", { class: "po", style: "flex:1 1 auto" }, h("span", { class: "k", text: "Purchase order" }), h("span", { class: "v", text: o.poNumber || "Number pending" })),
-        o.status ? h("span", { class: "chip jade", text: o.status }) : null),
+        o.simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : null,
+        o.status ? h("span", { class: `chip ${o.status === "cancelled" ? "terra" : "jade"}`, text: ORDER_STATUS[o.status] || o.status }) : null),
+      vendorName ? scripted("p", vendorName, { class: "row-title" }) : null,
       o.amount !== null ? h("p", { class: "decided" }, "Amount", h("span", { class: "total", text: money(o.amount) })) : null,
       h("div", { class: "order-actions" },
         pdf ? h("a", { class: "btn btn-small", href: pdf, target: "_blank", rel: "noopener" }, icon("download", 18), "Download PO (PDF)") : null,
         pay ? h("a", { class: "btn btn-small btn-primary", href: pay, target: "_blank", rel: "noopener noreferrer" }, icon("external", 18), "Open payment link")
             : h("span", { class: "row-meta", text: "Payment link not created yet." })),
       pay ? h("p", { class: "row-meta" }, h("span", { class: "chip amber", text: "Test mode" }), " Razorpay test link. No real money moves.") : null,
-      fus.length ? h("ul", { class: "followups" }, ...fus.map((f) => h("li", {},
-        icon("clock", 16), " ", timeEl(f.ts), " ", scripted("span", f.message || f.kind || "Follow-up due"),
-        f.dueAt ? h("span", { class: "row-meta" }, ` (due ${dateTime(f.dueAt) || f.dueAt})`) : null))) : null);
-  }));
+      fus.length ? h("div", { class: "followup-block" },
+        h("p", { class: "fu-title", text: "Follow-ups" }),
+        h("ul", { class: "followups" }, ...fus.map((f) => h("li", { dataset: { status: f.status || "scheduled" } },
+          icon(f.status === "fired" ? "check" : "clock", 16),
+          h("div", { class: "fu-body" },
+            h("span", { class: "fu-kind" }, FOLLOWUP_KIND[f.kind] || f.kind || "Follow-up",
+              h("span", { class: "row-meta mono", text: f.status === "fired"
+                ? ` sent ${dateTime(f.firedAt) || ""}`
+                : f.status === "cancelled" ? " not needed" : ` due ${dateTime(f.dueAt) || ""}` })),
+            f.message ? scripted("span", f.message, { class: "row-meta" }) : null))))) : null);
+  }), tg);
 };
+
+function telegramView() {
+  const t = state.telegram;
+  if (t.linked) {
+    return h("div", { class: "telegram linked" }, icon("check", 20),
+      h("div", { class: "body" },
+        h("strong", { text: "Telegram updates are on" }),
+        h("span", { text: "Order, payment and follow-up updates also go to your Telegram chat." })));
+  }
+  const parts = [
+    h("div", { class: "body" },
+      h("strong", { text: "Get updates on Telegram" }),
+      h("span", { text: t.link
+        ? `Press Start in Telegram to finish linking.${t.link.expiresAt ? ` The link works until ${clock(t.link.expiresAt) || ""}.` : ""}`
+        : "Payment reminders and delivery checks reach you even when this page is closed." })),
+  ];
+  const actions = h("div", { class: "telegram-actions" },
+    h("button", { class: "btn btn-small", type: "button", disabled: t.busy ? true : undefined, on: { click: linkTelegram } },
+      t.busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("external", 18),
+      t.busy ? "Opening Telegram" : t.link ? "Get a new link" : "Get updates on Telegram"),
+    t.link && t.blocked ? h("a", { class: "btn btn-small btn-primary", href: t.link.url, target: "_blank", rel: "noopener noreferrer" }, "Open Telegram") : null);
+  parts.push(actions);
+  if (t.error) parts.push(h("p", { class: "field-error", role: "alert", text: t.error }));
+  return h("div", { class: "telegram" }, ...parts);
+}
+
+async function linkTelegram() {
+  const t = state.telegram;
+  // Open the tab inside the click so pop-up blockers allow it, then point it at the deep link.
+  let win = null;
+  try { win = window.open("", "_blank"); } catch { win = null; }
+  t.busy = true;
+  t.error = null;
+  invalidate("order");
+  try {
+    const r = await api.telegramLinkCode();
+    const url = r && typeof r.deepLink === "string" && /^https:\/\/t\.me\//.test(r.deepLink) ? r.deepLink : null;
+    if (!url) throw new Error("The server did not return a Telegram link.");
+    t.link = { url, expiresAt: r.expiresAt || null };
+    if (win && !win.closed) {
+      try { win.opener = null; } catch { /* ignore */ }
+      win.location.href = url;
+      t.blocked = false;
+    } else {
+      t.blocked = true;
+    }
+  } catch (err) {
+    if (win && !win.closed) win.close();
+    t.error = err && err.code === "TELEGRAM_NOT_CONFIGURED"
+      ? "Telegram updates are not set up on this server."
+      : (err && err.message) || "Could not create a Telegram link.";
+  }
+  t.busy = false;
+  invalidate("order");
+}
 
 RENDERERS.audit = () => {
   const box = $("audit-body");
@@ -1064,10 +1413,11 @@ RENDERERS.audit = () => {
   }
   box.replaceChildren(h("ol", { class: "audit" }, ...rows.map((r) => {
     const actor = ["owner", "agent", "system", "vendor"].includes(r.actor) ? r.actor : "system";
+    const summary = auditSummary(r);
     return h("li", {},
       timeEl(r.ts) || h("time", { text: "" }),
       h("span", { class: `chip actor-${actor}`, text: actor === "agent" ? "Sahay" : actor }),
-      h("span", { class: "what" }, h("b", { text: TYPE_LABEL[r.type] || r.type }), auditSummary(r) ? [": ", scripted("span", auditSummary(r))] : null));
+      h("span", { class: "what" }, h("b", { text: TYPE_LABEL[r.type] || r.type }), summary ? [": ", scripted("span", summary)] : null));
   })));
 };
 
@@ -1075,27 +1425,25 @@ function auditSummary(r) {
   const d = r.data || {};
   switch (r.type) {
     case "requirement.saved": { const q = normRequirement(d); return q ? [q.item, qty(q.quantity, q.unit), q.city].filter(Boolean).join(", ") : null; }
-    case "job.started": case "job.done": return kindLabel(pick(d, "kind"));
-    case "job.progress": return [kindLabel(pick(d, "kind")), progressText({ progress: parseMaybeJson(pick(d, "progress")) })].filter(Boolean).join(": ");
-    case "job.failed": return [kindLabel(pick(d, "kind")), pick(d, "error", "message")].filter(Boolean).join(": ");
-    case "vendor.found": {
-      if (Array.isArray(d.vendors)) return `${d.vendors.length} vendors`;
-      const v = normVendor(d.vendor || d); return [v.name, v.city].filter(Boolean).join(", ");
-    }
+    case "job.started": case "job.done": case "job.cancelled": return kindLabel(pick(d, "kind"));
+    case "job.progress": return [kindLabel(pick(d, "kind")), pick(d, "message")].filter(Boolean).join(": ");
+    case "job.failed": return [kindLabel(pick(d, "kind")), pick(d, "error")].filter(Boolean).join(": ");
+    case "vendor.found": { const v = normVendor(d.vendor || {}); return [v.name, v.city].filter(Boolean).join(", ") || null; }
     case "negotiation.turn": {
       const who = speakerOf(d) === "vendor" ? (pick(d, "counterpart") === "simulated" ? "Simulated vendor" : "Vendor") : "Sahay";
-      const offer = perUnit(num(pick(d, "offer", "unit_price", "unitPrice", "price")), pick(d, "unit"));
+      const offer = perUnit(num(pick(d, "offer")), pick(d, "unit"));
       return offer ? `${who} offered ${offer}` : who;
     }
-    case "negotiation.ended": return pick(d, "status") || null;
-    case "quote.recorded": { const q = normQuote(d.quote || d); return [perUnit(q.unitPrice, q.unit), q.landedCost !== null ? `landed ${money(q.landedCost)}` : null, q.simulated ? "simulated vendor" : null].filter(Boolean).join(", "); }
+    case "negotiation.ended": return NEGO_STATUS[pick(d, "status")] || pick(d, "status") || null;
+    case "quote.recorded": { const q = normQuote(d); return [perUnit(q.unitPrice, q.unit), q.landedCost !== null ? `landed ${money(q.landedCost)}` : null, q.simulated ? "simulated vendor" : null].filter(Boolean).join(", "); }
     case "approval.requested": return pick(d, "readback") || null;
-    case "approval.decided": { const a = normApproval(d); return [a.status || pick(d, "decision"), a.decidedVia ? `by ${a.decidedVia}` : null].filter(Boolean).join(" "); }
-    case "order.created": return pick(d, "po_number", "poNumber") ? `PO ${pick(d, "po_number", "poNumber")}` : null;
+    case "approval.decided": { const a = normApproval(d); return [a.status, a.decidedVia ? `by ${a.decidedVia}` : null].filter(Boolean).join(" ") || null; }
+    case "order.created": return pick(d, "poNumber") ? `PO ${pick(d, "poNumber")}` : null;
+    case "order.status": return [pick(d, "poNumber"), ORDER_STATUS[pick(d, "to")] || pick(d, "to")].filter(Boolean).join(": ") || null;
     case "payment.link": return "Razorpay test mode";
-    case "followup.fired": return pick(d, "message", "kind") || null;
+    case "followup.fired": return FOLLOWUP_KIND[pick(d, "kind")] || pick(d, "kind") || null;
     case "session.started": case "session.ended": return pick(d, "kind") === "negotiation" ? "Negotiation call" : null;
-    case "error": return pick(d, "message", "say", "code") || null;
+    case "error": return pick(d, "message", "code") || null;
     default: return null;
   }
 }
@@ -1168,20 +1516,112 @@ $("theme-toggle").addEventListener("click", () => {
   try { localStorage.setItem("sahay-theme", next); } catch { /* storage blocked */ }
 });
 
+/* ================================================================ listen in */
+
+const listener = new NegotiationListener(({ negotiationId, status, error, speakers }) => {
+  const L = state.listen;
+  L.negotiationId = negotiationId;
+  if (negotiationId) L.lastId = negotiationId;
+  L.status = status;
+  L.error = error;
+  L.speakers = speakers;
+  invalidate("negotiation");
+});
+
+/* ================================================================== onboarding */
+
+const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
+
+function readOnboarding() {
+  const form = $("onboard-form");
+  const value = (id) => $(id).value.trim();
+  const checked = form.querySelector('input[name="language"]:checked');
+  const details = {
+    name: value("ob-name"),
+    ownerName: value("ob-owner"),
+    city: value("ob-city"),
+    language: checked ? checked.value : "",
+  };
+  const errors = {};
+  if (!details.name) errors.name = "Enter your business name.";
+  else if (details.name.length > 120) errors.name = "Keep the business name under 120 characters.";
+  if (details.ownerName.length > 120) errors.ownerName = "Keep your name under 120 characters.";
+  if (!details.city) errors.city = "Enter the city your business is in.";
+  else if (details.city.length > 80) errors.city = "Keep the city under 80 characters.";
+  if (!LANGUAGES.includes(details.language)) errors.language = "Choose the language Sahay should speak on calls.";
+  if (!details.ownerName) delete details.ownerName;
+  return { details, errors };
+}
+
+$("onboard-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (state.onboard.busy) return;
+  const { details, errors } = readOnboarding();
+  state.onboard.fieldErrors = errors;
+  state.onboard.error = null;
+  const first = Object.keys(errors)[0];
+  if (first) {
+    invalidate("onboarding");
+    const focusId = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-lang-hi" }[first];
+    requestAnimationFrame(() => $(focusId).focus());
+    return;
+  }
+  state.onboard.busy = true;
+  invalidate("onboarding");
+  let session;
+  try {
+    session = await api.openSession(details);
+  } catch (err) {
+    state.onboard.busy = false;
+    state.onboard.error = err.message || "The server did not answer.";
+    invalidate("onboarding");
+    return;
+  }
+  state.onboard = { busy: false, error: null, fieldErrors: {} };
+  await boot({ session });
+});
+
+// Clear a field's error as soon as the owner edits it.
+$("onboard-form").addEventListener("input", (e) => {
+  const key = { "ob-name": "name", "ob-owner": "ownerName", "ob-city": "city" }[e.target.id] || (e.target.name === "language" ? "language" : null);
+  if (key && state.onboard.fieldErrors[key]) {
+    delete state.onboard.fieldErrors[key];
+    invalidate("onboarding");
+  }
+});
+
 /* ======================================================================== boot */
 
 let events = null;
 let booting = null;
 
-async function boot() {
+/**
+ * POST /api/session (no body: an existing cookie loads the business; without one the
+ * server answers BUSINESS_DETAILS_REQUIRED and the onboarding card is shown), then
+ * GET /api/state, then the event stream. `session` skips the first step after onboarding.
+ */
+async function boot({ session } = {}) {
   if (booting) return booting;
   booting = (async () => {
     state.boot = "loading";
     state.bootError = null;
     invalidateAll();
     try {
-      const s = await api.openSession();
-      state.business = (s && (s.business || s)) || null;
+      let s = session;
+      if (!s) {
+        try {
+          s = await api.openSession();
+        } catch (err) {
+          if (err.code === "BUSINESS_DETAILS_REQUIRED") {
+            state.boot = "onboarding";
+            state.stream = "closed";
+            invalidateAll();
+            return;
+          }
+          throw err;
+        }
+      }
+      state.business = (s && s.business) || null;
       const snap = await api.getState();
       applySnapshot(snap);
       state.boot = "ready";
@@ -1190,6 +1630,7 @@ async function boot() {
       state.bootError = err;
     }
     if (state.boot === "ready" && !events) {
+      state.stream = "connecting";
       events = connectEvents({
         onEvent: (evt) => applyEvent(evt),
         onStatus: (st, info) => {
@@ -1210,7 +1651,7 @@ async function resync() {
   try {
     applySnapshot(await api.getState());
   } catch (err) {
-    state.serverErrors.unshift({ ts: Date.now(), code: "resync", message: `Could not refresh after reconnecting: ${err.message}` });
+    state.serverErrors.unshift({ ts: Date.now(), code: err.code || "RESYNC", message: `Could not refresh after reconnecting: ${err.message}` });
     state.serverErrors = state.serverErrors.slice(0, 3);
     invalidate("banner");
   }

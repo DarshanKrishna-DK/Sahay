@@ -192,20 +192,21 @@ export class VoiceCall {
         throw micError(err);
       }
 
-      // 2. Server starts the owner agent and mints a short-lived RTC+RTM token.
+      // 2. Step one of the server contract: a short-lived RTC+RTM token for this business's
+      //    call channel. From here the server holds a call entry, so teardown must stop it.
       this.setStatus("connecting");
       let s;
       try {
-        s = await api.startVoice();
+        s = await api.getVoiceToken();
       } catch (err) {
-        throw new CallError("start_failed", "Could not start Sahay", err.message || "The server could not start the call.");
+        throw new CallError("token_failed", "Could not start the call", err.message || "The server could not prepare the call.");
       }
       this.serverStarted = true;
-      if (!s || !s.appId || !s.channel || s.uid === undefined || s.uid === null || !s.token) {
-        throw new CallError("bad_session", "Could not start Sahay", "The server's call details were incomplete.");
+      if (!s || !s.appId || !s.channel || s.uid === undefined || s.uid === null || !s.token || s.agentUid === undefined || s.agentUid === null) {
+        throw new CallError("bad_session", "Could not start the call", "The server's call details were incomplete.");
       }
       this.session = s;
-      this.agentUid = s.agentUid !== undefined && s.agentUid !== null ? String(s.agentUid) : null;
+      this.agentUid = String(s.agentUid);
       const uid = String(s.uid);
 
       // 3. Clients and handlers before join so nothing is missed.
@@ -257,6 +258,20 @@ export class VoiceCall {
 
       this.levelTimer = setInterval(() => this.pollLevels(), 100);
 
+      // 5. Step two: only now that we are subscribed does the server bring the agent in, so
+      //    its first sentence (the automated-assistant disclosure) reaches the transcript.
+      if (!this.findAgent()) this.setStatus("waiting");
+      try {
+        await api.startVoice(s.channel);
+      } catch (err) {
+        // ALREADY_STARTED: the agent is already in this same channel (for example after a
+        // reload within the call); keep the call and wait for it.
+        if (!(err && err.code === "ALREADY_STARTED")) {
+          throw new CallError("start_failed", "Sahay could not join", err.message || "The server could not start the assistant.");
+        }
+      }
+      if (this.status === "ending" || !this.active) return;
+
       if (this.findAgent()) this.setStatus("live");
       else {
         this.setStatus("waiting");
@@ -267,6 +282,8 @@ export class VoiceCall {
         }, AGENT_JOIN_TIMEOUT_MS);
       }
     } catch (err) {
+      // The owner pressed End while we were still connecting: that path already tore down.
+      if (this.status === "idle" || this.status === "ending") return;
       const e = err instanceof CallError ? err
         : new CallError("join_failed", "Call could not connect", (err && err.message) ? `Agora said: ${err.message}` : "The call could not connect.");
       await this.teardown({ stopServer: this.serverStarted });
@@ -275,10 +292,7 @@ export class VoiceCall {
   }
 
   isAgent(uid) {
-    const u = String(uid);
-    if (this.agentUid) return u === this.agentUid;
-    // Without an agent uid from the server, the only other participant is the agent.
-    return this.session ? u !== String(this.session.uid) : false;
+    return this.agentUid !== null && String(uid) === this.agentUid;
   }
 
   findAgent() {
@@ -334,8 +348,7 @@ export class VoiceCall {
     if (this.renewing) return this.renewing;
     this.renewing = (async () => {
       try {
-        const r = await api.renewVoiceToken();
-        if (!r || !r.token) throw new Error("no token");
+        const r = await this.freshToken();
         await Promise.all([this.rtc.renewToken(r.token), this.rtm.renewToken(r.token)]);
         return r.token;
       } catch {
@@ -348,12 +361,21 @@ export class VoiceCall {
     return this.renewing;
   }
 
+  /** Renewal reuses POST /api/voice/token; it must still be this call's channel and uid. */
+  async freshToken() {
+    const r = await api.getVoiceToken();
+    const s = this.session;
+    if (!r || !r.token || !s || r.channel !== s.channel || String(r.uid) !== String(s.uid)) {
+      throw new Error("The server answered for a different call.");
+    }
+    return r;
+  }
+
   async rejoinAfterExpiry() {
     if (!this.active || !this.session) return;
     this.setStatus("reconnecting");
     try {
-      const r = await api.renewVoiceToken();
-      if (!r || !r.token) throw new Error("no token");
+      const r = await this.freshToken();
       const s = this.session;
       const uid = String(s.uid);
       await this.rtc.leave();
@@ -463,5 +485,116 @@ export class VoiceCall {
     ]);
     if (window.AgoraRTC) window.AgoraRTC.onAutoplayFailed = undefined;
     this.reset();
+  }
+}
+
+/**
+ * Receive-only listener for a running negotiation (POST /api/negotiations/:id/listen).
+ * A separate RTC client that joins the negotiation channel with the listener uid, plays
+ * whatever audio is published there and never publishes anything itself, so neither the
+ * negotiator nor the vendor can hear the owner.
+ *
+ * onChange({ negotiationId, status, error, speakers }) on every change.
+ * status: idle | joining | listening | error
+ */
+export class NegotiationListener {
+  constructor(onChange) {
+    this.onChange = onChange;
+    this.negotiationId = null;
+    this.status = "idle";
+    this.error = null;
+    this.rtc = null;
+    this.tracks = new Map();
+    this.run = 0;
+    window.addEventListener("pagehide", () => { this.stop(); });
+  }
+
+  emit() {
+    this.onChange({ negotiationId: this.negotiationId, status: this.status, error: this.error, speakers: this.tracks.size });
+  }
+
+  async start(negotiationId) {
+    if (this.negotiationId !== null && this.status !== "idle") await this.stop();
+    const run = ++this.run;
+    this.negotiationId = String(negotiationId);
+    this.error = null;
+    this.status = "joining";
+    this.emit();
+    try {
+      if (!window.isSecureContext) throw new Error("Listening needs HTTPS or localhost.");
+      try { await preloadSdks(); } catch { /* reported just below */ }
+      const { AgoraRTC } = window;
+      if (!AgoraRTC) throw new Error("The Agora voice SDK could not be downloaded. Check the network and try again.");
+
+      const t = await api.negotiationListenToken(negotiationId);
+      if (run !== this.run) return;
+      if (!t || !t.appId || !t.channel || !t.token || t.uid === undefined || t.uid === null) {
+        throw new Error("The server's listening details were incomplete.");
+      }
+
+      const rtc = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+      this.rtc = rtc;
+      rtc.on("user-published", async (user, mediaType) => {
+        if (mediaType !== "audio") return;
+        try {
+          await rtc.subscribe(user, mediaType);
+          if (run !== this.run || !user.audioTrack) return;
+          this.tracks.set(String(user.uid), user.audioTrack);
+          user.audioTrack.play();
+          this.emit();
+        } catch (err) {
+          if (run === this.run) { this.error = `Could not play the call audio. ${(err && err.message) || ""}`.trim(); this.emit(); }
+        }
+      });
+      const drop = (user) => { if (this.tracks.delete(String(user.uid)) && run === this.run) this.emit(); };
+      rtc.on("user-unpublished", drop);
+      rtc.on("user-left", drop);
+      rtc.on("connection-state-change", (cur, _prev, reason) => {
+        if (run !== this.run || cur !== "DISCONNECTED" || reason === "LEAVE") return;
+        this.fail(run, "The connection to the negotiation call was lost.");
+      });
+      rtc.on("token-privilege-did-expire", () => this.fail(run, "The listening pass expired. Press Listen in to join again."));
+
+      const uid = String(t.uid);
+      await rtc.join(t.appId, t.channel, t.token, /^\d+$/.test(uid) ? Number(uid) : uid);
+      if (run !== this.run) { try { await rtc.leave(); } catch { /* ignore */ } return; }
+      this.status = "listening";
+      this.emit();
+    } catch (err) {
+      if (run !== this.run) return;
+      await this.release();
+      this.status = "error";
+      this.error = err && err.code === "NOT_RUNNING"
+        ? "That negotiation has already finished."
+        : (err && err.message) || "Could not join the negotiation call.";
+      this.emit();
+    }
+  }
+
+  async fail(run, message) {
+    if (run !== this.run) return;
+    this.run++;
+    await this.release();
+    this.status = "error";
+    this.error = message;
+    this.emit();
+  }
+
+  async release() {
+    const rtc = this.rtc;
+    this.rtc = null;
+    for (const t of this.tracks.values()) { try { t.stop(); } catch { /* ignore */ } }
+    this.tracks.clear();
+    if (rtc) { try { await rtc.leave(); } catch { /* ignore */ } }
+  }
+
+  async stop() {
+    this.run++;
+    await this.release();
+    const wasActive = this.status !== "idle";
+    this.status = "idle";
+    this.error = null;
+    if (wasActive) this.emit();
+    this.negotiationId = null;
   }
 }

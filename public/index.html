@@ -22,7 +22,7 @@
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#call">Skip to the call</a>
+  <a class="skip-link" id="call-skip" href="#call">Skip to the call</a>
 
   <header class="appbar">
     <div class="brand">
@@ -50,6 +50,45 @@
   </header>
 
   <div class="banner" id="banner" hidden></div>
+
+  <!-- First run only: shown when POST /api/session answers BUSINESS_DETAILS_REQUIRED. -->
+  <section class="panel onboard" id="onboarding" aria-labelledby="onboard-title" hidden>
+    <div class="panel-head">
+      <div class="titles">
+        <h1 class="panel-title" id="onboard-title">Set up your business</h1>
+        <p class="panel-sub">Sahay uses these details on calls and on purchase orders. You only do this once.</p>
+      </div>
+    </div>
+    <form id="onboard-form" novalidate>
+      <div class="field">
+        <label for="ob-name">Business name</label>
+        <input id="ob-name" name="name" type="text" autocomplete="organization" maxlength="120" required aria-describedby="ob-name-error">
+        <p class="field-error" id="ob-name-error" hidden></p>
+      </div>
+      <div class="field">
+        <label for="ob-owner">Your name <span class="optional">(optional)</span></label>
+        <input id="ob-owner" name="ownerName" type="text" autocomplete="name" maxlength="120" aria-describedby="ob-owner-error">
+        <p class="field-error" id="ob-owner-error" hidden></p>
+      </div>
+      <div class="field">
+        <label for="ob-city">City</label>
+        <input id="ob-city" name="city" type="text" autocomplete="address-level2" maxlength="80" required aria-describedby="ob-city-error">
+        <p class="field-error" id="ob-city-error" hidden></p>
+      </div>
+      <fieldset class="field" id="ob-language" aria-describedby="ob-language-hint ob-language-error">
+        <legend>Language for calls</legend>
+        <p class="field-hint" id="ob-language-hint">Sahay starts in this language and switches when you speak another.</p>
+        <div class="choices">
+          <label class="choice" for="ob-lang-hi"><input type="radio" id="ob-lang-hi" name="language" value="hi-IN"><span lang="hi">हिन्दी</span><span class="choice-sub">Hindi</span></label>
+          <label class="choice" for="ob-lang-kn"><input type="radio" id="ob-lang-kn" name="language" value="kn-IN"><span lang="kn">ಕನ್ನಡ</span><span class="choice-sub">Kannada</span></label>
+          <label class="choice" for="ob-lang-en"><input type="radio" id="ob-lang-en" name="language" value="en-IN"><span>English</span></label>
+        </div>
+        <p class="field-error" id="ob-language-error" hidden></p>
+      </fieldset>
+      <div class="notice error" id="ob-form-error" role="alert" hidden></div>
+      <button class="btn btn-primary btn-wide" id="ob-submit" type="submit">Continue</button>
+    </form>
+  </section>
 
   <main class="console" id="main">
     <!-- Left: the call and its transcript -->
@@ -190,7 +229,7 @@
           <div class="panel-head">
             <div class="titles">
               <h2 class="panel-title" id="order-title">Order</h2>
-              <p class="panel-sub">Purchase order, PDF and payment link.</p>
+              <p class="panel-sub">Purchase order, PDF, payment link and follow-ups.</p>
             </div>
             <span class="chip amber">Razorpay test mode</span>
           </div>
