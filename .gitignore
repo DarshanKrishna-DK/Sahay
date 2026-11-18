@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+node_modules/
+data/
+*.log
+.claude/settings.local.json
+.claude/worktrees/
+docs/build/evidence/**/*.wav
+# local tooling and working notes - never pushed
+docs/
+.claude/
+.mcp.json
+.agents/
+CLAUDE.md
+AGENTS.md
+.vscode/
+.idea/
+*.wav
