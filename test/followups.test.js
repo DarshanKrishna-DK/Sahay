@@ -1,0 +1,128 @@
+"use strict";
+
+Object.assign(process.env, {
+  DB_FILE: ":memory:",
+  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
+  TELEGRAM_BOT_TOKEN: "123456:test-bot-token",
+});
+
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const followups = require("../src/followups");
+const telegram = require("../src/notify/telegram");
+const repo = require("../src/db/repo");
+const events = require("../src/events");
+const approvals = require("../src/approvals");
+const orders = require("../src/orders");
+
+const HOUR = 60 * 60 * 1000;
+
+function fakeTelegram(t) {
+  const sent = [];
+  telegram.setFetch(async (url, init) => {
+    const method = String(url).split("/").pop();
+    sent.push({ method, body: typeof init.body === "string" ? JSON.parse(init.body) : init.body });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: sent.length } }), { status: 200 });
+  });
+  t.after(() => telegram.setFetch(null));
+  return sent;
+}
+
+/** A real order through the approval gate: 50 kg rice at 62/kg + 150 freight, 3 days lead time. */
+async function seedOrder({ language = "hi-IN", leadTime = 3 } = {}) {
+  const businessId = repo.newId("biz");
+  repo.createBusiness(businessId, { name: "Asha Kirana", city: "Bengaluru", language });
+  const need = repo.createRequirement(businessId, { item: "basmati rice", quantity: 50, unit: "kg" });
+  const vendor = repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name: "Lakshmi Traders" });
+  const negotiation = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: vendor.id, counterpart: "human" });
+  const quote = repo.createQuote(businessId, {
+    requirement_id: need.id, vendor_id: vendor.id, negotiation_id: negotiation.id,
+    unit_price: 62, unit: "kg", lead_time_days: leadTime, freight: 150, landed_cost: 3250,
+  });
+  const { approval } = approvals.requestApproval(businessId, quote.id);
+  approvals.confirmApproval(businessId, approval.id, { decision: "approve", via: "button" });
+  const order = await orders.createOrder(businessId, approval.id);
+  return { businessId, order };
+}
+
+test("scheduleForOrder creates payment_due (+24 h) and delivery_check (+lead time) with native-script messages, once", async () => {
+  const { businessId, order } = await seedOrder({ language: "hi-IN", leadTime: 3 });
+  const now = Date.parse("2026-11-19T10:00:00Z");
+  const rows = followups.scheduleForOrder(businessId, order.id, { now });
+  assert.equal(rows.length, 2);
+  const [pay, delivery] = rows;
+  assert.equal(pay.kind, "payment_due");
+  assert.equal(pay.due_at, new Date(now + 24 * HOUR).toISOString());
+  assert.equal(pay.message, `भुगतान बाकी है: ऑर्डर ${order.po_number}, 3250 रुपये।`);
+  assert.equal(delivery.kind, "delivery_check");
+  assert.equal(delivery.due_at, new Date(now + 3 * 24 * HOUR).toISOString());
+  assert.equal(followups.scheduleForOrder(businessId, order.id, { now }).length, 0, "idempotent");
+});
+
+test("no delivery check is invented when the vendor gave no lead time", async () => {
+  const { businessId, order } = await seedOrder({ leadTime: null });
+  const rows = followups.scheduleForOrder(businessId, order.id);
+  assert.deepEqual(rows.map((r) => r.kind), ["payment_due"]);
+});
+
+test("tick fires what is due: followup.fired event + Telegram to the linked chat; later rows wait", async (t) => {
+  const sent = fakeTelegram(t);
+  const { businessId, order } = await seedOrder({ language: "en-IN" });
+  repo.setTelegramLink(businessId, "321");
+  const now = Date.now();
+  followups.scheduleForOrder(businessId, order.id, { now });
+  const fired = [];
+  const stop = events.subscribe(businessId, (e) => e.type === "followup.fired" && fired.push(e.data));
+
+  assert.equal(await followups.tick({ now: now + HOUR }), 0, "nothing due yet");
+  await followups.tick({ now: now + 25 * HOUR });
+  stop();
+  const mine = fired.filter((d) => d.orderId === order.id);
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].kind, "payment_due");
+  assert.equal(mine[0].message, `Payment is due: order ${order.po_number}, 3250 rupees.`);
+  assert.ok(sent.some((s) => s.method === "sendMessage" && s.body.chat_id === "321" && s.body.text === mine[0].message));
+  const rows = repo.listFollowups(businessId, { order_id: order.id });
+  assert.equal(rows.find((r) => r.kind === "payment_due").status, "fired");
+  assert.equal(rows.find((r) => r.kind === "delivery_check").status, "scheduled");
+});
+
+test("a follow-up whose order is already settled is cancelled, not fired", async () => {
+  const { businessId, order } = await seedOrder();
+  const now = Date.now();
+  followups.scheduleForOrder(businessId, order.id, { now });
+  orders.advanceOrder(businessId, order.id, "cancelled");
+  await followups.tick({ now: now + 10 * 24 * HOUR });
+  const rows = repo.listFollowups(businessId, { order_id: order.id });
+  assert.ok(rows.every((r) => r.status === "cancelled"), JSON.stringify(rows.map((r) => r.status)));
+});
+
+test("order.created schedules follow-ups and sends the confirmed order with its PO PDF; payment.link sends the link", async (t) => {
+  const sent = fakeTelegram(t);
+  const { businessId, order } = await seedOrder({ language: "en-IN" });
+  repo.setTelegramLink(businessId, "654");
+  await followups.onEvent({ businessId, type: "order.created", data: { orderId: order.id, poNumber: order.po_number, vendor: "Lakshmi Traders", amount: 3250 } });
+  assert.equal(repo.listFollowups(businessId, { order_id: order.id }).length, 2);
+  assert.equal(sent[0].method, "sendMessage");
+  assert.equal(sent[0].body.text, `Order confirmed: ${order.po_number}, Lakshmi Traders, 3250 rupees. The purchase order is attached.`);
+  assert.equal(sent[1].method, "sendDocument");
+
+  await followups.onEvent({ businessId, type: "payment.link", data: { orderId: order.id, poNumber: order.po_number, url: "https://rzp.io/i/abc" } });
+  assert.equal(sent[2].body.text, `Payment link (Razorpay test mode) for order ${order.po_number}: https://rzp.io/i/abc`);
+});
+
+test("a failing Telegram send becomes an error event, never a crash", async (t) => {
+  telegram.setFetch(async () => new Response(JSON.stringify({ ok: false, description: "Forbidden: bot was blocked by the user" }), { status: 403 }));
+  t.after(() => telegram.setFetch(null));
+  const { businessId, order } = await seedOrder();
+  repo.setTelegramLink(businessId, "1");
+  const errors = [];
+  const stop = events.subscribe(businessId, (e) => e.type === "error" && errors.push(e.data));
+  const now = Date.now();
+  followups.scheduleForOrder(businessId, order.id, { now });
+  await followups.tick({ now: now + 25 * HOUR });
+  stop();
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].scope, "telegram");
+});
