@@ -34,6 +34,7 @@ const strategy = require("./strategy");
 const llm = require("../llm");
 const { comparableListedPrice } = require("../procurement/scoring");
 const { computeLandedCost } = require("../procurement/landed-cost");
+const { sameUnit, unitWord } = require("../procurement/units");
 const agent = require("../agora/agent");
 const { buildRtcRtmToken } = require("../agora/token");
 const vendorAgent = require("./vendor-agent");
@@ -117,7 +118,7 @@ const buyerLine = (key, language, vars = {}) => BUYER_LINES[key][langKey(languag
 function negotiatorPrompt(rt) {
   const script = rt.language === "kn-IN" ? "Kannada script" : rt.language === "en-IN" ? "English" : "Hindi in Devanagari script";
   return [
-    `You are Sahay, an automated assistant negotiating to buy ${rt.requirement.item} for ${rt.business.name}. You speak to a vendor${rt.counterpart === "simulated" ? " who is a simulated vendor in a demo" : ""}.`,
+    `You are Sahay, an automated assistant negotiating to buy ${itemSpoken(rt)} for ${rt.business.name}. You speak to a vendor${rt.counterpart === "simulated" ? " who is a simulated vendor in a demo" : ""}.`,
     "The system has already said that you are an automated assistant. Do not repeat it.",
     `Speak only ${script}. One or two short sentences per turn. No lists, no ids.`,
     "First call get_negotiation_brief and say its `say` text word for word.",
@@ -130,7 +131,12 @@ function negotiatorPrompt(rt) {
 /* ----------------------------------------------------------- runtime --- */
 
 function unitSpoken(rt, many = false) {
-  return registry().unitWord(rt.requirement.unit, rt.language, many);
+  return unitWord(rt.requirement.unit, rt.language, many);
+}
+
+/** The item in the negotiation language (the IndiaMART category when the owner's words are in another script). */
+function itemSpoken(rt) {
+  return registry().spokenItem(rt.businessId, rt.requirement, rt.language);
 }
 
 function runtimeFor(ctx) {
@@ -156,7 +162,7 @@ function brief(ctx) {
       quantity: money(r.quantity),
       unit: unitSpoken(rt, r.quantity !== 1),
       unitOne: unitSpoken(rt),
-      item: r.item,
+      item: itemSpoken(rt),
       city: r.city,
     }),
   };
@@ -176,7 +182,7 @@ function applyVendorOffer(rt, args) {
   if (rt.state !== "open") {
     return { action: rt.state === "agreed" ? "accept" : "walk_away", price: rt.agreedPrice ?? null, final: true, say: "" };
   }
-  if (args.unit && registry().canonicalUnit(args.unit) !== registry().canonicalUnit(rt.requirement.unit)) {
+  if (args.unit && !sameUnit(args.unit, rt.requirement.unit)) {
     return { action: "clarify", price: null, round: rt.round, say: buyerLine("clarify_unit", rt.language, { unit }) };
   }
   const ask = Number(args.price_per_unit);
@@ -324,7 +330,7 @@ async function startVendorAgent(rt, { remoteUid, idleTimeout = 60 }) {
     voiceId: vendorAgent.VENDOR_VOICE_ID,
     prompt: vendorAgent.vendorPrompt({
       language: rt.language,
-      item: rt.requirement.item,
+      item: itemSpoken(rt),
       quantity: rt.requirement.quantity,
       unit: rt.requirement.unit,
       unitSpoken: unitSpoken(rt),
@@ -486,7 +492,7 @@ async function extractQuote(rt, mode, signal) {
   if (Math.abs(price - rt.agreedPrice) > Math.max(0.01, rt.agreedPrice * 0.005)) return { rejected: "price_differs_from_agreed", extracted: price, agreed: rt.agreedPrice };
   if (price > rt.reservation) return { rejected: "above_reservation" };
   if (rt.requirement.max_price != null && price > rt.requirement.max_price) return { rejected: "above_owner_max" };
-  if (fields.unit && registry().canonicalUnit(fields.unit) !== registry().canonicalUnit(rt.requirement.unit)) return { rejected: "unit_mismatch" };
+  if (fields.unit && !sameUnit(fields.unit, rt.requirement.unit)) return { rejected: "unit_mismatch" };
   if (!fields.quoted_sentence || !saidByVendor(fields.quoted_sentence, rt.turns)) return { rejected: "quoted_sentence_not_in_transcript" };
 
   const freight = rt.terms.freight ?? (Number.isFinite(fields.freight) ? fields.freight : null);
@@ -569,9 +575,12 @@ async function runNegotiation(rt, job) {
 /**
  * Start a negotiation job. Validates everything that would make the numbers
  * dishonest before any agent starts. Returns { jobId, negotiationId, joinUrl? }.
+ * `language` is the language of the negotiation itself; refusals are said in
+ * `sayLanguage` (the owner's reply language), defaulting to it.
  */
-async function startNegotiation({ businessId, ownerSessionId = null, requirementId, vendorId, counterpart, language }) {
-  const lang = langKey(language);
+async function startNegotiation({ businessId, ownerSessionId = null, requirementId, vendorId, counterpart, language, sayLanguage }) {
+  const negotiationLanguage = langKey(language);
+  const lang = langKey(sayLanguage ?? language);
   const requirement = repo.getRequirement(businessId, requirementId);
   const vendor = repo.getVendor(businessId, vendorId);
   if (!requirement || !vendor || vendor.requirement_id !== requirementId) {
@@ -621,7 +630,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     requirement,
     vendor,
     counterpart,
-    language: lang,
+    language: negotiationLanguage,
     reservation,
     open,
     vendorPolicy: policy,

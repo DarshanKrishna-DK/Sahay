@@ -5,7 +5,8 @@
  * asked for an order or a number.
  */
 
-const { computeLandedCost, normaliseUnit, unitRatio, UnitMismatchError } = require('./landed-cost');
+const { computeLandedCost, UnitMismatchError } = require('./landed-cost');
+const { normaliseUnit, unitRatio } = require('./units');
 const { sameCity } = require('../discovery/slug');
 
 /**
@@ -18,6 +19,9 @@ const WEIGHTS = Object.freeze({ price: 35, locality: 25, moq: 20, availability: 
 const CONTAINER_UNITS = new Set(['bag', 'box', 'pack', 'packet']);
 
 const round2 = (n) => Number(n.toFixed(2));
+/** Unknown values sort after known ones. */
+const ascending = (a, b) => (a ?? Infinity) - (b ?? Infinity) || 0;
+const descending = (a, b) => (b ?? -Infinity) - (a ?? -Infinity) || 0;
 const clamp01 = (n) => Math.max(0, Math.min(1, n));
 
 /**
@@ -43,12 +47,16 @@ function comparableListedPrice(vendor, unit) {
  * stands in for a measurement (the data was missing or not comparable); `flag` marks a hard
  * fact the shortlist should know about.
  */
+/** A price the owner cannot compare (none listed, or per a bag of unstated size) is worth asking about, but ranks low. */
+const UNKNOWN_PRICE = 0.15;
+
 function scorePrice(vendor, requirement) {
-  if (vendor.listed_price == null) return { value: 0.15, assumed: 'price_not_listed' }; // worth asking, but ranks low
+  if (vendor.listed_price == null) return { value: UNKNOWN_PRICE, assumed: 'price_not_listed' };
+  const comparable = comparableListedPrice(vendor, requirement.unit);
+  // Rs 25,000 per bag of unknown size says nothing about the price per kg: unknown, never neutral.
+  if (!comparable) return { value: UNKNOWN_PRICE, assumed: 'listed_unit_not_comparable', flag: 'price_not_comparable' };
   const reference = requirement.target_price ?? requirement.max_price;
   if (reference == null) return { value: 0.6, assumed: 'no_price_to_compare_against' };
-  const comparable = comparableListedPrice(vendor, requirement.unit);
-  if (!comparable) return { value: 0.6, assumed: 'listed_unit_not_comparable' };
   // At or under the reference scores full; 30% over scores zero.
   return { value: clamp01((1.3 - comparable.value / reference) / 0.3) };
 }
@@ -106,6 +114,23 @@ function scoreVendor(vendor, requirement) {
   return { score: round2(score), breakdown, assumed, flags };
 }
 
+/**
+ * Vendors best first: score, then the lower price per requirement unit (a price that cannot be
+ * compared sorts after every comparable one), then the listing with more ratings. Stable, so
+ * equal vendors keep the order they were found in. Returns a new array.
+ * @param {object[]} vendors     vendors rows (score, listed_price, listed_unit, pack_size?, rating_count)
+ * @param {{unit: string|null}} requirement
+ */
+function rankVendors(vendors, requirement) {
+  return vendors
+    .map((vendor, index) => ({ vendor, index, price: comparableListedPrice(vendor, requirement?.unit)?.value ?? null }))
+    .sort((a, b) => descending(a.vendor.score, b.vendor.score)
+      || ascending(a.price, b.price)
+      || descending(a.vendor.rating_count, b.vendor.rating_count)
+      || a.index - b.index)
+    .map(({ vendor }) => vendor);
+}
+
 /* ------------------------------------------------------------------ deal ranking --- */
 
 const POLICY_FLAGS = ['over_max_price', 'moq_exceeds_quantity', 'misses_delivery_date'];
@@ -157,10 +182,6 @@ function assessDeal(quote, requirement, now) {
     status,
   };
 }
-
-/** Unknown values sort after known ones. */
-const ascending = (a, b) => (a ?? Infinity) - (b ?? Infinity) || 0;
-const descending = (a, b) => (b ?? -Infinity) - (a ?? -Infinity) || 0;
 
 function compareDeals(a, b) {
   return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status)
@@ -235,4 +256,4 @@ function rankDeals(quotes, requirement, { now = new Date() } = {}) {
   return deals.map((deal, index) => ({ ...deal, rank: index + 1, reason: reasonFor(deal, best, requirement) }));
 }
 
-module.exports = { WEIGHTS, scoreVendor, comparableListedPrice, rankDeals };
+module.exports = { WEIGHTS, scoreVendor, comparableListedPrice, rankVendors, rankDeals };

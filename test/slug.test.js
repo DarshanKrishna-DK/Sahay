@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dns = require('node:dns/promises');
 
-const { candidateSlugs, suggestSlugs, resolveSlug, citySlug, sameCity, clearSlugCache } = require('../src/discovery/slug');
+const { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, sameCity, clearSlugCache } = require('../src/discovery/slug');
 const { DiscoveryError } = require('../src/discovery/indiamart');
 const { LLMError } = require('../src/llm');
 
@@ -124,6 +124,22 @@ test('citySlug returns null when there is nothing to build a slug from', () => {
   assert.equal(citySlug(''), null);
   assert.equal(citySlug(null), null);
   assert.equal(citySlug(undefined), null);
+});
+
+test('cityName stores one English name for every spelling of a known city', () => {
+  for (const said of ['बेंगलुरु', 'बैंगलोर', 'ಬೆಂಗಳೂರು', 'Bangalore', 'bengaluru', 'Bengaluru, Karnataka']) assert.equal(cityName(said), 'Bengaluru', said);
+  assert.equal(cityName('ಮೈಸೂರು'), 'Mysuru');
+  assert.equal(cityName('hubli'), 'Hubballi');
+  assert.equal(cityName('नई दिल्ली'), 'Delhi');
+  assert.equal(cityName('हैदराबाद'), 'Hyderabad');
+  assert.equal(citySlug(cityName('ಬೆಂಗಳೂರು')), 'bengaluru', 'the stored name still finds the IndiaMART page');
+});
+
+test('cityName keeps an unknown city as said and never transliterates by guess', () => {
+  assert.equal(cityName('indore'), 'Indore');
+  assert.equal(cityName('इंदौर'), 'इंदौर');
+  assert.equal(cityName('  '), null);
+  assert.equal(cityName(null), null);
 });
 
 test('sameCity treats two names of one city as equal and never matches an unknown', () => {

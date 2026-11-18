@@ -151,6 +151,15 @@ test("systemPrompt encodes the voice rules and holds no ids", () => {
   assert.ok(!prompt.includes("biz_secret_id"));
 });
 
+test("systemPrompt (E2E 2026-11-19): reply_language on every tool, no ids needed, sourced vendors are never called simulated", () => {
+  const prompt = agent.systemPrompt({ name: "Sri Lakshmi Stores", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /Every tool takes reply_language: always set it to the language of the owner's last sentence \(hi-IN for Hindi, kn-IN for Kannada, en-IN for English\)/);
+  assert.match(prompt, /normally pass none/);
+  assert.match(prompt, /vendorRank/);
+  assert.match(prompt, /Sourcing searches real vendors listed on IndiaMART\. Never call those vendors, or the search, simulated\./);
+  assert.match(prompt, /use the word simulated for nothing else/);
+});
+
 test("disclosure states it is an automated assistant, in each language's script", () => {
   assert.match(agent.disclosureText({ name: "Asha", language: "hi-IN" }), /^नमस्ते, मैं सहाय हूँ, Asha का स्वचालित सहायक।/);
   assert.match(agent.disclosureText({ name: "Asha", language: "en-IN" }), /^Hi, this is Sahay, an automated assistant for Asha\./);
@@ -241,11 +250,11 @@ async function until(predicate, ms = 5000) {
 test("narrator speaks milestones in the business script, once per batch, spaced, and skips what a tool already said", async (t) => {
   const businessId = seedBusiness("hi-IN");
   const spoken = [];
-  narrator.configure({ speak: async (agentId, text) => spoken.push({ agentId, text }), minGapMs: 5, vendorDebounceMs: 20 });
+  narrator.configure({ speak: async (agentId, text) => spoken.push({ agentId, text }), minGapMs: 5, vendorDebounceMs: 20, holdMs: 0 });
   const stop = narrator.start();
   t.after(() => {
     stop();
-    narrator.configure({ speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }), minGapMs: 5000, vendorDebounceMs: 2500 });
+    narrator.configure({ speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }), minGapMs: 5000, vendorDebounceMs: 2500, holdMs: 6000 });
   });
   const session = repo.createSession(businessId, { kind: "owner", channel: "own-n1", status: "active" });
   narrator.attach(businessId, { agentId: "AGN", sessionId: session.id, language: "hi-IN" });
@@ -255,7 +264,7 @@ test("narrator speaks milestones in the business script, once per batch, spaced,
   for (let i = 0; i < 3; i++) events.emit(businessId, "vendor.found", { requirementId: "req_1", vendor: { id: `v${i}` } });
   await until(() => spoken.some((s) => s.text.startsWith("3 विक्रेता मिल गए")));
   events.emit(businessId, "vendor.found", { requirementId: "req_1", vendor: { id: "v9" } });
-  events.emit(businessId, "job.done", { jobId: "job_1", kind: "sourcing", result: { requirementId: "req_1", count: 4, shortlist: [{ name: "Lakshmi Traders", listedPrice: 92 }] } });
+  events.emit(businessId, "job.done", { jobId: "job_1", kind: "sourcing", result: { requirementId: "req_1", unit: "kg", count: 4, shortlist: [{ name: "Bag Co", listedPrice: 25000, comparablePrice: null }, { name: "Lakshmi Traders", listedPrice: 92, comparablePrice: 92 }] } });
   events.emit(businessId, "negotiation.ended", {
     negotiationId: "neg_1",
     status: "agreed",
@@ -268,16 +277,56 @@ test("narrator speaks milestones in the business script, once per batch, spaced,
   assert.ok(spoken.every((s) => s.agentId === "AGN"));
   assert.ok(!texts.includes("विक्रेताओं की खोज शुरू हो गई है।"), "suppressed job.started is not spoken");
   assert.equal(texts.filter((x) => x.startsWith("3 विक्रेता मिल गए")).length, 1, "first batch spoken once with its count");
-  assert.ok(texts.some((x) => x === "खोज पूरी हुई, 4 विक्रेता मिले; सबसे ऊपर Lakshmi Traders, लिस्टिंग भाव 92 रुपये।"));
+  assert.ok(texts.some((x) => x === "खोज पूरी हुई, 4 विक्रेता मिले; सबसे अच्छे Lakshmi Traders, 92 रुपये प्रति किलो।"), "the best comparable vendor, never the per-bag price");
   assert.ok(texts.some((x) => x.includes("सिम्युलेटेड विक्रेता") && x.includes("88.5 रुपये प्रति किलो")));
   assert.ok(texts.includes("मोल-भाव शुरू हो गया है।"));
-  for (const text of texts) assert.ok(!/[a-z]{4,}/.test(text.replace(/Lakshmi Traders/g, "")), `no romanised Hindi in "${text}"`);
+  for (const text of texts) assert.ok(!/[a-z]{4,}/.test(text.replace(/Lakshmi Traders|Bag Co/g, "")), `no romanised Hindi in "${text}"`);
 
   narrator.detach(businessId);
   const before = spoken.length;
   events.emit(businessId, "order.created", { orderId: "o1", poNumber: "SAHAY/2026/0001" });
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(spoken.length, before, "no narration without an active call");
+});
+
+test("narrator holds a fast job's result until the tool's own line has had time, and drops the vendor count", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push({ text, at: Date.now() }), minGapMs: 5, vendorDebounceMs: 20, holdMs: 250 });
+  t.after(() => narrator.configure({ speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }), minGapMs: 5000, vendorDebounceMs: 2500, holdMs: 6000 }));
+  const state = narrator.attach(businessId, { agentId: "AGH", sessionId: null, language: "hi-IN" });
+  state.lastSpokeAt = 0;
+  t.after(() => narrator.detach(businessId));
+
+  narrator.suppress(businessId, "job.started"); // start_sourcing's own say covers "search started"
+  const started = Date.now();
+  narrator.onEvent({ businessId, type: "job.started", data: { jobId: "job_fast", kind: "sourcing" } });
+  for (let i = 0; i < 3; i++) narrator.onEvent({ businessId, type: "vendor.found", data: { requirementId: "req_f", vendor: { id: `v${i}` } } });
+  await new Promise((r) => setTimeout(r, 40)); // the job is done well inside the hold window
+  narrator.onEvent({
+    businessId,
+    type: "job.done",
+    data: { jobId: "job_fast", kind: "sourcing", result: { requirementId: "req_f", unit: "kg", count: 3, shortlist: [{ name: "Babu Trading Co.", comparablePrice: 100 }] } },
+  });
+  await until(() => spoken.length >= 1, 2000);
+  await new Promise((r) => setTimeout(r, 80));
+  // Timestamps, not a mid-wait check, so a slow machine cannot make this flaky (timers may fire ~1 ms early).
+  assert.ok(spoken[0].at - started >= 245, `nothing about the result before the hold ends: spoken ${spoken[0].at - started} ms after the start`);
+  assert.deepEqual(spoken.map((s) => s.text), ["खोज पूरी हुई, 3 विक्रेता मिले; सबसे अच्छे Babu Trading Co., 100 रुपये प्रति किलो।"], "one result line, no separate vendor count");
+});
+
+test("narrator follows the owner's reply language once a tool reports it", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), minGapMs: 5, holdMs: 0 });
+  t.after(() => narrator.configure({ speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }), minGapMs: 5000, holdMs: 6000 }));
+  const state = narrator.attach(businessId, { agentId: "AGL", sessionId: null, language: "hi-IN" });
+  state.lastSpokeAt = 0;
+  t.after(() => narrator.detach(businessId));
+  narrator.useLanguage(businessId, "en-IN");
+  narrator.onEvent({ businessId, type: "job.failed", data: { jobId: "j_en", kind: "sourcing" } });
+  await until(() => spoken.length >= 1, 2000);
+  assert.equal(spoken[0], "The vendor search could not be completed; the reason is on the screen.");
 });
 
 test("narrator queue is bounded: a flood keeps only the newest lines", async (t) => {

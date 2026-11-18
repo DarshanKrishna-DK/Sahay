@@ -12,6 +12,7 @@
 const db = require("./db");
 const events = require("./events");
 const repo = require("./db/repo");
+const { sameUnit, unitWord } = require("./procurement/units");
 
 class ApprovalError extends Error {
   constructor(code, message) {
@@ -19,41 +20,6 @@ class ApprovalError extends Error {
     this.name = "ApprovalError";
     this.code = code;
   }
-}
-
-/* -------------------------------------------------------------- units --- */
-
-/** Units Sahay can compare and say aloud. `en` is [one, many]. */
-const UNITS = {
-  kg: { en: ["kg", "kg"], hi: "किलो", kn: "ಕೆಜಿ", names: ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms", "किलो", "किलोग्राम", "ಕೆಜಿ", "ಕಿಲೋ"] },
-  gram: { en: ["gram", "grams"], hi: "ग्राम", kn: "ಗ್ರಾಂ", names: ["g", "gm", "gms", "gram", "grams", "ग्राम", "ಗ್ರಾಂ"] },
-  quintal: { en: ["quintal", "quintals"], hi: "क्विंटल", kn: "ಕ್ವಿಂಟಾಲ್", names: ["quintal", "quintals", "qtl", "क्विंटल", "ಕ್ವಿಂಟಾಲ್"] },
-  tonne: { en: ["tonne", "tonnes"], hi: "टन", kn: "ಟನ್", names: ["ton", "tons", "tonne", "tonnes", "mt", "टन", "ಟನ್"] },
-  litre: { en: ["litre", "litres"], hi: "लीटर", kn: "ಲೀಟರ್", names: ["l", "ltr", "litre", "litres", "liter", "liters", "लीटर", "ಲೀಟರ್"] },
-  metre: { en: ["metre", "metres"], hi: "मीटर", kn: "ಮೀಟರ್", names: ["m", "mtr", "metre", "metres", "meter", "meters", "मीटर", "ಮೀಟರ್"] },
-  piece: { en: ["piece", "pieces"], hi: "पीस", kn: "ಪೀಸ್", names: ["pc", "pcs", "piece", "pieces", "nos", "पीस", "नग", "ಪೀಸ್"] },
-  bag: { en: ["bag", "bags"], hi: "बोरी", kn: "ಚೀಲ", names: ["bag", "bags", "बोरी", "बैग", "ಚೀಲ"] },
-  box: { en: ["box", "boxes"], hi: "डिब्बा", kn: "ಬಾಕ್ಸ್", names: ["box", "boxes", "डिब्बा", "ಬಾಕ್ಸ್"] },
-  packet: { en: ["packet", "packets"], hi: "पैकेट", kn: "ಪ್ಯಾಕೆಟ್", names: ["packet", "packets", "pkt", "पैकेट", "ಪ್ಯಾಕೆಟ್"] },
-  dozen: { en: ["dozen", "dozen"], hi: "दर्जन", kn: "ಡಜನ್", names: ["dozen", "doz", "दर्जन", "ಡಜನ್"] },
-};
-
-const unitText = (unit) => String(unit ?? "").normalize("NFC").trim().toLowerCase().replace(/\.+$/, "");
-
-const UNIT_BY_NAME = new Map(
-  Object.entries(UNITS).flatMap(([key, unit]) => unit.names.map((name) => [unitText(name), key])),
-);
-
-/** The unit two quantities must share to be multiplied; an unknown unit is compared as written. */
-function canonicalUnit(unit) {
-  const text = unitText(unit);
-  return UNIT_BY_NAME.get(text) ?? text;
-}
-
-function spokenUnit(unit, lang, quantity) {
-  const known = UNITS[canonicalUnit(unit)];
-  if (!known) return String(unit).trim();
-  return lang === "en" ? known.en[quantity === 1 ? 0 : 1] : known[lang];
 }
 
 /* ----------------------------------------------------------- the deal --- */
@@ -80,7 +46,7 @@ function loadDeal(businessId, quoteId) {
   if (!requirement.item || !requirement.quantity || !requirement.unit) {
     throw new ApprovalError("INCOMPLETE_DEAL", "The requirement needs an item, a quantity and a unit before a deal can be approved.");
   }
-  if (!quote.unit || canonicalUnit(quote.unit) !== canonicalUnit(requirement.unit)) {
+  if (!quote.unit || !sameUnit(quote.unit, requirement.unit)) {
     throw new ApprovalError(
       "UNIT_MISMATCH",
       `The vendor quoted per "${quote.unit ?? "unknown unit"}" but the requirement is in "${requirement.unit}"; the total cannot be worked out.`,
@@ -141,7 +107,7 @@ const READBACK = {
 function buildReadback(deal, language = deal.language) {
   const sentence = READBACK[language];
   if (!sentence) throw new ApprovalError("UNSUPPORTED_LANGUAGE", `No read-back wording for "${language}".`);
-  return sentence(deal, (quantity) => spokenUnit(deal.unit, language, quantity));
+  return sentence(deal, (quantity) => unitWord(deal.unit, language, quantity !== 1, { short: true }));
 }
 
 /** True when a stored approval still describes the deal as the database has it now. */

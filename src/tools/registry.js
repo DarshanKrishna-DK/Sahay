@@ -6,8 +6,14 @@
  *
  * `ctx = { businessId, sessionId, agentId, actor, toolScope }` is built ONLY from a
  * verified bearer (src/mcp-server.js) - never from tool arguments. Every result
- * the agent speaks carries `say`: one short sentence in the business language and
- * its own script, built here from stored data. Errors are ToolErrors with `say`.
+ * the agent speaks carries `say`: one short sentence in its own script, built here
+ * from stored data, in the language the owner just used (`reply_language`, else
+ * the business language). Errors are ToolErrors with `say`.
+ *
+ * Voice models relay opaque ids badly, so ids are optional: a missing id means
+ * "the current one" (latest requirement, best comparable vendor, best deal, the
+ * one approval or order waiting). A default is never a guess between several
+ * candidates: then the tool refuses with AMBIGUOUS and names the choices.
  *
  * Irreversible steps go through the business modules' own gates:
  * create_order -> orders.createOrder (approvals.assertApproved inside),
@@ -21,9 +27,10 @@ const approvals = require("../approvals");
 const orders = require("../orders");
 const payments = require("../orders/payments");
 const { findVendors } = require("../discovery/indiamart");
-const { scoreVendor, rankDeals } = require("../procurement/scoring");
-const { normaliseUnit } = require("../procurement/landed-cost");
-const { ToolError, toToolError, sayFor, langKey } = require("./errors");
+const { candidateSlugs, cityName } = require("../discovery/slug");
+const { scoreVendor, rankDeals, rankVendors, comparableListedPrice } = require("../procurement/scoring");
+const { canonicalUnit, unitWord, UNIT_CODES } = require("../procurement/units");
+const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
 
 /** Which agent may call a tool. The bearer's sessions row kind decides the scope. */
 const SCOPES = Object.freeze({ owner: "owner", negotiation: "negotiation" });
@@ -38,44 +45,6 @@ const HISTORY_RETRY_MS = 600;
 const round2 = (n) => Math.round(n * 100) / 100;
 /** Plain digits, as approvals.js does, so the speech engine reads them as numbers. */
 const money = (n) => String(round2(n));
-
-const UNIT_WORDS = {
-  kg: { "hi-IN": "किलो", "kn-IN": "ಕೆಜಿ", "en-IN": "kilogram" },
-  g: { "hi-IN": "ग्राम", "kn-IN": "ಗ್ರಾಂ", "en-IN": "gram" },
-  quintal: { "hi-IN": "क्विंटल", "kn-IN": "ಕ್ವಿಂಟಾಲ್", "en-IN": "quintal" },
-  tonne: { "hi-IN": "टन", "kn-IN": "ಟನ್", "en-IN": "tonne" },
-  litre: { "hi-IN": "लीटर", "kn-IN": "ಲೀಟರ್", "en-IN": "litre" },
-  ml: { "hi-IN": "मिलीलीटर", "kn-IN": "ಮಿಲಿಲೀಟರ್", "en-IN": "millilitre" },
-  metre: { "hi-IN": "मीटर", "kn-IN": "ಮೀಟರ್", "en-IN": "metre" },
-  piece: { "hi-IN": "पीस", "kn-IN": "ಪೀಸ್", "en-IN": "piece" },
-  bag: { "hi-IN": "बोरी", "kn-IN": "ಚೀಲ", "en-IN": "bag" },
-  box: { "hi-IN": "डिब्बा", "kn-IN": "ಬಾಕ್ಸ್", "en-IN": "box" },
-  pack: { "hi-IN": "पैक", "kn-IN": "ಪ್ಯಾಕ್", "en-IN": "pack" },
-  packet: { "hi-IN": "पैकेट", "kn-IN": "ಪ್ಯಾಕೆಟ್", "en-IN": "packet" },
-  dozen: { "hi-IN": "दर्जन", "kn-IN": "ಡಜನ್", "en-IN": "dozen" },
-};
-
-/** Unit names in Devanagari and Kannada script, mapped to landed-cost's canonical names. */
-const NATIVE_UNITS = new Map(
-  Object.entries(UNIT_WORDS).flatMap(([key, words]) => [[words["hi-IN"], key], [words["kn-IN"], key]]).concat([
-    ["किलोग्राम", "kg"], ["ಕಿಲೋ", "kg"], ["नग", "piece"], ["बैग", "bag"], ["ಕೆಜಿ", "kg"],
-  ]),
-);
-
-/** Canonical unit ("kg", "piece", ...) for English, Hindi or Kannada spellings; unknown units lower-cased. */
-function canonicalUnit(unit) {
-  if (unit == null) return null;
-  const text = String(unit).normalize("NFC").trim();
-  return normaliseUnit(NATIVE_UNITS.get(text) ?? text);
-}
-
-/** A unit as spoken; an unknown unit is said as written. English plural for many. */
-function unitWord(unit, language, many = false) {
-  if (!unit) return "";
-  const word = UNIT_WORDS[canonicalUnit(unit)]?.[langKey(language)];
-  if (!word) return String(unit).trim();
-  return language === "en-IN" && many ? (word === "box" ? "boxes" : `${word}s`) : word;
-}
 
 const SIM_LABEL = { "hi-IN": "सिम्युलेटेड विक्रेता", "kn-IN": "ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್", "en-IN": "simulated vendor" };
 
@@ -163,9 +132,64 @@ const PHRASES = {
     "en-IN": () => "No vendors have been found yet.",
   },
   shortlist: {
-    "hi-IN": (v) => `${v.count} विक्रेता हैं; सबसे ऊपर ${v.name}${v.city ? `, ${v.city}` : ""}${v.price ? `, लिस्टिंग भाव ${v.price} रुपये प्रति ${v.unit}` : ", लिस्टिंग में भाव नहीं लिखा"}।`,
-    "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರಿದ್ದಾರೆ; ಮೊದಲನೆಯವರು ${v.name}${v.city ? `, ${v.city}` : ""}${v.price ? `, ಪಟ್ಟಿಯ ಬೆಲೆ ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ` : ", ಪಟ್ಟಿಯಲ್ಲಿ ಬೆಲೆ ಇಲ್ಲ"}.`,
-    "en-IN": (v) => `${v.count} vendors; the top one is ${v.name}${v.city ? ` in ${v.city}` : ""}${v.price ? `, listed at ${v.price} rupees per ${v.unit}` : ", with no price in the listing"}.`,
+    "hi-IN": (v) => `${v.count} विक्रेता मिले, ${v.comparable} के भाव प्रति ${v.unit} में हैं; सबसे अच्छे ${v.name}${v.city ? `, ${v.city}` : ""}, ${v.price} रुपये प्रति ${v.unit}।`,
+    "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ${v.comparable} ಜನರ ಬೆಲೆ ಒಂದು ${v.unit}ಗೆ ಇದೆ; ಉತ್ತಮರು ${v.name}${v.city ? `, ${v.city}` : ""}, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ.`,
+    "en-IN": (v) => `${v.count} vendors found, ${v.comparable} with a price per ${v.unit}; the best is ${v.name}${v.city ? ` in ${v.city}` : ""}, at ${v.price} rupees per ${v.unit}.`,
+  },
+  shortlist_no_comparable: {
+    "hi-IN": (v) => `${v.count} विक्रेता मिले, पर किसी की लिस्टिंग में प्रति ${v.unit} भाव नहीं है; सबसे ऊपर ${v.name}।`,
+    "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ಆದರೆ ಯಾರ ಪಟ್ಟಿಯಲ್ಲೂ ಒಂದು ${v.unit}ಗೆ ಬೆಲೆ ಇಲ್ಲ; ಮೊದಲನೆಯವರು ${v.name}.`,
+    "en-IN": (v) => `${v.count} vendors found, but none lists a price per ${v.unit}; the top one is ${v.name}.`,
+  },
+  rank_out_of_range: {
+    "hi-IN": (v) => `सूची में केवल ${v.count} विक्रेता हैं।`,
+    "kn-IN": (v) => `ಪಟ್ಟಿಯಲ್ಲಿ ${v.count} ಮಾರಾಟಗಾರರು ಮಾತ್ರ ಇದ್ದಾರೆ.`,
+    "en-IN": (v) => `There are only ${v.count} vendors on the list.`,
+  },
+  no_comparable_vendor: {
+    "hi-IN": (v) => `किसी विक्रेता की लिस्टिंग में प्रति ${v.unit} भाव नहीं है, इसलिए सिम्युलेटेड विक्रेता नहीं बना सकती; किसी असली विक्रेता को लिंक से जोड़ूँ?`,
+    "kn-IN": (v) => `ಯಾವ ಮಾರಾಟಗಾರರ ಪಟ್ಟಿಯಲ್ಲೂ ಒಂದು ${v.unit}ಗೆ ಬೆಲೆ ಇಲ್ಲ, ಹಾಗಾಗಿ ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್ ಮಾಡಲು ಆಗುವುದಿಲ್ಲ; ನಿಜವಾದ ಮಾರಾಟಗಾರರನ್ನು ಲಿಂಕ್ ಮೂಲಕ ಸೇರಿಸಲೇ?`,
+    "en-IN": (v) => `No vendor lists a price per ${v.unit}, so I cannot base a simulated vendor on one; shall I invite a real vendor by link?`,
+  },
+  no_listed_price_try: {
+    "hi-IN": (v) => `${v.vendor} की लिस्टिंग में प्रति ${v.unit} भाव नहीं है; नंबर ${v.rank}, ${v.alt}, का भाव है, उनसे मोल-भाव करूँ?`,
+    "kn-IN": (v) => `${v.vendor} ಅವರ ಪಟ್ಟಿಯಲ್ಲಿ ಒಂದು ${v.unit}ಗೆ ಬೆಲೆ ಇಲ್ಲ; ಸಂಖ್ಯೆ ${v.rank}, ${v.alt}, ಅವರ ಬೆಲೆ ಇದೆ, ಅವರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡಲೇ?`,
+    "en-IN": (v) => `${v.vendor}'s listing has no price per ${v.unit}; number ${v.rank}, ${v.alt}, does. Shall I negotiate with them?`,
+  },
+  unit_unknown: {
+    "hi-IN": (v) => `"${v.unit}" इकाई मुझे समझ नहीं आई; किलो, क्विंटल, टन, लीटर, पीस, बोरी या डिब्बा, कौन सी?`,
+    "kn-IN": (v) => `"${v.unit}" ಘಟಕ ನನಗೆ ಅರ್ಥವಾಗಲಿಲ್ಲ; ಕೆಜಿ, ಕ್ವಿಂಟಾಲ್, ಟನ್, ಲೀಟರ್, ಪೀಸ್, ಚೀಲ ಅಥವಾ ಬಾಕ್ಸ್, ಯಾವುದು?`,
+    "en-IN": (v) => `I did not understand the unit "${v.unit}"; is it kilograms, quintals, tonnes, litres, pieces, bags or boxes?`,
+  },
+  no_requirement: {
+    "hi-IN": () => "पहले बताइए, क्या खरीदना है?",
+    "kn-IN": () => "ಮೊದಲು ಹೇಳಿ, ಏನು ಖರೀದಿಸಬೇಕು?",
+    "en-IN": () => "First tell me what you want to buy.",
+  },
+  no_jobs: {
+    "hi-IN": () => "अभी तक कोई खोज या मोल-भाव शुरू नहीं हुआ है।",
+    "kn-IN": () => "ಇನ್ನೂ ಯಾವ ಹುಡುಕಾಟ ಅಥವಾ ಚೌಕಾಸಿ ಶುರುವಾಗಿಲ್ಲ.",
+    "en-IN": () => "No search or negotiation has been started yet.",
+  },
+  no_pending_approval: {
+    "hi-IN": () => "अभी कोई मंज़ूरी बाकी नहीं है।",
+    "kn-IN": () => "ಈಗ ಬಾಕಿ ಇರುವ ಒಪ್ಪಿಗೆ ಇಲ್ಲ.",
+    "en-IN": () => "There is no approval waiting.",
+  },
+  choose: {
+    "hi-IN": (v) => `${v.n} विकल्प हैं: ${v.list}; कौन सा?`,
+    "kn-IN": (v) => `${v.n} ಆಯ್ಕೆಗಳಿವೆ: ${v.list}; ಯಾವುದು?`,
+    "en-IN": (v) => `There are ${v.n} choices: ${v.list}. Which one?`,
+  },
+  choice_deal: {
+    "hi-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["hi-IN"]})` : ""} ${v.total} रुपये`,
+    "kn-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["kn-IN"]})` : ""} ${v.total} ರೂಪಾಯಿ`,
+    "en-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["en-IN"]})` : ""} at ${v.total} rupees`,
+  },
+  choice_order: {
+    "hi-IN": (v) => `ऑर्डर ${v.po}`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po}`,
+    "en-IN": (v) => `order ${v.po}`,
   },
   negotiation_started_simulated: {
     "hi-IN": (v) => `${v.vendor} की लिस्टिंग के भाव पर बने सिम्युलेटेड विक्रेता से मोल-भाव शुरू कर दिया है, नतीजा आते ही बताऊँगी।`,
@@ -224,7 +248,7 @@ const PHRASES = {
   },
 };
 
-/** One sentence from the phrase book in the business language. */
+/** One sentence from the phrase book in `language` (hi-IN | kn-IN | en-IN). */
 function phrase(key, language, vars = {}) {
   const entry = PHRASES[key];
   if (!entry) throw new Error(`No phrase "${key}".`);
@@ -270,7 +294,22 @@ function validateArgs(schema, args) {
 }
 
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
-const idArg = (what) => ({ type: "string", minLength: 1, maxLength: 64, description: `The ${what} id exactly as a tool returned it.` });
+
+const REPLY_LANGUAGE = {
+  type: "string",
+  enum: LANGS,
+  description: "The language the owner just spoke in: hi-IN (Hindi), kn-IN (Kannada) or en-IN (English). The `say` text comes back in it.",
+};
+/** Owner tools: every one takes reply_language, so `say` follows the owner's language. */
+const ownerObj = (properties, required = []) => obj({ ...properties, reply_language: REPLY_LANGUAGE }, required);
+
+/** An optional id. Voice models garble ids, so tools default to the current record and descriptions say so. */
+const idArg = (what, fallback) => ({
+  type: "string",
+  minLength: 1,
+  maxLength: 64,
+  description: `Optional. Leave it out to use ${fallback}. Only give the ${what} id exactly as a tool returned it.`,
+});
 
 /* ------------------------------------------------------------ helpers --- */
 
@@ -281,8 +320,69 @@ function requireRow(row, language) {
 
 const missingFields = (r) => ["item", "quantity", "unit", "city"].filter((field) => r[field] == null || r[field] === "");
 
-function vendorSummary(v) {
+/**
+ * The requirement a tool works on: the one named, else the latest one saved in this call,
+ * else the business's latest. Tenant comes from ctx only.
+ */
+function currentRequirement(ctx, requirementId, language) {
+  if (requirementId) return requireRow(repo.getRequirement(ctx.businessId, requirementId), language);
+  const all = repo.listRequirements(ctx.businessId);
+  const thisCall = ctx.sessionId ? all.filter((r) => r.session_id === ctx.sessionId) : [];
+  const latest = (thisCall.length ? thisCall : all).at(-1);
+  if (!latest) throw new ToolError("NO_REQUIREMENT", phrase("no_requirement", language), { status: 409 });
+  return latest;
+}
+
+/** The IndiaMART category the sourcing job resolved ("Basmati Rice"); stored on the job's result. */
+function sourcedCategory(businessId, requirementId) {
+  const done = repo.listJobs(businessId, { requirement_id: requirementId, kind: "sourcing", status: "done" });
+  return done.at(-1)?.result?.category ?? null;
+}
+
+/** A script that would be read wrongly inside a sentence of this language. */
+const FOREIGN_SCRIPT = {
+  "en-IN": /[\p{Script=Devanagari}\p{Script=Kannada}]/u,
+  "hi-IN": /\p{Script=Kannada}/u,
+  "kn-IN": /\p{Script=Devanagari}/u,
+};
+
+/**
+ * The item as said in a `language` sentence: the owner's own words when their script fits,
+ * else the IndiaMART category found by sourcing ("Basmati Rice"), else the English trade
+ * name the category rules derive ("basmati rice"), else the words as stored.
+ */
+function spokenItem(businessId, requirement, language) {
+  const item = String(requirement.item ?? "");
+  if (!FOREIGN_SCRIPT[langKey(language)].test(item)) return item;
+  const category = sourcedCategory(businessId, requirement.id);
+  if (category) return category;
+  const slug = candidateSlugs(item)[0];
+  return slug ? slug.replace(/-/g, " ") : item;
+}
+
+/** Vendors of a requirement, best first (scoring.rankVendors); the order vendorRank counts in. */
+function rankedVendors(businessId, requirement) {
+  return rankVendors(repo.listVendors(businessId, { requirement_id: requirement.id }), requirement);
+}
+
+/** "Several qualify" is never resolved by guessing: the owner hears the choices. */
+function ambiguous(language, choices) {
+  return new ToolError("AMBIGUOUS", phrase("choose", language, { n: choices.length, list: choices.slice(0, 3).join(", ") }), {
+    status: 409,
+    details: { choices },
+  });
+}
+
+function approvalChoice(businessId, approval, language) {
+  const quote = repo.getQuote(businessId, approval.quote_id);
+  const vendor = quote && repo.getVendor(businessId, quote.vendor_id);
+  return phrase("choice_deal", language, { vendor: vendor?.name ?? "", sim: Boolean(quote?.simulated), total: money(approval.total_amount) });
+}
+
+function vendorSummary(v, requirement, rank) {
+  const comparable = comparableListedPrice(v, requirement.unit);
   return {
+    rank,
     vendorId: v.id,
     name: v.name,
     city: v.city,
@@ -291,6 +391,8 @@ function vendorSummary(v) {
     listedPrice: v.listed_price,
     listedUnit: v.listed_unit,
     listedPriceText: v.listed_price_text,
+    comparablePrice: comparable ? round2(comparable.value) : null,
+    priceUnit: comparable ? requirement.unit : null,
     rating: v.rating,
     ratingCount: v.rating_count,
     score: v.score,
@@ -385,15 +487,60 @@ async function runSourcing(job) {
   }
 
   repo.updateRequirement(businessId, requirement.id, { status: "sourced" });
-  const shortlist = repo.listVendors(businessId, { requirement_id: requirement.id }, { limit: SHORTLIST_SIZE }).map(vendorSummary);
+  const ranked = rankedVendors(businessId, requirement);
+  const shortlist = ranked.slice(0, SHORTLIST_SIZE).map((v, i) => vendorSummary(v, requirement, i + 1));
   return {
     requirementId: requirement.id,
-    count: repo.listVendors(businessId, { requirement_id: requirement.id }).length,
+    unit: requirement.unit,
+    count: ranked.length,
     category: source.category ?? null,
     scope: source.scope ?? null,
     sourceUrl: source.url ?? null,
     shortlist,
   };
+}
+
+/* ----------------------------------------------------------- defaults --- */
+
+const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
+const dealCost = (d) => d.landedCost ?? d.goodsCost;
+
+/** The best-ranked deal of the current requirement; a tie for best is named, not picked. */
+function defaultDeal(ctx, args, language) {
+  const requirement = currentRequirement(ctx, args.requirementId, language);
+  const deals = rankedDeals(ctx.businessId, requirement.id);
+  if (!deals.length) throw new ToolError("NO_QUOTES", phrase("deals_empty", language), { status: 409 });
+  const eligible = deals.filter((d) => d.status === "ranked" || d.status === "freight_unknown");
+  if (!eligible.length) throw new ToolError("NO_RANKABLE_DEAL", phrase("deal_none_rankable", language), { status: 409 });
+  const best = eligible[0];
+  const tied = eligible.filter((d) => d.status === best.status && dealCost(d) === dealCost(best));
+  if (tied.length > 1) {
+    throw ambiguous(language, tied.map((d) => phrase("choice_deal", language, { vendor: d.vendorName ?? "", sim: d.simulated, total: money(dealCost(d)) })));
+  }
+  return best;
+}
+
+/**
+ * The approval create_order acts on: the one approved approval. With none approved, the one
+ * pending approval is handed to the gate so the owner hears that it is not approved yet.
+ */
+function defaultApprovalForOrder(ctx, language) {
+  const all = repo.listApprovals(ctx.businessId);
+  const approved = all.filter((a) => a.status === "approved");
+  if (approved.length > 1) throw ambiguous(language, approved.map((a) => approvalChoice(ctx.businessId, a, language)));
+  if (approved.length === 1) return approved[0].id;
+  const pending = all.filter((a) => a.status === "pending");
+  if (pending.length === 1) return pending[0].id;
+  throw new ToolError("NOT_APPROVED", sayFor("not_approved", language), { status: 409, message: "No approved deal to order." });
+}
+
+/** The order create_payment_link acts on: the one order still awaiting a link, else the latest order. */
+function defaultOrderForPayment(ctx, language) {
+  const all = repo.listOrders(ctx.businessId);
+  if (!all.length) throw new ToolError("NO_ORDER", phrase("orders_empty", language), { status: 409 });
+  const awaiting = all.filter((o) => o.status === orders.INITIAL_STATUS && !o.payment_link_url);
+  if (awaiting.length > 1) throw ambiguous(language, awaiting.map((o) => phrase("choice_order", language, { po: o.po_number })));
+  return (awaiting[0] ?? all.at(-1)).id;
 }
 
 /* -------------------------------------------------------------- tools --- */
@@ -406,25 +553,25 @@ const TOOLS = [
     name: "get_business_profile",
     scopes: OWNER,
     description: "Returns this business's profile: name, owner, city, state and language.",
-    inputSchema: obj({}),
-    async handler(ctx) {
-      const business = requireRow(repo.getBusiness(ctx.businessId), "en-IN");
-      const { id, name, owner_name, city, state, language } = business;
-      return { business: { id, name, owner_name, city, state, language }, say: phrase("profile", language, { name, city }) };
+    inputSchema: ownerObj({}),
+    async handler(ctx, args, language) {
+      const business = requireRow(repo.getBusiness(ctx.businessId), language);
+      const { id, name, owner_name, city, state } = business;
+      return { business: { id, name, owner_name, city, state, language: business.language }, say: phrase("profile", language, { name, city }) };
     },
   },
   {
     name: "save_requirement",
     scopes: OWNER,
     description:
-      "Saves what the owner wants to buy. Call as soon as the item is known; call again with requirementId to fill in more details. Returns missing[] (fields still needed before sourcing).",
-    inputSchema: obj(
+      "Saves what the owner wants to buy. Call as soon as the item is known. To add details later, call it again without item and without any id: it updates the requirement saved in this call. Returns missing[] (fields still needed before sourcing). An item with no id starts a new requirement.",
+    inputSchema: ownerObj(
       {
-        requirementId: { ...idArg("requirement"), description: "Give it to update a requirement saved earlier in this call." },
+        requirementId: idArg("requirement", "the requirement saved in this call"),
         item: { type: "string", maxLength: 200, description: "The item as the owner named it, e.g. basmati chawal." },
         quantity: { type: "number", exclusiveMinimum: 0 },
-        unit: { type: "string", maxLength: 40, description: "kg, quintal, tonne, litre, piece, bag, box ..." },
-        city: { type: "string", maxLength: 80, description: "Delivery city." },
+        unit: { type: "string", maxLength: 40, description: `The unit as the owner said it (किलो, ಕಿಲೋ, kilos, pieces ...). Stored as one of: ${UNIT_CODES.join(", ")}.` },
+        city: { type: "string", maxLength: 80, description: "Delivery city as the owner said it." },
         max_price_per_unit: { type: "number", exclusiveMinimum: 0, description: "Most the owner will pay per unit, in rupees." },
         target_price: { type: "number", exclusiveMinimum: 0, description: "Price per unit the owner hopes for, in rupees." },
         delivery_by: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "YYYY-MM-DD" },
@@ -437,23 +584,34 @@ const TOOLS = [
       for (const [arg, column] of [["item", "item"], ["quantity", "quantity"], ["unit", "unit"], ["city", "city"], ["max_price_per_unit", "max_price"], ["target_price", "target_price"], ["delivery_by", "delivery_by"], ["notes", "notes"]]) {
         if (args[arg] !== undefined && args[arg] !== null && args[arg] !== "") fields[column] = typeof args[arg] === "string" ? args[arg].trim() : args[arg];
       }
+      // Canonical at the boundary: "किलो", "kilos", "ಕಿಲೋ" are all stored as "kg"; an unknown unit is asked about, never guessed.
+      if (fields.unit !== undefined) {
+        const unit = canonicalUnit(fields.unit);
+        if (!unit) throw new ToolError("UNKNOWN_UNIT", phrase("unit_unknown", language, { unit: fields.unit }), { status: 400, message: `Unknown unit "${fields.unit}".` });
+        fields.unit = unit;
+      }
+      if (fields.city !== undefined) fields.city = cityName(fields.city);
+
       let requirement;
-      if (args.requirementId) {
-        requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language);
+      if (args.requirementId || !fields.item) {
+        const target = args.requirementId
+          ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
+          : ctx.sessionId && repo.listRequirements(ctx.businessId).filter((r) => r.session_id === ctx.sessionId).at(-1);
+        if (!target) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
         if (!Object.keys(fields).length) throw new ToolError("INVALID", sayFor("invalid", language), { message: "Nothing to update." });
-        requirement = repo.updateRequirement(ctx.businessId, args.requirementId, fields);
+        requirement = repo.updateRequirement(ctx.businessId, target.id, fields);
       } else {
-        if (!fields.item) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
         requirement = repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
       }
       events.emit(ctx.businessId, "requirement.saved", requirement, { sessionId: ctx.sessionId, actor: "agent" });
       const missing = missingFields(requirement);
+      const item = spokenItem(ctx.businessId, requirement, language);
       const say = missing.length
-        ? phrase("requirement_missing", language, { item: requirement.item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") })
+        ? phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") })
         : phrase("requirement_saved", language, {
             quantity: money(requirement.quantity),
             unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
-            item: requirement.item,
+            item,
             city: requirement.city,
           });
       return { requirementId: requirement.id, requirement, missing, say };
@@ -462,13 +620,14 @@ const TOOLS = [
   {
     name: "start_sourcing",
     scopes: OWNER,
-    description: "Starts finding and scoring real vendors on IndiaMART for a saved requirement. Returns a jobId at once; progress is announced.",
-    inputSchema: obj({ requirementId: idArg("requirement") }, ["requirementId"]),
+    description: "Starts finding and scoring real vendors on IndiaMART for the current requirement. Returns a jobId at once; progress is announced.",
+    inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
-      const requirement = requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language);
+      const requirement = currentRequirement(ctx, args.requirementId, language);
+      const item = spokenItem(ctx.businessId, requirement, language);
       const missing = missingFields(requirement).filter((m) => m !== "city");
       if (missing.length) {
-        throw new ToolError("REQUIREMENT_INCOMPLETE", phrase("requirement_missing", language, { item: requirement.item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") }), {
+        throw new ToolError("REQUIREMENT_INCOMPLETE", phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") }), {
           status: 400,
           details: { missing },
         });
@@ -478,16 +637,22 @@ const TOOLS = [
       repo.updateRequirement(ctx.businessId, requirement.id, { status: "sourcing" });
       require("../agora/narrator").suppress(ctx.businessId, "job.started");
       const jobId = jobs.startJob(ctx.businessId, "sourcing", { requirementId: requirement.id }, runSourcing);
-      return { jobId, say: phrase("sourcing_started", language, { item: requirement.item }) };
+      return { jobId, requirementId: requirement.id, say: phrase("sourcing_started", language, { item }) };
     },
   },
   {
     name: "get_job_status",
     scopes: OWNER,
-    description: "Status of a sourcing or negotiation job.",
-    inputSchema: obj({ jobId: idArg("job") }, ["jobId"]),
+    description: "Status of a sourcing or negotiation job; without jobId, the one running now or else the latest.",
+    inputSchema: ownerObj({ jobId: idArg("job", "the running or latest job") }),
     async handler(ctx, args, language) {
-      const job = requireRow(repo.getJob(ctx.businessId, args.jobId), language);
+      let job;
+      if (args.jobId) job = requireRow(repo.getJob(ctx.businessId, args.jobId), language);
+      else {
+        const all = repo.listJobs(ctx.businessId);
+        job = all.filter((j) => j.status === "queued" || j.status === "running").at(-1) ?? all.at(-1);
+        if (!job) return { jobId: null, status: "none", say: phrase("no_jobs", language) };
+      }
       const progress = Array.isArray(job.progress) && job.progress.length ? job.progress[job.progress.length - 1] : null;
       let say;
       if (job.status === "queued") say = phrase("job_queued", language);
@@ -507,65 +672,104 @@ const TOOLS = [
   {
     name: "get_shortlist",
     scopes: OWNER,
-    description: "The best-scored vendors found for a requirement, best first.",
-    inputSchema: obj({ requirementId: idArg("requirement"), limit: { type: "integer", minimum: 1, maximum: 10 } }, ["requirementId"]),
+    description:
+      "The vendors found for the current requirement, best first, each with its rank (1 = best) and its price per the requirement unit when the listing allows one (comparablePrice).",
+    inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement"), limit: { type: "integer", minimum: 1, maximum: 10 } }),
     async handler(ctx, args, language) {
-      requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language);
-      const all = repo.listVendors(ctx.businessId, { requirement_id: args.requirementId });
-      const vendors = all.slice(0, args.limit ?? SHORTLIST_SIZE).map(vendorSummary);
-      if (!vendors.length) return { vendors, say: phrase("shortlist_empty", language) };
-      const top = vendors[0];
-      return {
-        vendors,
-        say: phrase("shortlist", language, {
-          count: all.length,
-          name: top.name,
-          city: top.city,
-          price: top.listedPrice != null ? money(top.listedPrice) : null,
-          unit: unitWord(top.listedUnit, language),
-        }),
-      };
+      const requirement = currentRequirement(ctx, args.requirementId, language);
+      const ranked = rankedVendors(ctx.businessId, requirement);
+      const vendors = ranked.slice(0, args.limit ?? SHORTLIST_SIZE).map((v, i) => vendorSummary(v, requirement, i + 1));
+      if (!ranked.length) return { requirementId: requirement.id, vendors, say: phrase("shortlist_empty", language) };
+      const unit = unitWord(requirement.unit, language);
+      const comparable = ranked
+        .map((vendor) => ({ vendor, price: comparableListedPrice(vendor, requirement.unit)?.value ?? null }))
+        .filter((x) => x.price != null);
+      const say = comparable.length
+        ? phrase("shortlist", language, {
+            count: ranked.length,
+            comparable: comparable.length,
+            name: comparable[0].vendor.name,
+            city: comparable[0].vendor.city,
+            price: money(comparable[0].price),
+            unit,
+          })
+        : phrase("shortlist_no_comparable", language, { count: ranked.length, name: ranked[0].name, unit });
+      return { requirementId: requirement.id, vendors, say };
     },
   },
   {
     name: "start_negotiation",
     scopes: OWNER,
     description:
-      "Starts a voice negotiation for a requirement with one shortlisted vendor. counterpart 'simulated' = a clearly labelled simulated vendor priced from that vendor's listing; 'human' = a real person joins by link. Returns a jobId at once.",
-    inputSchema: obj(
-      { requirementId: idArg("requirement"), vendorId: idArg("vendor"), counterpart: { type: "string", enum: ["simulated", "human"] } },
-      ["requirementId", "vendorId", "counterpart"],
-    ),
-    async handler(ctx, args, language) {
+      "Starts a voice negotiation for the current requirement. Pick the vendor with vendorRank (1 = best, as get_shortlist ranks them) or leave both vendorRank and vendorId out to use the best-ranked vendor whose listing has a price per the requirement unit. counterpart 'simulated' (default) = a clearly labelled simulated vendor priced from that vendor's listing; 'human' = a real person joins by link. Returns a jobId at once.",
+    inputSchema: ownerObj({
+      requirementId: idArg("requirement", "the latest requirement"),
+      vendorRank: { type: "integer", minimum: 1, maximum: 50, description: "Optional. The vendor's place in the shortlist, 1 = best." },
+      vendorId: idArg("vendor", "vendorRank, or the best vendor with a comparable price"),
+      counterpart: { type: "string", enum: ["simulated", "human"], description: "Default simulated." },
+    }),
+    async handler(ctx, args, language, { businessLanguage }) {
+      const counterpart = args.counterpart ?? "simulated";
+      let vendor = null;
+      let requirement;
+      if (args.vendorId) {
+        vendor = requireRow(repo.getVendor(ctx.businessId, args.vendorId), language);
+        requirement = args.requirementId ? currentRequirement(ctx, args.requirementId, language) : requireRow(repo.getRequirement(ctx.businessId, vendor.requirement_id), language);
+        if (vendor.requirement_id !== requirement.id) throw new ToolError("NOT_FOUND", sayFor("not_found", language), { message: "That vendor was not found for this requirement." });
+      } else {
+        requirement = currentRequirement(ctx, args.requirementId, language);
+      }
+      const ranked = rankedVendors(ctx.businessId, requirement);
+      if (!ranked.length) throw new ToolError("NO_VENDORS", phrase("shortlist_empty", language), { status: 409 });
+      const unit = unitWord(requirement.unit, language);
+      const comparableAt = ranked.findIndex((v) => comparableListedPrice(v, requirement.unit));
+      if (!vendor && args.vendorRank) {
+        vendor = ranked[args.vendorRank - 1];
+        if (!vendor) throw new ToolError("NOT_FOUND", phrase("rank_out_of_range", language, { count: ranked.length }), { status: 404 });
+      }
+      if (!vendor) {
+        vendor = comparableAt >= 0 ? ranked[comparableAt] : counterpart === "human" ? ranked[0] : null;
+        if (!vendor) throw new ToolError("NO_LISTED_PRICE", phrase("no_comparable_vendor", language, { unit }), { status: 409 });
+      }
+      if (counterpart === "simulated" && !comparableListedPrice(vendor, requirement.unit)) {
+        throw new ToolError(
+          "NO_LISTED_PRICE",
+          comparableAt >= 0
+            ? phrase("no_listed_price_try", language, { vendor: vendor.name, unit, rank: comparableAt + 1, alt: ranked[comparableAt].name })
+            : phrase("no_comparable_vendor", language, { unit }),
+          { status: 409, details: { suggestedRank: comparableAt >= 0 ? comparableAt + 1 : null } },
+        );
+      }
       const session = require("../negotiation/session");
       require("../agora/narrator").suppress(ctx.businessId, "job.started");
       const started = await session.startNegotiation({
         businessId: ctx.businessId,
         ownerSessionId: ctx.sessionId ?? null,
-        requirementId: args.requirementId,
-        vendorId: args.vendorId,
-        counterpart: args.counterpart,
-        language,
+        requirementId: requirement.id,
+        vendorId: vendor.id,
+        counterpart,
+        language: businessLanguage,
+        sayLanguage: language,
       });
-      const vendor = repo.getVendor(ctx.businessId, args.vendorId);
-      const say = args.counterpart === "human"
+      const say = counterpart === "human"
         ? phrase("negotiation_started_human", language)
-        : phrase("negotiation_started_simulated", language, { vendor: vendor?.name ?? "" });
-      return { ...started, say };
+        : phrase("negotiation_started_simulated", language, { vendor: vendor.name });
+      return { ...started, vendorId: vendor.id, vendorName: vendor.name, vendorRank: ranked.findIndex((v) => v.id === vendor.id) + 1, counterpart, say };
     },
   },
   {
     name: "get_ranked_deals",
     scopes: OWNER,
-    description: "All quotes for a requirement ranked by landed cost (price x quantity + freight), best first, with reasons.",
-    inputSchema: obj({ requirementId: idArg("requirement") }, ["requirementId"]),
+    description: "All quotes for the current requirement ranked by landed cost (price x quantity + freight), best first, with reasons.",
+    inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
-      const requirement = requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language);
+      const requirement = currentRequirement(ctx, args.requirementId, language);
       const deals = rankedDeals(ctx.businessId, requirement.id);
-      if (!deals.length) return { deals, say: phrase("deals_empty", language) };
+      if (!deals.length) return { requirementId: requirement.id, deals, say: phrase("deals_empty", language) };
       const best = deals[0];
-      if (best.status === "unrankable") return { deals, say: phrase("deal_none_rankable", language) };
+      if (best.status === "unrankable") return { requirementId: requirement.id, deals, say: phrase("deal_none_rankable", language) };
       return {
+        requirementId: requirement.id,
         deals,
         say: phrase("deal_best", language, {
           vendor: best.vendorName,
@@ -581,21 +785,32 @@ const TOOLS = [
   {
     name: "request_approval",
     scopes: OWNER,
-    description: "Asks the owner to approve one quote. Returns readback: speak it word for word, then wait for a yes or no.",
-    inputSchema: obj({ quoteId: idArg("quote") }, ["quoteId"]),
-    async handler(ctx, args) {
-      const { approval } = approvals.requestApproval(ctx.businessId, args.quoteId, { sessionId: ctx.sessionId ?? null });
-      return { approvalId: approval.id, status: approval.status, readback: approval.readback, totalAmount: approval.total_amount, say: approval.readback };
+    description:
+      "Asks the owner to approve one deal; without quoteId, the best-ranked deal of the current requirement. Returns readback: speak it word for word, then wait for a yes or no.",
+    inputSchema: ownerObj({ quoteId: idArg("quote", "the best-ranked deal"), requirementId: idArg("requirement", "the latest requirement") }),
+    async handler(ctx, args, language) {
+      const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
+      const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
+      // The stored read-back is in the business language; the spoken one follows the owner's language. Same figures.
+      const readback = approvals.buildReadback(deal, READBACK_LANGUAGE[language]);
+      return { approvalId: approval.id, quoteId, status: approval.status, readback, totalAmount: approval.total_amount, say: readback };
     },
   },
   {
     name: "confirm_approval",
     scopes: OWNER,
     description:
-      "Records the owner's spoken decision on an approval. The server reads the owner's own last words from the call and approves only on a clear yes.",
-    inputSchema: obj({ approvalId: idArg("approval"), decision: { type: "string", enum: ["approve", "reject"] } }, ["approvalId", "decision"]),
+      "Records the owner's spoken decision on the approval that is waiting (approvalId only if several are). The server reads the owner's own last words from the call and approves only on a clear yes.",
+    inputSchema: ownerObj({ approvalId: idArg("approval", "the one approval waiting"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
     async handler(ctx, args, language) {
-      const approval = requireRow(repo.getApproval(ctx.businessId, args.approvalId), language);
+      let approval;
+      if (args.approvalId) approval = requireRow(repo.getApproval(ctx.businessId, args.approvalId), language);
+      else {
+        const pending = repo.listApprovals(ctx.businessId, { status: "pending" });
+        if (!pending.length) throw new ToolError("NO_PENDING_APPROVAL", phrase("no_pending_approval", language), { status: 409 });
+        if (pending.length > 1) throw ambiguous(language, pending.map((a) => approvalChoice(ctx.businessId, a, language)));
+        approval = pending[0];
+      }
       if (approval.status !== "pending") throw new ToolError("ALREADY_DECIDED", sayFor("already_decided", language), { details: { status: approval.status } });
       if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", sayFor("no_voice_evidence", language), { status: 409 });
 
@@ -630,13 +845,16 @@ const TOOLS = [
   {
     name: "create_order",
     scopes: OWNER,
-    description: "Places the order for an approved deal and issues the purchase order. Refused unless the owner approved this exact deal.",
-    inputSchema: obj({ approvalId: idArg("approval") }, ["approvalId"]),
+    description:
+      "Places the order for the approved deal and issues the purchase order (approvalId only if several are approved). Refused unless the owner approved this exact deal.",
+    inputSchema: ownerObj({ approvalId: idArg("approval", "the one approved deal") }),
     async handler(ctx, args, language) {
+      const approvalId = args.approvalId ?? defaultApprovalForOrder(ctx, language);
       require("../agora/narrator").suppress(ctx.businessId, "order.created");
       let order;
       try {
-        order = await orders.createOrder(ctx.businessId, args.approvalId, { sessionId: ctx.sessionId ?? null });
+        // The gate: orders.createOrder -> approvals.assertApproved, for this exact approval and business.
+        order = await orders.createOrder(ctx.businessId, approvalId, { sessionId: ctx.sessionId ?? null });
       } catch (err) {
         if (err?.code !== "PO_NOT_ISSUED" || !err.orderId) throw err;
         const placed = repo.getOrder(ctx.businessId, err.orderId);
@@ -655,11 +873,13 @@ const TOOLS = [
   {
     name: "create_payment_link",
     scopes: OWNER,
-    description: "Creates a Razorpay test-mode payment link for an order that exists and was approved.",
-    inputSchema: obj({ orderId: idArg("order") }, ["orderId"]),
+    description: "Creates a Razorpay test-mode payment link for an order that exists and was approved (orderId only if several orders await payment).",
+    inputSchema: ownerObj({ orderId: idArg("order", "the order awaiting payment") }),
     async handler(ctx, args, language) {
+      const orderId = args.orderId ?? defaultOrderForPayment(ctx, language);
       require("../agora/narrator").suppress(ctx.businessId, "payment.link");
-      const link = await payments.createPaymentLink(ctx.businessId, args.orderId);
+      // The gate: payments.createPaymentLink -> approvals.assertOrderApproved.
+      const link = await payments.createPaymentLink(ctx.businessId, orderId);
       return { orderId: link.orderId, url: link.url, amount: link.amount, currency: link.currency, testMode: true, say: phrase("payment_link", language) };
     },
   },
@@ -667,7 +887,7 @@ const TOOLS = [
     name: "get_order_status",
     scopes: OWNER,
     description: "Status of one order, or of all orders of this business when orderId is left out.",
-    inputSchema: obj({ orderId: idArg("order") }),
+    inputSchema: ownerObj({ orderId: idArg("order", "all orders") }),
     async handler(ctx, args, language) {
       const rows = args.orderId ? [requireRow(repo.getOrder(ctx.businessId, args.orderId), language)] : repo.listOrders(ctx.businessId);
       const list = rows.map((o) => ({
@@ -743,15 +963,19 @@ function toolsFor(scope) {
  */
 async function callTool(ctx, name, args = {}) {
   if (!ctx || typeof ctx.businessId !== "string" || !ctx.businessId) throw new ToolError("UNAUTHORIZED", sayFor("internal", "en-IN"), { status: 401 });
-  const language = languageOf(ctx.businessId);
+  const businessLanguage = languageOf(ctx.businessId);
+  // `say` follows the language the owner just used; the business language is the fallback.
+  const replyLanguage = LANGS.includes(args?.reply_language) ? args.reply_language : null;
+  const language = replyLanguage ?? businessLanguage;
   const tool = BY_NAME.get(name);
   if (!tool || !tool.scopes.includes(ctx.toolScope)) {
     throw new ToolError("UNKNOWN_TOOL", sayFor("internal", language), { status: 404, message: `No tool ${name} for this agent.` });
   }
   const problem = validateArgs(tool.inputSchema, args);
   if (problem) throw new ToolError("INVALID_ARGUMENTS", sayFor("invalid", language), { status: 400, message: problem });
+  if (replyLanguage) require("../agora/narrator").useLanguage(ctx.businessId, replyLanguage);
   try {
-    return await tool.handler(ctx, args ?? {}, language);
+    return await tool.handler(ctx, args ?? {}, language, { businessLanguage });
   } catch (err) {
     const toolError = toToolError(err, language);
     if (toolError.code === "INTERNAL" || toolError.status >= 500) {
@@ -771,8 +995,7 @@ module.exports = {
   rankedDeals,
   runSourcing,
   phrase,
-  unitWord,
-  canonicalUnit,
+  spokenItem,
   money,
   SIM_LABEL,
 };

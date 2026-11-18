@@ -85,12 +85,12 @@ const FILLER_WORDS = new Set([
  * A city not listed is slugified as given, which IndiaMART accepts for most cities.
  */
 const CITY_NAMES = {
-  bengaluru: ['bangalore', 'bengalooru', 'ಬೆಂಗಳೂರು', 'बेंगलुरु', 'बैंगलोर'],
-  delhi: ['new delhi', 'दिल्ली', 'नई दिल्ली'],
-  mumbai: ['bombay', 'मुंबई'],
-  kolkata: ['calcutta'],
-  chennai: ['madras'],
-  pune: ['poona'],
+  bengaluru: ['bangalore', 'bengalooru', 'ಬೆಂಗಳೂರು', 'बेंगलुरु', 'बेंगलूरु', 'बेंगलुरू', 'बैंगलोर', 'बंगलौर', 'बेंगलोर'],
+  delhi: ['new delhi', 'दिल्ली', 'नई दिल्ली', 'ದೆಹಲಿ'],
+  mumbai: ['bombay', 'मुंबई', 'ಮುಂಬೈ'],
+  kolkata: ['calcutta', 'कोलकाता'],
+  chennai: ['madras', 'चेन्नई', 'ಚೆನ್ನೈ'],
+  pune: ['poona', 'पुणे', 'ಪುಣೆ'],
   gurgaon: ['gurugram'],
   mysuru: ['mysore', 'ಮೈಸೂರು'],
   hubli: ['hubballi', 'ಹುಬ್ಬಳ್ಳಿ'],
@@ -109,8 +109,27 @@ const CITY_NAMES = {
   varanasi: ['banaras', 'benares'],
 };
 
+/**
+ * Native-script names of cities whose IndiaMART slug is simply the English name slugified
+ * (what citySlug already builds for the English spelling; not separately fetched).
+ */
+const NATIVE_CITY_NAMES = {
+  hyderabad: ['हैदराबाद', 'ಹೈದರಾಬಾದ್'],
+  ahmedabad: ['अहमदाबाद'],
+  jaipur: ['जयपुर'],
+  lucknow: ['लखनऊ'],
+  davangere: ['ದಾವಣಗೆರೆ'],
+};
+
+/** English name to tell the owner and to store, where it differs from the slug in more than case. */
+const CITY_DISPLAY = {
+  hubli: 'Hubballi', mangalore: 'Mangaluru', tumkur: 'Tumakuru', belgaum: 'Belagavi', shimoga: 'Shivamogga',
+  gulbarga: 'Kalaburagi', bellary: 'Ballari', gurgaon: 'Gurugram', trivandrum: 'Thiruvananthapuram',
+  allahabad: 'Prayagraj', pondicherry: 'Puducherry',
+};
+
 const CITY_SLUG = new Map(
-  Object.entries(CITY_NAMES).flatMap(([slug, names]) => [slug, ...names].map((name) => [fold(name), slug])),
+  Object.entries({ ...CITY_NAMES, ...NATIVE_CITY_NAMES }).flatMap(([slug, names]) => [slug, ...names].map((name) => [fold(name), slug])),
 );
 
 /** Lower-case words joined by single hyphens, or null if nothing usable is left. */
@@ -124,6 +143,21 @@ function citySlug(city) {
   if (typeof city !== 'string') return null;
   const name = fold(city.split(',')[0]).replace(/\./g, '').replace(/\s+/g, ' ');
   return CITY_SLUG.get(name) ?? toSlug(name);
+}
+
+const titleCase = (text) => text.replace(/(^|[\s-])(\p{Ll})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+
+/**
+ * The English name to store for a city: "बेंगलुरु", "ಬೆಂಗಳೂರು", "Bangalore" -> "Bengaluru".
+ * A city this module does not know is kept as said (Latin script title-cased); a name in
+ * another script is never transliterated by guess. Null for an empty name.
+ */
+function cityName(city) {
+  if (typeof city !== 'string' || !city.trim()) return null;
+  const first = city.split(',')[0].trim().replace(/\s+/g, ' ');
+  const known = CITY_SLUG.get(fold(first).replace(/\./g, ''));
+  if (known) return CITY_DISPLAY[known] ?? titleCase(known.replace(/-/g, ' '));
+  return /^[\p{Script=Latin}\s.'-]+$/u.test(first) ? titleCase(first.toLowerCase()) : first;
 }
 
 /** Whether two city names mean the same city ("Bangalore" and "Bengaluru"). Unknown is never a match. */
@@ -302,4 +336,4 @@ async function resolveSlug(item, city = null, { signal } = {}) {
   );
 }
 
-module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, sameCity, clearSlugCache };
+module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, sameCity, clearSlugCache };

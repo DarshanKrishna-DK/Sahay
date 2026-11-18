@@ -132,6 +132,13 @@ test("a deal whose numbers cannot be trusted is refused before the owner hears a
   assert.throws(() => approvals.requestApproval(tamil, seedQuote(tamil).id), refuses("UNSUPPORTED_LANGUAGE"));
 });
 
+test("the gate compares units through the shared unit table: a requirement stored as किलो accepts a per-kg quote, a per-bag quote is refused", () => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const ok = approvals.requestApproval(businessId, seedQuote(businessId, { requirement: { unit: "किलो" } }).id);
+  assert.match(ok.approval.readback, /50 किलो basmati rice, 62 रुपये प्रति किलो/);
+  assert.throws(() => approvals.requestApproval(businessId, seedQuote(businessId, { requirement: { unit: "किलो" }, quote: { unit: "बोरी" } }).id), refuses("UNIT_MISMATCH"));
+});
+
 test("approval cannot be requested for another business's quote or a quote that does not exist", () => {
   const owner = seedBusiness({ name: "Owner" });
   const other = seedBusiness({ name: "Other" });

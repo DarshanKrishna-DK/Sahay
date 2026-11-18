@@ -23,6 +23,7 @@ const agent = require("../agora/agent");
 const narrator = require("../agora/narrator");
 const { buildRtcRtmToken } = require("../agora/token");
 const registry = require("../tools/registry");
+const scoring = require("../procurement/scoring");
 const negotiation = require("../negotiation/session");
 const telegram = require("../notify/telegram");
 const { ToolError, toToolError } = require("../tools/errors");
@@ -92,7 +93,7 @@ function snapshot(businessId) {
     requirement,
     requirements,
     jobs: repo.listJobs(businessId),
-    vendors: forRequirement ? repo.listVendors(businessId, forRequirement) : [],
+    vendors: forRequirement ? scoring.rankVendors(repo.listVendors(businessId, forRequirement), requirement) : [],
     negotiations: forRequirement ? repo.listNegotiations(businessId, forRequirement) : [],
     quotes: forRequirement ? repo.listQuotes(businessId, forRequirement) : [],
     deals: requirement ? registry.rankedDeals(businessId, requirement.id) : [],

@@ -10,14 +10,21 @@
  * job.failed, negotiation.ended, order.created, payment.link, followup.fired.
  * Rate-limited per business: at most one line every MIN_GAP_MS, a short queue,
  * and repeated milestones of the same kind replace the queued one.
+ *
+ * Order: a sourcing job can finish within a second, while the model is still
+ * saying the tool's own "search started" line. Results of a job (vendor count,
+ * job.done, job.failed) are therefore held until holdMs after the job started;
+ * a job.done inside that window replaces the vendor count, so one result is spoken.
+ * Lines follow the language the owner last used (useLanguage), else the call's.
  */
 
 const events = require("../events");
 const repo = require("../db/repo");
 const agent = require("./agent");
 const { langKey } = require("../tools/errors");
+const { unitWord } = require("../procurement/units");
 
-const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000 };
+const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000, holdMs: 6000 };
 
 /** businessId -> live narration state for the active owner call */
 const live = new Map();
@@ -49,9 +56,9 @@ const LINES = {
     "en-IN": (v) => `${v.count} vendors found so far; checking them now.`,
   },
   sourcing_done: {
-    "hi-IN": (v) => `खोज पूरी हुई, ${v.count} विक्रेता मिले; सबसे ऊपर ${v.name}${v.price ? `, लिस्टिंग भाव ${v.price} रुपये` : ""}।`,
-    "kn-IN": (v) => `ಹುಡುಕಾಟ ಮುಗಿಯಿತು, ${v.count} ಮಾರಾಟಗಾರರು; ಮೊದಲನೆಯವರು ${v.name}${v.price ? `, ಪಟ್ಟಿಯ ಬೆಲೆ ${v.price} ರೂಪಾಯಿ` : ""}.`,
-    "en-IN": (v) => `Search done: ${v.count} vendors; the top one is ${v.name}${v.price ? `, listed at ${v.price} rupees` : ""}.`,
+    "hi-IN": (v) => `खोज पूरी हुई, ${v.count} विक्रेता मिले; सबसे अच्छे ${v.name}${v.price ? `, ${v.price} रुपये प्रति ${v.unit}` : ""}।`,
+    "kn-IN": (v) => `ಹುಡುಕಾಟ ಮುಗಿಯಿತು, ${v.count} ಮಾರಾಟಗಾರರು; ಉತ್ತಮರು ${v.name}${v.price ? `, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ` : ""}.`,
+    "en-IN": (v) => `Search done: ${v.count} vendors; the best is ${v.name}${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
   },
   job_failed: {
     "hi-IN": (v) => (v.kind === "negotiation" ? "मोल-भाव पूरा नहीं हो पाया, कारण स्क्रीन पर है।" : "विक्रेताओं की खोज पूरी नहीं हो पाई, कारण स्क्रीन पर है।"),
@@ -130,6 +137,23 @@ function pump(state) {
 
 /* --------------------------------------------------------------- events --- */
 
+/** Milliseconds left until a job's results may be spoken (0 when its start is unknown or long past). */
+function holdLeft(state, jobId) {
+  const startedAt = jobId ? state.jobStartedAt.get(jobId) : state.lastSourcingStartedAt;
+  return startedAt == null ? 0 : Math.max(0, startedAt + settings.holdMs - Date.now());
+}
+
+/** Run `fn` after `ms` (at once when 0), on a timer that detach() clears. */
+function later(state, ms, fn) {
+  if (ms <= 0) return fn();
+  const timer = setTimeout(() => {
+    state.timers.delete(timer);
+    if (!state.closed) fn();
+  }, ms);
+  timer.unref?.();
+  state.timers.add(timer);
+}
+
 function onEvent(event) {
   const state = live.get(event.businessId);
   if (!state) return;
@@ -137,6 +161,8 @@ function onEvent(event) {
   const lang = state.language;
   switch (event.type) {
     case "job.started":
+      state.jobStartedAt.set(d.jobId, Date.now());
+      if (d.kind === "sourcing") state.lastSourcingStartedAt = Date.now();
       if (isSuppressed(event.businessId, "job.started")) return;
       enqueue(state, "job.started", line(d.kind === "negotiation" ? "negotiation_started" : "sourcing_started", lang));
       return;
@@ -149,31 +175,40 @@ function onEvent(event) {
       if (!batch.timer) {
         batch.timer = setTimeout(() => {
           state.vendorBatches.set(requirementId, "spoken");
-          enqueue(state, `vendors:${requirementId}`, line("vendors_found", lang, { count: batch.count }));
-        }, settings.vendorDebounceMs);
+          enqueue(state, `vendors:${requirementId}`, line("vendors_found", state.language, { count: batch.count }));
+        }, Math.max(settings.vendorDebounceMs, holdLeft(state, null)));
         batch.timer.unref?.();
       }
       return;
     }
     case "job.done": {
       if (d.kind !== "sourcing") return;
-      const top = d.result?.shortlist?.[0];
+      const result = d.result ?? {};
+      // The best vendor whose price is per the requirement unit; a per-bag price is never read out as if per kg.
+      const top = result.shortlist?.find((v) => v.comparablePrice != null) ?? result.shortlist?.[0];
       if (!top) return;
-      // The final count replaces any queued "vendors found" line for this requirement.
-      const requirementId = d.result.requirementId;
+      // The final count replaces any pending "vendors found" line for this requirement.
+      const requirementId = result.requirementId;
       const batch = state.vendorBatches.get(requirementId);
       if (batch && batch !== "spoken") clearTimeout(batch.timer);
       state.vendorBatches.set(requirementId, "spoken");
       state.queue = state.queue.filter((item) => item.key !== `vendors:${requirementId}`);
-      enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", lang, { count: d.result.count, name: top.name, price: top.listedPrice != null ? money(top.listedPrice) : null }));
+      later(state, holdLeft(state, d.jobId), () =>
+        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, {
+          count: result.count,
+          name: top.name,
+          price: top.comparablePrice != null ? money(top.comparablePrice) : null,
+          unit: unitWord(result.unit, state.language),
+        })));
       return;
     }
     case "job.failed":
-      enqueue(state, `failed:${d.jobId}`, line("job_failed", lang, { kind: d.kind }));
+      later(state, holdLeft(state, d.jobId), () => enqueue(state, `failed:${d.jobId}`, line("job_failed", state.language, { kind: d.kind })));
       return;
     case "negotiation.ended": {
       const o = d.outcome ?? {};
-      const vars = { vendor: o.vendorName ?? "", sim: Boolean(d.simulated || o.simulated), price: o.unitPrice != null ? money(o.unitPrice) : null, unit: o.unitWord ?? o.unit ?? "" };
+      const unit = o.unit ? unitWord(o.unit, lang) : o.unitWord ?? "";
+      const vars = { vendor: o.vendorName ?? "", sim: Boolean(d.simulated || o.simulated), price: o.unitPrice != null ? money(o.unitPrice) : null, unit };
       enqueue(state, `negotiation:${d.negotiationId}`, line(o.agreed && vars.price ? "negotiation_agreed" : "negotiation_no_deal", lang, vars));
       return;
     }
@@ -209,7 +244,19 @@ function missedFollowups(businessId, currentSessionId) {
  */
 function attach(businessId, { agentId, sessionId, language }) {
   detach(businessId);
-  const state = { agentId, sessionId, language: langKey(language), queue: [], lastSpokeAt: Date.now(), timer: null, vendorBatches: new Map(), closed: false };
+  const state = {
+    agentId,
+    sessionId,
+    language: langKey(language),
+    queue: [],
+    lastSpokeAt: Date.now(),
+    timer: null,
+    timers: new Set(),
+    vendorBatches: new Map(),
+    jobStartedAt: new Map(),
+    lastSourcingStartedAt: null,
+    closed: false,
+  };
   live.set(businessId, state);
   for (const f of missedFollowups(businessId, sessionId)) {
     if (f.message) enqueue(state, `followup:${f.id}`, line("followup", state.language, { message: f.message }));
@@ -222,8 +269,15 @@ function detach(businessId) {
   if (!state) return;
   state.closed = true;
   clearTimeout(state.timer);
+  for (const timer of state.timers) clearTimeout(timer);
   for (const batch of state.vendorBatches.values()) if (batch && batch !== "spoken") clearTimeout(batch.timer);
   live.delete(businessId);
+}
+
+/** The owner just spoke `language` (a tool's reply_language): narrate in it from now on. */
+function useLanguage(businessId, language) {
+  const state = live.get(businessId);
+  if (state) state.language = langKey(language);
 }
 
 function isLive(businessId) {
@@ -243,12 +297,12 @@ function stop() {
 }
 
 /** Tests: replace the /speak call and the timing. */
-function configure({ speak, minGapMs, vendorDebounceMs, queueLimit, suppressMs } = {}) {
+function configure({ speak, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs } = {}) {
   if (speak) speakImpl = speak;
   Object.assign(
     settings,
-    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs }).filter(([, v]) => v !== undefined)),
+    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs }).filter(([, v]) => v !== undefined)),
   );
 }
 
-module.exports = { start, stop, attach, detach, isLive, suppress, configure, onEvent, LINES };
+module.exports = { start, stop, attach, detach, isLive, suppress, useLanguage, configure, onEvent, LINES };

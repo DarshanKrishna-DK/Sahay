@@ -97,6 +97,28 @@ test("a simulated vendor needs a real listed price to be based on; no price is i
   );
 });
 
+test("regression (E2E 2026-11-19): a requirement stored as किलो negotiates against a per-Kg IndiaMART listing", async (t) => {
+  fakeAgora(t); // no vendor turn -> server loop; the point is that it starts and agrees in kg
+  const businessId = repo.newId("biz");
+  repo.createBusiness(businessId, { name: "Sri Lakshmi Stores", city: "Bengaluru", language: "hi-IN" });
+  const requirement = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", max_price: 110 });
+  const vendor = repo.createVendor(businessId, { requirement_id: requirement.id, source: "indiamart", name: "Babu Trading Co.", listed_price: 100, listed_unit: "Kg" });
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(started.jobId);
+  const quote = repo.listQuotes(businessId, { requirement_id: requirement.id })[0];
+  assert.ok(quote, "a quote is recorded");
+  assert.equal(quote.simulated, true);
+  assert.ok(quote.unit_price <= 110);
+});
+
+test("refusals are said in the owner's reply language while the negotiation keeps the business language", async () => {
+  const { businessId, requirement, vendor } = seed({ listedPrice: null, language: "hi-IN" });
+  await assert.rejects(
+    session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN", sayLanguage: "en-IN" }),
+    (err) => err.code === "NO_LISTED_PRICE" && err.say === "This vendor's listing has no price in that unit; please pick another vendor.",
+  );
+});
+
 test("without an owner maximum or a listed price there is no ceiling, so the agent must ask", async () => {
   const { businessId, requirement, vendor } = seed({ listedPrice: null, maxPrice: null });
   await assert.rejects(

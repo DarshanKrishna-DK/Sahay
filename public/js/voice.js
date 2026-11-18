@@ -120,6 +120,29 @@ function toMs(t) {
 }
 
 /**
+ * Transcript turns in the order they were spoken. The toolkit's list is not reliably in that
+ * order (server /speak lines and model replies can land out of sequence), so: by turn id when
+ * every turn has one (the disclosure, spoken first by the server, has the lowest), else by
+ * time; within one turn id the owner's words come before Sahay's reply; then by time; and
+ * finally the toolkit's own order. A total order, so the panel never reshuffles between updates.
+ * Each turn: { role: "owner"|"agent", turnNo: number|null, time: ms|null }.
+ */
+export function orderTurns(turns) {
+  const byTurn = turns.length > 0 && turns.every((t) => Number.isFinite(t.turnNo));
+  const time = (t) => (Number.isFinite(t.time) ? t.time : Infinity);
+  return turns
+    .map((turn, index) => ({ turn, index }))
+    .sort((a, b) => {
+      if (byTurn && a.turn.turnNo !== b.turn.turnNo) return a.turn.turnNo - b.turn.turnNo;
+      if (!byTurn && time(a.turn) !== time(b.turn)) return time(a.turn) < time(b.turn) ? -1 : 1;
+      if (a.turn.role !== b.turn.role) return a.turn.role === "owner" ? -1 : 1;
+      if (time(a.turn) !== time(b.turn)) return time(a.turn) < time(b.turn) ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ turn }) => turn);
+}
+
+/**
  * handlers: onStatus(status, detail), onAgentState(state), onTranscript(turns),
  * onLanguage({ lang, source }), onIssue({ source, message }), onLevels({ mic, agent }),
  * onAutoplay(blocked), onMetric({ stage, ms }), onTranscriptLink(ok)
@@ -397,23 +420,25 @@ export class VoiceCall {
 
   onTranscript(items) {
     if (!Array.isArray(items)) return;
-    const turns = items.map((it) => {
+    const turns = orderTurns(items.map((it) => {
       const md = it.metadata || {};
       const owner = String(it.uid) === "0";
       const turnId = it.turn_id !== undefined ? String(it.turn_id) : "";
+      const turnNo = turnId !== "" && Number.isFinite(Number(turnId)) ? Number(turnId) : null;
       // TEXT mode sets status to END on every message, so liveness comes from metadata.
       const live = owner ? md.final === false : md.turn_status === 0;
       const interrupted = !owner && (md.turn_status === 2 || this.interruptedTurns.has(turnId));
       return {
         key: `${turnId}:${it.stream_id ?? ""}:${it.uid}`,
         role: owner ? "owner" : "agent",
+        turnNo,
         text: typeof it.text === "string" ? it.text : "",
         live: Boolean(live),
         interrupted,
         time: toMs(it._time),
         language: langFromCode(md.language),
       };
-    }).filter((t) => t.text.trim() !== "");
+    }).filter((t) => t.text.trim() !== ""));
     this.h.onTranscript(turns);
 
     for (let i = turns.length - 1; i >= 0; i--) {

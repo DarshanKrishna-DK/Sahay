@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { WEIGHTS, scoreVendor, comparableListedPrice, rankDeals } = require('../src/procurement/scoring');
+const { WEIGHTS, scoreVendor, comparableListedPrice, rankVendors, rankDeals } = require('../src/procurement/scoring');
 const { parseListingPage } = require('../src/discovery/indiamart');
 
 const requirement = { quantity: 200, unit: 'kg', target_price: 100, max_price: null, city: 'Bengaluru' };
@@ -43,7 +43,7 @@ test('price: falls back to the owner maximum when there is no target', () => {
   assert.equal(result.assumed.price, undefined);
 });
 
-test('price: every unknown gets a named neutral value, never a guess at the number', () => {
+test('price: every unknown is named; an unknown price scores low, never neutral', () => {
   const unpriced = scoreVendor(vendor({ listed_price: null, listed_unit: null }), requirement);
   assert.equal(unpriced.breakdown.price, 0.15);
   assert.equal(unpriced.assumed.price, 'price_not_listed');
@@ -52,13 +52,60 @@ test('price: every unknown gets a named neutral value, never a guess at the numb
   assert.equal(noReference.breakdown.price, 0.6);
   assert.equal(noReference.assumed.price, 'no_price_to_compare_against');
 
-  // Rs 60 per bag against a per-kg target: the bag size is not stated, so 60 is not compared with 100
+  // Rs 60 per bag against a per-kg target: the bag size is not stated, so the price per kg is unknown
   const perBag = scoreVendor(vendor({ listed_price: 60, listed_unit: 'bag' }), requirement);
-  assert.equal(perBag.breakdown.price, 0.6);
+  assert.equal(perBag.breakdown.price, 0.15);
   assert.equal(perBag.assumed.price, 'listed_unit_not_comparable');
+  assert.ok(perBag.flags.includes('price_not_comparable'));
+
+  // not comparable is unknown even when there is no owner price to compare against
+  const perBagNoReference = scoreVendor(vendor({ listed_price: 60, listed_unit: 'bag' }), { ...requirement, target_price: null });
+  assert.equal(perBagNoReference.breakdown.price, 0.15);
+  assert.ok(perBagNoReference.flags.includes('price_not_comparable'));
 
   const noUnit = scoreVendor(vendor({ listed_price: 60, listed_unit: null }), requirement);
   assert.equal(noUnit.assumed.price, 'listed_unit_not_comparable');
+  assert.equal(noUnit.breakdown.price, 0.15);
+});
+
+test('regression (E2E 2026-11-19): a Rs 25,000/Bag listing is never ranked above per-kg listings', () => {
+  // The QA run: 200 kilos of basmati, max Rs 90/kg; listings as IndiaMART showed them.
+  const need = { quantity: 200, unit: 'kg', target_price: null, max_price: 90, city: 'Bengaluru' };
+  const listing = (name, listed_price, listed_unit, extra = {}) => ({ name, listed_price, listed_unit, city: 'Bengaluru', phone: '+91-8000000000', moq: null, availability: null, ...extra });
+  const listings = [
+    listing('3comma Labs Private Limited', 25000, 'Bag'),
+    listing('Babu Trading Co.', 100, 'Kg'),
+    listing('Mahammed Ismail Sait', 175, 'Bag'),
+    listing('Srinidhi Foods', 120, 'Kg'),
+    listing('BS Foods', 60, 'Kg'),
+    listing('Mithuna Foods', 92, 'Kg'),
+  ];
+  const scored = listings.map((v) => ({ ...v, ...scoreVendor(v, need) }));
+  const ranked = rankVendors(scored, need).map((v) => v.name);
+  for (const bag of ['3comma Labs Private Limited', 'Mahammed Ismail Sait']) {
+    assert.ok(ranked.indexOf(bag) > ranked.indexOf('BS Foods'), `${bag} below the cheapest per-kg listing`);
+    assert.ok(ranked.indexOf(bag) > ranked.indexOf('Babu Trading Co.'), `${bag} below a per-kg listing near the maximum`);
+  }
+  assert.equal(ranked[0], 'BS Foods');
+
+  // the same requirement saved with a Hindi unit compares exactly the same
+  const hindi = { ...need, unit: 'किलो' };
+  assert.deepEqual(rankVendors(listings.map((v) => ({ ...v, ...scoreVendor(v, hindi) })), hindi).map((v) => v.name), ranked);
+});
+
+test('rankVendors breaks a score tie by comparable price, then by rating count, and keeps found order last', () => {
+  const need = { unit: 'kg' };
+  const vendors = [
+    { name: 'bag, unknown size', score: 71.5, listed_price: 25000, listed_unit: 'bag', rating_count: 900 },
+    { name: 'per kg 100', score: 71.5, listed_price: 100, listed_unit: 'kg', rating_count: 3 },
+    { name: 'per tonne = 80/kg', score: 71.5, listed_price: 80000, listed_unit: 'tonne', rating_count: 1 },
+    { name: 'per kg 100, more ratings', score: 71.5, listed_price: 100, listed_unit: 'kg', rating_count: 40 },
+    { name: 'higher score', score: 72, listed_price: null, listed_unit: null, rating_count: null },
+  ];
+  assert.deepEqual(rankVendors(vendors, need).map((v) => v.name), [
+    'higher score', 'per tonne = 80/kg', 'per kg 100, more ratings', 'per kg 100', 'bag, unknown size',
+  ]);
+  assert.equal(vendors[0].name, 'bag, unknown size', 'input left alone');
 });
 
 test('price: metric units are converted; a per-bag price only through the stated pack size', () => {

@@ -30,6 +30,9 @@ const agent = require("../src/agora/agent");
 const repo = require("../src/db/repo");
 const events = require("../src/events");
 const jobs = require("../src/jobs");
+const approvals = require("../src/approvals");
+const session = require("../src/negotiation/session");
+const { rankVendors } = require("../src/procurement/scoring");
 
 const recordedPage = fs.readFileSync(path.join(__dirname, "fixtures", "indiamart-bengaluru-basmati-rice.html"), "utf8");
 const realFetch = globalThis.fetch;
@@ -208,9 +211,18 @@ test("start_sourcing returns a job id in under a second; the job stores scored r
   assert.match(status.say, new RegExp(`^खोज पूरी हुई, ${job.result.count} विक्रेता मिले`));
 
   const shortlist = await registry.callTool(ctx, "get_shortlist", { requirementId: saved.requirementId, limit: 3 });
+  const ranked = rankVendors(vendors, repo.getRequirement(businessId, saved.requirementId));
   assert.equal(shortlist.vendors.length, Math.min(3, vendors.length));
-  assert.equal(shortlist.vendors[0].vendorId, vendors[0].id, "best score first");
-  assert.ok(shortlist.say.startsWith(`${vendors.length} विक्रेता हैं; सबसे ऊपर ${vendors[0].name}`));
+  assert.deepEqual(shortlist.vendors.map((v) => v.vendorId), ranked.slice(0, 3).map((v) => v.id), "best first, ties by comparable price");
+  assert.deepEqual(shortlist.vendors.map((v) => v.rank), [1, 2, 3].slice(0, shortlist.vendors.length));
+  const firstComparable = ranked.find((v) => v.listed_unit === "kg" && v.listed_price != null);
+  assert.ok(firstComparable, "the recorded page has per-kg listings");
+  assert.ok(shortlist.say.startsWith(`${vendors.length} विक्रेता मिले, `), shortlist.say);
+  assert.ok(shortlist.say.includes(`सबसे अच्छे ${firstComparable.name}`), "the say reads out a vendor with a comparable price");
+
+  // without any id: the latest requirement of this call
+  const byDefault = await registry.callTool(ctx, "get_shortlist", { limit: 3 });
+  assert.deepEqual(byDefault.vendors, shortlist.vendors);
 });
 
 test("sourcing that finds no category fails honestly, with the reason on the job", async (t) => {
@@ -348,4 +360,237 @@ test("validateArgs covers required, enum, numbers and patterns", () => {
   assert.match(registry.validateArgs(schema, { a: "x", n: 0 }), /above 0/);
   assert.match(registry.validateArgs(schema, { a: "x", d: "12" }), /format/);
   assert.match(registry.validateArgs(schema, { a: "x", extra: 1 }), /Unknown argument/);
+});
+
+/* ------------------------------------------- E2E 2026-11-19 regressions --- */
+
+test("save_requirement stores canonical units and cities from Hindi, Kannada and English speech", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const hi = await registry.callTool(ctx, "save_requirement", { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", max_price_per_unit: 90 });
+  assert.equal(hi.requirement.unit, "kg");
+  assert.equal(hi.requirement.city, "Bengaluru");
+  assert.equal(hi.requirement.item, "बासमती चावल", "the item is kept as the owner said it");
+  assert.equal(hi.say, "ठीक है, 200 किलो बासमती चावल लिख लिया, Bengaluru के लिए।");
+
+  const kn = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "ಕಿಲೋ", city: "ಬೆಂಗಳೂರು" });
+  assert.deepEqual([kn.requirement.unit, kn.requirement.city], ["kg", "Bengaluru"]);
+  const en = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "cotton t-shirts", quantity: 500, unit: "pieces", city: "Bangalore" });
+  assert.deepEqual([en.requirement.unit, en.requirement.city], ["piece", "Bengaluru"]);
+  const mixed = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "कॉटन टीशर्ट", quantity: 500, unit: "पीस", city: "Bengaluru" });
+  assert.equal(mixed.requirement.unit, "piece");
+});
+
+test("save_requirement asks about a unit it does not know and saves nothing (never guesses)", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  await assert.rejects(registry.callTool(ctx, "save_requirement", { item: "चावल", quantity: 3, unit: "गाड़ी" }), (err) => {
+    assert.equal(err.code, "UNKNOWN_UNIT");
+    assert.match(err.say, /^"गाड़ी" इकाई मुझे समझ नहीं आई/);
+    return true;
+  });
+  assert.equal(repo.listRequirements(businessId).length, 0);
+});
+
+test("save_requirement without an id or item fills in the requirement saved earlier in this call", async () => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const first = await registry.callTool(ctx, "save_requirement", { item: "sugar" });
+  const second = await registry.callTool(ctx, "save_requirement", { quantity: 50, unit: "kgs", city: "mysore" });
+  assert.equal(second.requirementId, first.requirementId);
+  assert.deepEqual([second.requirement.quantity, second.requirement.unit, second.requirement.city], [50, "kg", "Mysuru"]);
+  // a fresh call has nothing to fill in
+  await expectToolError(registry.callTool(ownerCtx(businessId), "save_requirement", { quantity: 5 }), "INVALID");
+});
+
+test("reply_language switches the say language; the business language is the fallback", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const en = await registry.callTool(ctx, "save_requirement", { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", reply_language: "en-IN" });
+  assert.equal(en.say, "Noted: 200 kilograms of basmati rice for Bengaluru.", "an English sentence gets an English item name");
+  const kn = await registry.callTool(ctx, "get_shortlist", { reply_language: "kn-IN" });
+  assert.equal(kn.say, "ಇನ್ನೂ ಯಾವ ಮಾರಾಟಗಾರರೂ ಸಿಕ್ಕಿಲ್ಲ.");
+  const hi = await registry.callTool(ctx, "get_shortlist", {});
+  assert.equal(hi.say, "अभी कोई विक्रेता नहीं मिला है।");
+  // errors follow it too
+  await assert.rejects(
+    registry.callTool(ctx, "save_requirement", { unit: "handful", reply_language: "en-IN" }),
+    (err) => err.code === "UNKNOWN_UNIT" && /^I did not understand the unit "handful"/.test(err.say),
+  );
+  await expectToolError(registry.callTool(ctx, "get_shortlist", { reply_language: "fr-FR" }), "INVALID_ARGUMENTS");
+
+  // after sourcing, the IndiaMART category names the item in English
+  const job = repo.createJob(businessId, { kind: "sourcing", requirement_id: en.requirementId });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  repo.transitionJob(businessId, job.id, "running", "done", { result: { category: "Basmati Rice", count: 0 } });
+  const again = await registry.callTool(ctx, "save_requirement", { max_price_per_unit: 90, reply_language: "en-IN" });
+  assert.equal(again.say, "Noted: 200 kilograms of Basmati Rice for Bengaluru.");
+
+  for (const tool of registry.toolsFor("owner")) {
+    assert.deepEqual(tool.inputSchema.properties.reply_language?.enum, ["hi-IN", "kn-IN", "en-IN"], tool.name);
+  }
+});
+
+/** 200 kg, max 90/kg; vendors as the QA run saw them: a per-bag listing scored highest. */
+function seedVendors(businessId, sessionId, { units = ["Bag", "Kg", "Kg"] } = {}) {
+  const need = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "kg", city: "Bengaluru", max_price: 90, session_id: sessionId });
+  const make = (name, price, unit, score) => repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name, listed_price: price, listed_unit: unit, score });
+  const vendors = [make("3comma Labs", 25000, units[0], 80), make("Babu Trading Co.", 100, units[1], 75), make("BS Foods", 60, units[2], 70)];
+  return { need, vendors };
+}
+
+function captureNegotiationStart(t) {
+  const calls = [];
+  const real = session.startNegotiation;
+  session.startNegotiation = async (args) => {
+    calls.push(args);
+    return { jobId: "job_fake", negotiationId: "neg_fake" };
+  };
+  t.after(() => {
+    session.startNegotiation = real;
+  });
+  return calls;
+}
+
+test("start_negotiation with no ids negotiates with the best-ranked vendor that has a comparable price", async (t) => {
+  const calls = captureNegotiationStart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const { need, vendors } = seedVendors(businessId, ctx.sessionId);
+
+  const out = await registry.callTool(ctx, "start_negotiation", {});
+  assert.equal(calls.length, 1);
+  assert.deepEqual([calls[0].requirementId, calls[0].vendorId, calls[0].counterpart], [need.id, vendors[1].id, "simulated"]);
+  assert.equal(out.vendorRank, 2);
+  assert.match(out.say, /^Babu Trading Co\. की लिस्टिंग के भाव पर बने सिम्युलेटेड विक्रेता से/);
+
+  // vendorRank picks by place in the shortlist; the per-bag #1 cannot back a simulated vendor
+  await assert.rejects(registry.callTool(ctx, "start_negotiation", { vendorRank: 1 }), (err) => {
+    assert.equal(err.code, "NO_LISTED_PRICE");
+    assert.equal(err.say, "3comma Labs की लिस्टिंग में प्रति किलो भाव नहीं है; नंबर 2, Babu Trading Co., का भाव है, उनसे मोल-भाव करूँ?");
+    return true;
+  });
+  await registry.callTool(ctx, "start_negotiation", { vendorRank: 3, reply_language: "en-IN" });
+  assert.equal(calls.at(-1).vendorId, vendors[2].id);
+  assert.equal(calls.at(-1).language, "hi-IN", "the negotiation runs in the business language");
+  assert.equal(calls.at(-1).sayLanguage, "en-IN");
+  await assert.rejects(registry.callTool(ctx, "start_negotiation", { vendorRank: 9 }), (err) => err.code === "NOT_FOUND" && err.say === "सूची में केवल 3 विक्रेता हैं।");
+  await expectToolError(registry.callTool(ctx, "start_negotiation", { vendorId: "ven_garbled" }), "NOT_FOUND");
+  assert.equal(calls.length, 2, "no negotiation started on a refusal");
+});
+
+test("start_negotiation with no comparable listing refuses and offers a real vendor by link", async (t) => {
+  const calls = captureNegotiationStart(t);
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const { vendors } = seedVendors(businessId, ctx.sessionId, { units: ["Bag", "Bag", "Box"] });
+  await assert.rejects(registry.callTool(ctx, "start_negotiation", {}), (err) => {
+    assert.equal(err.code, "NO_LISTED_PRICE");
+    assert.equal(err.say, "No vendor lists a price per kilogram, so I cannot base a simulated vendor on one; shall I invite a real vendor by link?");
+    return true;
+  });
+  assert.equal(calls.length, 0);
+  await registry.callTool(ctx, "start_negotiation", { counterpart: "human" });
+  assert.equal(calls[0].vendorId, vendors[0].id, "a human vendor needs no listed price: the best-ranked one");
+});
+
+test("start_negotiation with no requirement asks what to buy", async () => {
+  const businessId = seedBusiness("hi-IN");
+  await assert.rejects(
+    registry.callTool(ownerCtx(businessId), "start_negotiation", {}),
+    (err) => err.code === "NO_REQUIREMENT" && err.say === "पहले बताइए, क्या खरीदना है?",
+  );
+});
+
+test("request_approval with no id takes the best deal; a tie for best is named, not picked", async () => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const { need, quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ctx, "request_approval", {});
+  assert.equal(asked.quoteId, quote.id);
+  assert.match(asked.say, /^Order from Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg\./);
+
+  const other = repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name: "Ganesh Stores", listed_price: 64, listed_unit: "kg" });
+  const neg = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: other.id, counterpart: "human" });
+  repo.createQuote(businessId, {
+    requirement_id: need.id, vendor_id: other.id, negotiation_id: neg.id, unit_price: 62, unit: "kg", lead_time_days: 3, freight: 150, landed_cost: 3250, quoted_sentence: "62",
+  });
+  await assert.rejects(registry.callTool(ctx, "request_approval", { requirementId: need.id }), (err) => {
+    assert.equal(err.code, "AMBIGUOUS");
+    assert.match(err.say, /^There are 2 choices: (Lakshmi Traders|Ganesh Stores) at 3250 rupees, (Lakshmi Traders|Ganesh Stores) at 3250 rupees\. Which one\?$/);
+    return true;
+  });
+});
+
+test("request_approval's readback follows reply_language; the stored readback stays in the business language", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const { quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ownerCtx(businessId), "request_approval", { quoteId: quote.id, reply_language: "en-IN" });
+  assert.match(asked.say, /^Order from Lakshmi Traders: .* Total 3250 rupees\./);
+  assert.match(repo.getApproval(businessId, asked.approvalId).readback, /कुल 3250 रुपये/);
+});
+
+test("money defaults never pick between several: confirm_approval and create_order refuse with the choices", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGD" });
+  fakeAgora(t, () => ({ json: { contents: [{ role: "user", content: "हाँ", metadata: { source: "asr" }, timestamp: Date.now() + 1000 }] } }));
+
+  // nothing waiting
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), "NO_PENDING_APPROVAL");
+  await expectToolError(registry.callTool(ctx, "create_order", {}), "NOT_APPROVED");
+
+  const a = seedQuote(businessId);
+  const b = seedQuote(businessId);
+  const first = await registry.callTool(ctx, "request_approval", { quoteId: a.quote.id });
+  // one pending: create_order hands it to the gate, which refuses (not approved yet)
+  await expectToolError(registry.callTool(ctx, "create_order", {}), "NOT_APPROVED");
+  const second = await registry.callTool(ctx, "request_approval", { quoteId: b.quote.id });
+
+  await assert.rejects(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), (err) => {
+    assert.equal(err.code, "AMBIGUOUS");
+    assert.equal(err.say, "2 विकल्प हैं: Lakshmi Traders 3250 रुपये, Lakshmi Traders 3250 रुपये; कौन सा?");
+    return true;
+  });
+  assert.equal(repo.listApprovals(businessId, { status: "pending" }).length, 2, "nothing decided on an ambiguous default");
+
+  approvals.confirmApproval(businessId, first.approvalId, { decision: "approve", via: "button" });
+  approvals.confirmApproval(businessId, second.approvalId, { decision: "approve", via: "button" });
+  await expectToolError(registry.callTool(ctx, "create_order", {}), "AMBIGUOUS");
+  assert.equal(repo.listOrders(businessId).length, 0, "no order from an ambiguous default");
+
+  // with the id it goes through the gate as before
+  const order = await registry.callTool(ctx, "create_order", { approvalId: first.approvalId });
+  assert.match(order.poNumber, /^SAHAY\//);
+  // now exactly one approved remains: the default takes it, through the same gate
+  const next = await registry.callTool(ctx, "create_order", {});
+  assert.notEqual(next.orderId, order.orderId);
+  assert.equal(repo.getApproval(businessId, second.approvalId).status, "consumed");
+
+  // two orders await a link: the payment default refuses to choose
+  await assert.rejects(
+    registry.callTool(ctx, "create_payment_link", {}),
+    (err) => err.code === "AMBIGUOUS" && err.say.includes(order.poNumber) && err.say.includes(next.poNumber),
+  );
+});
+
+test("create_payment_link with no id uses the one order awaiting payment, through the approval gate", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  await expectToolError(registry.callTool(ctx, "create_payment_link", {}), "NO_ORDER");
+  const { quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  approvals.confirmApproval(businessId, asked.approvalId, { decision: "approve", via: "button" });
+  const order = await registry.callTool(ctx, "create_order", {});
+  stubFetch(t, async () => new Response(JSON.stringify({ id: "plink_default", short_url: "https://rzp.io/i/default" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  const link = await registry.callTool(ctx, "create_payment_link", {});
+  assert.equal(link.orderId, order.orderId);
+  assert.equal(link.url, "https://rzp.io/i/default");
+});
+
+test("get_job_status with no id reports the running or latest job, and says so when there is none", async () => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const none = await registry.callTool(ctx, "get_job_status", {});
+  assert.equal(none.status, "none");
+  assert.equal(none.say, "No search or negotiation has been started yet.");
 });

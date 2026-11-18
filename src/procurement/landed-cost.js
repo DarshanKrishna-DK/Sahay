@@ -4,40 +4,14 @@
  * Landed cost: what the order actually costs the owner (goods plus freight), and the unit
  * handling every money comparison depends on.
  *
+ * Units come from ./units (the one unit table); normaliseUnit and unitRatio are re-exported
+ * for the modules that already import them from here.
+ *
  * Nothing here guesses. An unknown figure produces a null total and a flag naming what is
  * missing; units that cannot be reconciled exactly throw.
  */
 
-/** Spellings seen in IndiaMART listings and vendor speech, one canonical name per unit. */
-const UNIT_SPELLINGS = {
-  kg: ['kg', 'kgs', 'kilo', 'kilos', 'kilogram', 'kilograms'],
-  g: ['g', 'gm', 'gms', 'gram', 'grams'],
-  quintal: ['quintal', 'quintals', 'qtl'],
-  tonne: ['tonne', 'tonnes', 'ton', 'tons', 'mt', 'metric ton', 'metric tonne'],
-  litre: ['litre', 'litres', 'liter', 'liters', 'l', 'ltr'],
-  ml: ['ml', 'millilitre', 'millilitres', 'milliliter', 'milliliters'],
-  piece: ['piece', 'pieces', 'pc', 'pcs', 'nos'],
-  bag: ['bag', 'bags'],
-  box: ['box', 'boxes'],
-  pack: ['pack', 'packs'],
-  packet: ['packet', 'packets'],
-  metre: ['metre', 'metres', 'meter', 'meters', 'mtr'],
-  dozen: ['dozen', 'dozens'],
-};
-
-const CANONICAL_UNIT = new Map(
-  Object.entries(UNIT_SPELLINGS).flatMap(([unit, spellings]) => spellings.map((s) => [s, unit])),
-);
-
-/** Exact metric relationships only. A bag, box or piece has no fixed size, so it is never here. */
-const UNIT_SIZE = {
-  g: { dimension: 'mass', size: 0.001 },
-  kg: { dimension: 'mass', size: 1 },
-  quintal: { dimension: 'mass', size: 100 },
-  tonne: { dimension: 'mass', size: 1000 },
-  ml: { dimension: 'volume', size: 0.001 },
-  litre: { dimension: 'volume', size: 1 },
-};
+const { normaliseUnit, unitRatio } = require('./units');
 
 class UnitMismatchError extends Error {
   constructor(quoteUnit, requirementUnit) {
@@ -47,29 +21,6 @@ class UnitMismatchError extends Error {
     this.quoteUnit = quoteUnit;
     this.requirementUnit = requirementUnit;
   }
-}
-
-/** "Kg", "Kilogram", " kgs " -> "kg". An unrecognised unit is kept, lower-cased; empty -> null. */
-function normaliseUnit(unit) {
-  if (unit == null) return null;
-  const text = String(unit).trim().toLowerCase().replace(/\.$/, '').replace(/\s+/g, ' ');
-  if (!text) return null;
-  return CANONICAL_UNIT.get(text) ?? text;
-}
-
-/**
- * How many `toUnit` make one `fromUnit` (tonne -> kg = 1000). Null when either unit is missing
- * or the two have no exact relationship.
- */
-function unitRatio(fromUnit, toUnit) {
-  const from = normaliseUnit(fromUnit);
-  const to = normaliseUnit(toUnit);
-  if (!from || !to) return null;
-  if (from === to) return 1;
-  const a = UNIT_SIZE[from];
-  const b = UNIT_SIZE[to];
-  if (!a || !b || a.dimension !== b.dimension) return null;
-  return a.size / b.size;
 }
 
 const round2 = (n) => Number(n.toFixed(2));

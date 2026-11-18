@@ -36,6 +36,14 @@ test('different spellings of one unit are the same unit', () => {
   assert.deepEqual(result.flags, []);
 });
 
+test('a requirement stored with a Hindi or Kannada unit costs like its English code', () => {
+  const quote = { unit_price: 62, unit: 'Kg', freight: 150 };
+  assert.equal(computeLandedCost(quote, { quantity: 200, unit: 'किलो' }).landed_cost, 12550);
+  assert.equal(computeLandedCost(quote, { quantity: 200, unit: 'ಕಿಲೋ' }).landed_cost, 12550);
+  assert.equal(computeLandedCost({ ...quote, unit: 'टन', unit_price: 62000 }, { quantity: 200, unit: 'kg' }).landed_cost, 12550);
+  assert.throws(() => computeLandedCost({ ...quote, unit: 'बोरी' }, { quantity: 200, unit: 'किलो' }), UnitMismatchError);
+});
+
 test('an exact metric conversion is applied and flagged', () => {
   const perTonne = computeLandedCost({ unit_price: 69000, unit: 'Tonne', freight: 1000 }, requirement);
   assert.equal(perTonne.unit_price, 69);
