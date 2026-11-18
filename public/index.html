@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sahay voice console</title>
+  <meta name="description" content="Talk to Sahay, an automated assistant that sources suppliers, negotiates and raises orders for your business, with your approval.">
+  <link rel="icon" type="image/png" href="/assets/sahay-logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Sans+Kannada:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/console.css">
+  <!-- agora-agent-client-toolkit 2.10.0 dist/index.mjs reads process.env.NODE_ENV unguarded;
+       this classic script must run before any module (verified in spike S0). -->
+  <script>window.process = window.process || { env: { NODE_ENV: "production" } };</script>
+  <script>
+    // Apply a saved theme before first paint. Storage may be blocked; the page works without it.
+    try { var t = localStorage.getItem("sahay-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins) are injected in order by
+       js/voice.js right after first paint, so the console renders without waiting for 3 MB. -->
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#call">Skip to the call</a>
+
+  <header class="appbar">
+    <div class="brand">
+      <img src="/assets/sahay-logo.png" alt="" width="40" height="50">
+      <div class="brand-text">
+        <span class="brand-name">Sahay</span>
+        <span class="brand-sub">Voice procurement console</span>
+        <span class="business-name" id="business-name" hidden></span>
+      </div>
+    </div>
+
+    <p class="ai-notice" role="note">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span><strong>Automated assistant.</strong> Sahay is an AI agent acting for your business<span class="long">. It asks for your yes before any order or payment</span>.</span>
+    </p>
+
+    <span class="spacer"></span>
+
+    <span class="stream-status" id="stream-status" data-state="connecting" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span><span class="text" id="stream-text">Connecting to live updates</span>
+    </span>
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    </button>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main class="console" id="main">
+    <!-- Left: the call and its transcript -->
+    <div class="col-call">
+      <section class="panel call-panel" id="call" aria-labelledby="call-title">
+        <div class="panel-head">
+          <div class="titles">
+            <h2 class="panel-title" id="call-title">Call Sahay</h2>
+            <p class="panel-sub">Speak in Hindi, Kannada or English.</p>
+          </div>
+        </div>
+
+        <div class="orb-wrap">
+          <div class="orb" id="orb" data-state="idle" aria-hidden="true">
+            <div class="orb-core">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>
+            </div>
+          </div>
+          <div class="orb-text" role="status" aria-live="polite">
+            <p class="orb-label" id="orb-label">Ready to call</p>
+            <p class="orb-sub" id="orb-sub">Press Start call, then tell Sahay what you need to buy.</p>
+          </div>
+        </div>
+
+        <div class="lang-row" id="lang-row" aria-label="Language">
+          <span class="label">Language</span>
+          <span class="lang" data-lang="hi" lang="hi">हिन्दी</span>
+          <span class="lang" data-lang="kn" lang="kn">ಕನ್ನಡ</span>
+          <span class="lang" data-lang="en">English</span>
+          <span class="lang-note" id="lang-note">Detected from your speech once you talk.</span>
+        </div>
+
+        <div class="controls">
+          <button class="mic-btn" id="mic-btn" type="button" aria-pressed="false" aria-label="Mute microphone" disabled>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/><path class="slash" d="M3 3l18 18"/></svg>
+          </button>
+          <span class="meter" id="mic-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <button class="btn btn-primary" id="call-btn" type="button">Start call</button>
+        </div>
+
+        <button class="btn btn-primary btn-wide" id="audio-unlock" type="button" hidden>Tap to hear Sahay</button>
+
+        <div class="pipeline" id="pipeline" aria-label="Voice pipeline latency" hidden></div>
+        <div class="issues" id="call-issues" aria-live="polite"></div>
+      </section>
+
+      <section class="panel transcript-panel" aria-labelledby="transcript-title">
+        <div class="panel-head">
+          <div class="titles">
+            <h2 class="panel-title" id="transcript-title">Live transcript</h2>
+            <p class="panel-sub">What you said and what Sahay said, in the script it was spoken.</p>
+          </div>
+          <span class="count mono" id="transcript-count" hidden></span>
+        </div>
+        <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
+      </section>
+    </div>
+
+    <!-- Right: what Sahay is doing -->
+    <div class="col-work">
+      <section class="panel plan" aria-labelledby="plan-title">
+        <div class="panel-head">
+          <div class="titles">
+            <h2 class="panel-title" id="plan-title">Plan</h2>
+            <p class="panel-sub">Each step lights up from what actually happened, not from what was promised.</p>
+          </div>
+        </div>
+        <ol class="steps" id="plan-steps"></ol>
+      </section>
+
+      <div class="work-grid">
+        <section class="panel" id="panel-requirement" aria-labelledby="req-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="req-title">Requirement</h2>
+              <p class="panel-sub">What you asked Sahay to buy.</p>
+            </div>
+          </div>
+          <div id="requirement-body"></div>
+        </section>
+
+        <section class="panel" id="panel-jobs" aria-labelledby="jobs-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="jobs-title">Jobs</h2>
+              <p class="panel-sub">Sourcing and negotiation running in the background.</p>
+            </div>
+            <span class="count mono" id="jobs-count" hidden></span>
+          </div>
+          <div id="jobs-body"></div>
+        </section>
+
+        <section class="panel span-2" id="panel-vendors" aria-labelledby="vendors-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="vendors-title">Vendor shortlist</h2>
+              <p class="panel-sub">Real listings found on IndiaMART, ranked by Sahay.</p>
+            </div>
+            <span class="count mono" id="vendors-count" hidden></span>
+          </div>
+          <div id="vendors-body"></div>
+        </section>
+
+        <section class="panel" id="panel-negotiation" aria-labelledby="nego-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="nego-title">Negotiation</h2>
+              <p class="panel-sub">Every offer and counter-offer, in order.</p>
+            </div>
+            <span class="count mono" id="nego-count" hidden></span>
+          </div>
+          <div id="nego-body"></div>
+        </section>
+
+        <section class="panel approval-panel" id="panel-approval" aria-labelledby="approval-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="approval-title">Approval</h2>
+              <p class="panel-sub">No order or payment link without your yes.</p>
+            </div>
+            <span class="chip" id="approval-chip" hidden></span>
+          </div>
+          <div id="approval-body"></div>
+        </section>
+
+        <section class="panel span-2" id="panel-quotes" aria-labelledby="quotes-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="quotes-title">Quotes compared</h2>
+              <p class="panel-sub">Ranked by landed cost: price, freight and delivery together.</p>
+            </div>
+            <span class="count mono" id="quotes-count" hidden></span>
+          </div>
+          <div id="quotes-body"></div>
+        </section>
+
+        <section class="panel" id="panel-order" aria-labelledby="order-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="order-title">Order</h2>
+              <p class="panel-sub">Purchase order, PDF and payment link.</p>
+            </div>
+            <span class="chip amber">Razorpay test mode</span>
+          </div>
+          <div id="order-body"></div>
+        </section>
+
+        <section class="panel" id="panel-audit" aria-labelledby="audit-title">
+          <div class="panel-head">
+            <div class="titles">
+              <h2 class="panel-title" id="audit-title">Audit trail</h2>
+              <p class="panel-sub">Every action Sahay took and every decision you gave.</p>
+            </div>
+            <span class="count mono" id="audit-count" hidden></span>
+          </div>
+          <div id="audit-body"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

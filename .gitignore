@@ -17,3 +17,5 @@ AGENTS.md
 .vscode/
 .idea/
 *.wav
+spike/
+skills-lock.json
