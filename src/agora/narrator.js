@@ -44,7 +44,7 @@ const LINES = {
     "en-IN": () => "The negotiation has started.",
   },
   vendors_found: {
-    "hi-IN": (v) => `${v.count} विक्रेता मिल गए हैं, उनकी जाँच कर रहा हूँ।`,
+    "hi-IN": (v) => `${v.count} विक्रेता मिल गए हैं, उनकी जाँच कर रही हूँ।`,
     "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ಪರಿಶೀಲಿಸುತ್ತಿದ್ದೇನೆ.`,
     "en-IN": (v) => `${v.count} vendors found so far; checking them now.`,
   },

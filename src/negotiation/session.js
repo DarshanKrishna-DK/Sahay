@@ -657,7 +657,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
 }
 
 const NEGOTIATION_BUSY = {
-  "hi-IN": "एक मोल-भाव पहले से चल रहा है, उसके ख़त्म होने के बाद अगला शुरू करूँगा।",
+  "hi-IN": "एक मोल-भाव पहले से चल रहा है, उसके ख़त्म होने के बाद अगला शुरू करूँगी।",
   "kn-IN": "ಒಂದು ಚೌಕಾಸಿ ಈಗಾಗಲೇ ನಡೆಯುತ್ತಿದೆ, ಅದು ಮುಗಿದ ನಂತರ ಮುಂದಿನದು ಶುರು ಮಾಡುತ್ತೇನೆ.",
   "en-IN": "A negotiation is already running; I will start the next one after it ends.",
 };

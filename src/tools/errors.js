@@ -62,7 +62,7 @@ const SAY = {
     "en-IN": "I did not hear a clear yes; shall I confirm this order, yes or no?",
   },
   no_voice_evidence: {
-    "hi-IN": "मैं आपकी आवाज़ में जवाब नहीं पढ़ पाया, कृपया स्क्रीन पर मंज़ूरी का बटन दबाइए।",
+    "hi-IN": "मैं आपकी आवाज़ में जवाब नहीं पढ़ पाई, कृपया स्क्रीन पर मंज़ूरी का बटन दबाइए।",
     "kn-IN": "ನಿಮ್ಮ ಧ್ವನಿಯ ಉತ್ತರ ಓದಲು ಆಗಲಿಲ್ಲ, ದಯವಿಟ್ಟು ಪರದೆಯ ಮೇಲೆ ಒಪ್ಪಿಗೆ ಬಟನ್ ಒತ್ತಿ.",
     "en-IN": "I could not read your spoken answer, please press the approve button on the screen.",
   },
@@ -97,7 +97,7 @@ const SAY = {
     "en-IN": "The extraction service did not answer.",
   },
   internal: {
-    "hi-IN": "कुछ गड़बड़ हो गई, मैं यह काम अभी नहीं कर पाया।",
+    "hi-IN": "कुछ गड़बड़ हो गई, मैं यह काम अभी नहीं कर पाई।",
     "kn-IN": "ಏನೋ ತೊಂದರೆಯಾಯಿತು, ಈ ಕೆಲಸ ಈಗ ಮಾಡಲು ಆಗಲಿಲ್ಲ.",
     "en-IN": "Something went wrong and I could not do that just now.",
   },

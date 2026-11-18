@@ -4,6 +4,8 @@ Object.assign(process.env, {
   DB_FILE: ":memory:",
   SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   TELEGRAM_BOT_TOKEN: "123456:test-bot-token",
+  // Override the developer's demo delay from .env (loadEnvFile never overwrites a set key).
+  FOLLOWUP_DELAY_SECONDS: "",
 });
 
 const assert = require("node:assert/strict");

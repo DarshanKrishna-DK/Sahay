@@ -183,7 +183,7 @@ test("start_sourcing returns a job id in under a second; the job stores scored r
   const out = await registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId });
   assert.ok(Date.now() - started < 1000);
   assert.match(out.jobId, /^job_/);
-  assert.equal(out.say, "इंडियामार्ट पर basmati rice के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगा।");
+  assert.equal(out.say, "इंडियामार्ट पर basmati rice के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।");
 
   const again = await registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId });
   assert.equal(again.jobId, out.jobId, "a second start while running returns the same job");

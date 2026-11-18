@@ -113,7 +113,7 @@ const PHRASES = {
     "en-IN": (v) => `${v.item ? `Noted ${v.item}; ` : ""}please tell me ${v.missing}.`,
   },
   sourcing_started: {
-    "hi-IN": (v) => `इंडियामार्ट पर ${v.item} के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगा।`,
+    "hi-IN": (v) => `इंडियामार्ट पर ${v.item} के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।`,
     "kn-IN": (v) => `ಇಂಡಿಯಾಮಾರ್ಟ್‌ನಲ್ಲಿ ${v.item} ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕಲು ಶುರು ಮಾಡಿದ್ದೇನೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.`,
     "en-IN": (v) => `I have started looking for ${v.item} vendors on IndiaMART and will tell you as soon as I find them.`,
   },
@@ -168,7 +168,7 @@ const PHRASES = {
     "en-IN": (v) => `${v.count} vendors; the top one is ${v.name}${v.city ? ` in ${v.city}` : ""}${v.price ? `, listed at ${v.price} rupees per ${v.unit}` : ", with no price in the listing"}.`,
   },
   negotiation_started_simulated: {
-    "hi-IN": (v) => `${v.vendor} की लिस्टिंग के भाव पर बने सिम्युलेटेड विक्रेता से मोल-भाव शुरू कर दिया है, नतीजा आते ही बताऊँगा।`,
+    "hi-IN": (v) => `${v.vendor} की लिस्टिंग के भाव पर बने सिम्युलेटेड विक्रेता से मोल-भाव शुरू कर दिया है, नतीजा आते ही बताऊँगी।`,
     "kn-IN": (v) => `${v.vendor} ಅವರ ಪಟ್ಟಿಯ ಬೆಲೆಯ ಆಧಾರದ ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್ ಜೊತೆ ಚೌಕಾಸಿ ಶುರು ಮಾಡಿದ್ದೇನೆ, ಫಲಿತಾಂಶ ಬಂದ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.`,
     "en-IN": (v) => `I have started negotiating with a simulated vendor priced from ${v.vendor}'s listing and will report the result.`,
   },

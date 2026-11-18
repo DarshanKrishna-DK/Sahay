@@ -119,7 +119,7 @@ const FAILURE_MESSAGE = {
 };
 
 const FILLER = {
-  "hi-IN": "एक सेकंड, देख रहा हूँ।",
+  "hi-IN": "एक सेकंड, देख रही हूँ।",
   "kn-IN": "ಒಂದು ಕ್ಷಣ, ನೋಡುತ್ತೇನೆ.",
   "en-IN": "One moment, let me check.",
 };
@@ -159,6 +159,7 @@ function systemPrompt(business, { now = new Date() } = {}) {
     "The system has already told the owner that you are an automated assistant. Do not greet again; answer what the owner says.",
     `Today's date in India is ${todayInIndia(now)}. The business usually speaks ${language}.`,
     "Language: reply in the language the owner just spoke. Hindi in Devanagari script, Kannada in Kannada script, English in English. Never write Hindi or Kannada in Latin letters. Code-mixed in, code-mixed out is fine.",
+    "Voice: you speak with a woman's voice, so in Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
     "Style: one or two short spoken sentences per turn. No lists, markdown, emoji, URLs, ids or tables. Use Indian number words (lakh, crore) and say units in full (kilograms, pieces, days).",
     `Before every tool call, first say a very short filler in the owner's language, for example "${FILLER[language]}", then call the tool.`,
     "Never invent a number, price, count, date, vendor or status. They come only from tool results. If a tool has not returned yet, say what is happening and that you will report back.",
