@@ -155,6 +155,12 @@ function loadConfig(env = process.env) {
         ["keyId", "keySecret"],
       ),
       telegram: sealed({ botToken: read("TELEGRAM_BOT_TOKEN") }, ["botToken"]),
+      // Demo aid: when set, payment_due fires N seconds after an order and delivery_check 2N.
+      followups: Object.freeze({
+        delaySeconds: read("FOLLOWUP_DELAY_SECONDS") === null ? null : Number(read("FOLLOWUP_DELAY_SECONDS")),
+      }),
+      // "agents" (two Agora agents in one channel) or "loop" (server voices both sides via /speak).
+      negotiation: Object.freeze({ mode: read("NEGOTIATION_MODE") ?? "agents" }),
     },
     ["sessionSecret"],
   );
