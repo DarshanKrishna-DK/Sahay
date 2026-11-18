@@ -1,19 +1,16 @@
 {
   "name": "sahay",
-  "version": "1.0.0",
-  "description": "Agentic web-watching assistant for Indian SMEs/MSMEs - competitor, compliance, reputation and supplier intelligence, voiced in the owner's language.",
+  "version": "2.0.0",
+  "description": "Voice-first procurement agent for small Indian businesses: finds vendors, negotiates, asks for approval, then raises the purchase order and a test-mode payment link.",
   "main": "server.js",
   "type": "commonjs",
   "engines": { "node": ">=22.5.0" },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "doctor": "node scripts/doctor.js",
-    "seed": "node scripts/seed.js"
+    "test": "node --test"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "pdfkit": "^0.15.0"
   }
