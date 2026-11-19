@@ -103,7 +103,7 @@ function getRow(table, businessId, id) {
   return hydrate(table, row);
 }
 
-function listRows(table, businessId, filters = {}, { orderBy = "t.created_at, t.id", limit } = {}) {
+function listRows(table, businessId, filters = {}, { orderBy = "t.created_at, t.rowid", limit } = {}) {
   const where = ["t.business_id = ?"];
   const params = [tenant(businessId)];
   for (const [column, value] of Object.entries(filters)) {
@@ -197,7 +197,7 @@ function createSession(businessId, { kind, channel, agent_id, status = "active" 
 const getSession = (businessId, sessionId) => getRow("sessions", businessId, sessionId);
 
 function listSessions(businessId, { kind, status } = {}) {
-  return listRows("sessions", businessId, { kind, status }, { orderBy: "t.started_at, t.id" });
+  return listRows("sessions", businessId, { kind, status }, { orderBy: "t.started_at, t.rowid" });
 }
 
 function updateSession(businessId, sessionId, fields) {
@@ -342,7 +342,7 @@ const getVendor = (businessId, vendorId) => getRow("vendors", businessId, vendor
 
 /** Best score first; unscored vendors last. */
 function listVendors(businessId, { requirement_id, kind } = {}, { limit } = {}) {
-  return listRows("vendors", businessId, { requirement_id, kind }, { orderBy: "t.score IS NULL, t.score DESC, t.created_at, t.id", limit });
+  return listRows("vendors", businessId, { requirement_id, kind }, { orderBy: "t.score IS NULL, t.score DESC, t.created_at, t.rowid", limit });
 }
 
 function setVendorScore(businessId, vendorId, { score, score_breakdown }) {
@@ -465,7 +465,7 @@ function createApproval(businessId, { quote_id, readback, total_amount }) {
 const getApproval = (businessId, approvalId) => getRow("approvals", businessId, approvalId);
 
 function listApprovals(businessId, { quote_id, status } = {}) {
-  return listRows("approvals", businessId, { quote_id, status }, { orderBy: "t.requested_at, t.id" });
+  return listRows("approvals", businessId, { quote_id, status }, { orderBy: "t.requested_at, t.rowid" });
 }
 
 /** Decide a pending approval. Returns false when it was not pending any more. */
@@ -514,7 +514,7 @@ function recordApprovalReadback(businessId, approvalId, { agent_id, spoken_text 
 
 /** Read-backs the server spoke for this business, oldest first; narrowed by approval or agent. */
 function listApprovalReadbacks(businessId, { approval_id, agent_id } = {}) {
-  return listRows("approval_readbacks", businessId, { approval_id, agent_id }, { orderBy: "t.spoken_at, t.id" });
+  return listRows("approval_readbacks", businessId, { approval_id, agent_id }, { orderBy: "t.spoken_at, t.rowid" });
 }
 
 /* -------------------------------------------------------------- orders --- */
@@ -665,7 +665,7 @@ function createFollowup(businessId, { order_id, kind, due_at, message }) {
 const getFollowup = (businessId, followupId) => getRow("followups", businessId, followupId);
 
 function listFollowups(businessId, { status, order_id } = {}) {
-  return listRows("followups", businessId, { status, order_id }, { orderBy: "t.due_at, t.id" });
+  return listRows("followups", businessId, { status, order_id }, { orderBy: "t.due_at, t.rowid" });
 }
 
 /** Mark a scheduled follow-up fired or cancelled. Returns false when it was no longer scheduled. */
