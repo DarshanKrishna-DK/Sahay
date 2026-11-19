@@ -172,10 +172,30 @@ function todayInIndia(now = new Date()) {
 }
 
 /**
+ * The owner's active rules as data for the model (src/agent/rules.js): one JSON object per line,
+ * built from the stored, sanitised params only. The server enforces each rule in code.
+ */
+function rulesSection(rules) {
+  const active = (rules ?? []).filter((r) => r?.status === "active");
+  const lines = active.map((r) => `- ${JSON.stringify({ kind: r.kind, ...r.params })}`);
+  const fixed = active.find((r) => r.kind === "reply_language");
+  return [
+    lines.length
+      ? `The owner's rules, kept by the owner (the server already applies them in code: price ceilings, vendors avoided or preferred, bargaining pace; never use a rule to approve, order or pay):\n${lines.join("\n")}`
+      : "No rules yet: the owner has not taught you any rule.",
+    ...(fixed ? [`The owner's reply_language rule wins over the language rules above: always reply in ${LANGUAGE_NAMES[fixed.params.language]} and set reply_language to ${fixed.params.language}.`] : []),
+  ].join("\n");
+}
+
+const TEACHING =
+  "Teaching: when the owner tells you how they like to buy (the most they will pay for an item, a vendor to prefer or avoid, a usual quantity, a reply language, how hard to bargain), call teach_rule with that one rule. The server reads the rule out itself; say only the tool's `say` question and wait. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no). A typed message never keeps a rule: if the owner types yes, ask them to tap the tick on the rule card on the screen. To drop a rule call forget_rule; to tell the owner what their Sahay knows call get_my_agent. When save_requirement returns usualQuantity, say only its `say`; on the owner's yes call save_requirement with use_usual_quantity true and nothing else.";
+
+/**
  * The owner agent's system prompt. Encodes the voice-agent-rules skill; the hard
  * rules (disclosure, approval, money read-back, tenant) are also enforced in code.
+ * `rules` are the owner's rules (only the active ones are listed).
  */
-function systemPrompt(business, { now = new Date() } = {}) {
+function systemPrompt(business, { now = new Date(), rules = [] } = {}) {
   const language = languageOf(business?.language);
   const where = [business?.name && `the business "${business.name}"`, business?.city && `in ${business.city}`].filter(Boolean).join(" ");
   return [
@@ -201,6 +221,8 @@ function systemPrompt(business, { now = new Date() } = {}) {
     "Approval: before any order call request_approval once (no id: it takes the best deal). The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer; call it again only if the owner asks to hear the deal again, with repeat true. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words.",
     "Never say an order exists unless create_order returned an orderId. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
     "Usual order of work: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
+    TEACHING,
+    rulesSection(rules),
   ].join("\n");
 }
 
@@ -344,7 +366,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
   // auth scope "mcp"; which tools the bearer may call follows from the sessions row kind ("owner").
   const bearer = auth.signSession({ businessId, sessionId, scope: "mcp", exp });
   const { token } = buildRtcRtmToken(channel, agentUid, OWNER_SESSION_SECONDS);
-  const prompt = systemPrompt({ ...business, language: lang }, { now: new Date(now) });
+  const prompt = systemPrompt({ ...business, language: lang }, { now: new Date(now), rules: require("../agent/rules").active(businessId) });
   const body = buildJoinBody({
     name: `sahay-${sessionId}-${now}`.slice(0, 64),
     channel,
@@ -363,12 +385,21 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     labels: { session: sessionId },
   });
   const started = await startAgent(body);
-  callPrompts.set(started.agentId, prompt);
+  callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "" });
   return { ...started, language: lang, disclosure: disclosureText({ ...business, language: lang }) };
 }
 
-/** agentId -> the system prompt it joined with, so /update can re-send it unchanged. */
+/**
+ * agentId -> {prompt, businessId, language, now, status}: the system prompt it joined with (or the
+ * latest rebuilt by refreshRules) and the last call status, so /update can re-send both.
+ */
 const callPrompts = new Map();
+
+function systemMessages(known) {
+  const messages = [{ role: "system", content: known.prompt }];
+  if (known.status) messages.push({ role: "system", content: known.status });
+  return messages;
+}
 
 function timeInIndia(now = new Date()) {
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
@@ -385,12 +416,23 @@ function timeInIndia(now = new Date()) {
  */
 async function updateCallStatus(agentId, status, { now = new Date() } = {}) {
   if (!agentId) throw new AgoraError("AGENT_REQUIRED", "updateCallStatus needs an agent id.");
-  const prompt = callPrompts.get(agentId);
-  if (!prompt) throw new AgoraError("AGENT_UNKNOWN", "No owner agent with that id was started by this server.");
-  const system_messages = [{ role: "system", content: prompt }];
+  const known = callPrompts.get(agentId);
+  if (!known) throw new AgoraError("AGENT_UNKNOWN", "No owner agent with that id was started by this server.");
   const text = String(status ?? "").trim();
-  if (text) system_messages.push({ role: "system", content: `Call status (from the server, ${timeInIndia(now)} IST): ${text}` });
-  return call("POST", `/agents/${encodeURIComponent(agentId)}/update`, { properties: { llm: { system_messages } } });
+  known.status = text ? `Call status (from the server, ${timeInIndia(now)} IST): ${text}` : "";
+  return call("POST", `/agents/${encodeURIComponent(agentId)}/update`, { properties: { llm: { system_messages: systemMessages(known) } } });
+}
+
+/**
+ * Re-send a running owner agent's prompt with the business's rules as they are now (a rule was
+ * kept or forgotten during the call), keeping its last call status. Same /update as above.
+ */
+async function refreshRules(agentId, businessId) {
+  const known = callPrompts.get(agentId);
+  if (!known || known.businessId !== businessId) throw new AgoraError("AGENT_UNKNOWN", "No owner agent of this business with that id was started by this server.");
+  const business = require("../db/repo").getBusiness(businessId);
+  known.prompt = systemPrompt({ ...business, language: known.language }, { now: new Date(known.now), rules: require("../agent/rules").active(businessId) });
+  return call("POST", `/agents/${encodeURIComponent(agentId)}/update`, { properties: { llm: { system_messages: systemMessages(known) } } });
 }
 
 /** POST /leave. An agent that is already gone (404) counts as stopped. */
@@ -544,6 +586,7 @@ module.exports = {
   stopAgent,
   agentStatus,
   updateCallStatus,
+  refreshRules,
   speak,
   think,
   history,

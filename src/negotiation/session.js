@@ -42,6 +42,7 @@ const { buildRtcRtmToken } = require("../agora/token");
 const vendorAgent = require("./vendor-agent");
 const limits = require("../limits");
 const { ToolError, sayFor, langKey } = require("../tools/errors");
+const policy = require("../agent/policy");
 
 const UIDS = Object.freeze({ negotiator: 2001, vendor: 2002, listener: 2003, human: 2004, nobody: 2999 });
 const MAX_ROUNDS = vendorAgent.DEFAULT_MAX_ROUNDS;
@@ -246,6 +247,7 @@ function applyVendorOffer(rt, args) {
     open: rt.open,
     reservation: rt.reservation,
     ceiling: rt.ceiling,
+    beta: rt.beta,
     tick: rt.tick,
     vendorAsk: ask,
     vendorSaysFinal,
@@ -779,25 +781,33 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     throw new ToolError("PUBLIC_URL_NOT_HTTPS", sayFor("internal", lang), { status: 500, message: "PUBLIC_URL must be https for the negotiation agents." });
   }
 
+  if (policy.isAvoided(businessId, vendor)) {
+    throw new ToolError("VENDOR_AVOIDED", VENDOR_AVOIDED[lang], { status: 409, message: "The owner's rule says never to buy from this vendor." });
+  }
+
   const listed = comparableListedPrice(vendor, requirement.unit);
   const marketEvidence = listed?.value ?? null;
+  // The owner's maximum, or a stricter max_price rule of theirs (which also stands in when they gave none).
+  const limit = policy.priceLimit(businessId, requirement);
   let reservation;
   try {
     // The owner's maximum is the hard ceiling; without one, the listed price.
-    reservation = strategy.reservationPrice({ ownerMax: requirement.max_price ?? null, marketEvidence });
+    reservation = strategy.reservationPrice({ ownerMax: limit.price, marketEvidence });
   } catch {
     throw new ToolError("MAX_PRICE_NEEDED", MAX_PRICE_NEEDED[lang], { status: 400, message: "Neither a maximum price nor a comparable listed price is known." });
   }
-  let policy = null;
+  let vendorPolicy = null;
   if (counterpart === "simulated") {
     if (!listed) {
       throw new ToolError("NO_LISTED_PRICE", NO_LISTED_PRICE[lang], { status: 400, message: `The listing has no price per ${requirement.unit} to base a simulated vendor on.` });
     }
-    policy = vendorAgent.vendorPolicy(listed.value, MAX_ROUNDS);
+    vendorPolicy = vendorAgent.vendorPolicy(listed.value, MAX_ROUNDS);
   }
   const ceiling = strategy.softCeiling({ reservation, marketEvidence });
   const tick = strategy.priceTick(ceiling);
   const open = strategy.openingOffer({ target: requirement.target_price ?? null, reservation, marketEvidence, tick });
+  // The owner's bargaining style sets how fast Sahay concedes, never how far.
+  const beta = policy.beta(businessId);
   const business = repo.getBusiness(businessId);
 
   // Global cap on negotiations at once, across all businesses (security review r1 #1); the slot
@@ -805,7 +815,8 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   const releaseSlot = limits.tryAcquire("negotiation");
   if (!releaseSlot) throw new ToolError("BUSY", registry().phrase("busy", lang), { status: 503, message: "Too many negotiations are running." });
   try {
-    return startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, policy }, releaseSlot);
+    const started = startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy }, releaseSlot);
+    return { ...started, ceiling: { price: reservation, unit: requirement.unit, byRule: limit.byRule, ownerMax: limit.ownerMax } };
   } catch (err) {
     releaseSlot();
     throw err;
@@ -814,7 +825,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
 
 /** Create the session, negotiation row and runtime, and start the job that owns `releaseSlot`. */
 function startJobFor(o, releaseSlot) {
-  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, policy } = o;
+  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy } = o;
   const channel = `neg-${crypto.randomBytes(6).toString("hex")}`;
   const session = repo.createSession(businessId, { kind: "negotiation", channel, status: "starting" });
   const negotiation = repo.createNegotiation(businessId, { requirement_id: requirementId, vendor_id: vendorId, session_id: session.id, counterpart });
@@ -834,8 +845,9 @@ function startJobFor(o, releaseSlot) {
     ceiling,
     tick,
     open,
-    vendorPolicy: policy,
-    vendorSchedule: policy ? vendorAgent.askSchedule(policy) : null,
+    beta,
+    vendorPolicy,
+    vendorSchedule: vendorPolicy ? vendorAgent.askSchedule(vendorPolicy) : null,
     round: 1,
     askHistory: [],
     moves: [],
@@ -874,6 +886,11 @@ const NEGOTIATION_BUSY = {
   "hi-IN": "एक मोल-भाव पहले से चल रहा है, उसके ख़त्म होने के बाद अगला शुरू करूँगी।",
   "kn-IN": "ಒಂದು ಚೌಕಾಸಿ ಈಗಾಗಲೇ ನಡೆಯುತ್ತಿದೆ, ಅದು ಮುಗಿದ ನಂತರ ಮುಂದಿನದು ಶುರು ಮಾಡುತ್ತೇನೆ.",
   "en-IN": "A negotiation is already running; I will start the next one after it ends.",
+};
+const VENDOR_AVOIDED = {
+  "hi-IN": "आपने इस विक्रेता से कभी न खरीदने का नियम रखा है, कोई दूसरा विक्रेता चुनिए।",
+  "kn-IN": "ಈ ಮಾರಾಟಗಾರರಿಂದ ಎಂದಿಗೂ ಖರೀದಿಸಬಾರದು ಎಂಬ ನಿಯಮ ನಿಮ್ಮದು, ಬೇರೆ ಮಾರಾಟಗಾರರನ್ನು ಆಯ್ಕೆ ಮಾಡಿ.",
+  "en-IN": "Your rule says never to buy from this vendor; please pick another one.",
 };
 const MAX_PRICE_NEEDED = {
   "hi-IN": "मोल-भाव से पहले बताइए, प्रति इकाई ज़्यादा से ज़्यादा कितना देंगे?",

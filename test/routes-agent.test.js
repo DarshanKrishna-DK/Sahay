@@ -134,3 +134,20 @@ test("a button decision is recorded in the audit log as the owner's", async () =
     assert.equal(row.detail.via, "button");
   });
 });
+
+test("GET /api/state ranks vendors as the agent does: an avoided vendor is marked and unranked, a preferred one wins a tie", async () => {
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    const biz = me.business.id;
+    const need = repo.createRequirement(biz, { item: "rice", quantity: 10, unit: "kg", city: "Bengaluru" });
+    const avoided = repo.createVendor(biz, { requirement_id: need.id, source: "indiamart", name: "Ravi Traders", score: 0.9 });
+    const a = repo.createVendor(biz, { requirement_id: need.id, source: "indiamart", name: "Anand Stores", score: 0.5 });
+    const z = repo.createVendor(biz, { requirement_id: need.id, source: "indiamart", name: "Zeal Foods", score: 0.5 });
+    for (const [kind, params] of [["avoid_vendor", { name: "Ravi Traders" }], ["prefer_vendor", { name: "Zeal Foods" }]]) {
+      const rule = rules.propose(biz, { kind, params, source: "owner_said" });
+      rules.decide(biz, rule.id, "keep", { via: "button" });
+    }
+    const state = await call(base, "GET", "/api/state", { cookie: me.cookie });
+    assert.deepEqual(state.json.vendors.map((v) => [v.id, v.rank, v.avoided]), [[z.id, 1, false], [a.id, 2, false], [avoided.id, null, true]]);
+  });
+});

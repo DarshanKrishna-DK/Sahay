@@ -31,9 +31,13 @@ const { findVendors } = require("../discovery/indiamart");
 const { candidateSlugs, cityName, cityIn, itemIn } = require("../discovery/slug");
 const { isNativeScript } = require("../agora/script");
 const evidence = require("./evidence");
-const { scoreVendor, rankDeals, rankVendors, comparableListedPrice } = require("../procurement/scoring");
-const { canonicalUnit, unitWord, UNIT_CODES } = require("../procurement/units");
+const { scoreVendor, rankDeals, comparableListedPrice } = require("../procurement/scoring");
+const { canonicalUnit, sameUnit, unitWord, UNIT_CODES } = require("../procurement/units");
 const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
+const agentRules = require("../agent/rules");
+const agentProfile = require("../agent/profile");
+const agentMemories = require("../agent/memories");
+const policy = require("../agent/policy");
 
 /** Which agent may call a tool. The bearer's sessions row kind decides the scope. */
 const SCOPES = Object.freeze({ owner: "owner", negotiation: "negotiation" });
@@ -329,6 +333,76 @@ const PHRASES = {
     "kn-IN": () => "ಇನ್ನೂ ಯಾವ ಆರ್ಡರ್ ಇಲ್ಲ.",
     "en-IN": () => "There are no orders yet.",
   },
+  negotiation_rule_cap: {
+    "hi-IN": (v) => `आपके नियम के अनुसार मैं प्रति ${v.unit} ${v.price} रुपये से ज़्यादा नहीं दूँगी${v.owner ? `, ${v.owner} नहीं` : ""}।`,
+    "kn-IN": (v) => `ನಿಮ್ಮ ನಿಯಮದಂತೆ ಪ್ರತಿ ${v.unit} ${v.price} ರೂಪಾಯಿಗಿಂತ ಹೆಚ್ಚು ಕೊಡುವುದಿಲ್ಲ${v.owner ? `, ${v.owner} ಅಲ್ಲ` : ""}.`,
+    "en-IN": (v) => `By your rule, I will not pay more than ${v.price} rupees per ${v.unit}${v.owner ? `, not ${v.owner}` : ""}.`,
+  },
+  rule_question: {
+    "hi-IN": () => "यह नियम रख लूँ?",
+    "kn-IN": () => "ಈ ನಿಯಮ ಇಟ್ಟುಕೊಳ್ಳಲೇ?",
+    "en-IN": () => "Shall I keep this rule?",
+  },
+  rule_tap: {
+    "hi-IN": () => "यह नियम रखना हो तो स्क्रीन पर सही का निशान दबाइए।",
+    "kn-IN": () => "ಈ ನಿಯಮ ಬೇಕಿದ್ದರೆ ಪರದೆಯ ಮೇಲೆ ಸರಿ ಗುರುತು ಒತ್ತಿ.",
+    "en-IN": () => "To keep this rule, tap the tick on the screen.",
+  },
+  rule_kept: {
+    "hi-IN": () => "ठीक है, यह नियम याद रखूँगी।",
+    "kn-IN": () => "ಸರಿ, ಈ ನಿಯಮವನ್ನು ನೆನಪಿಟ್ಟುಕೊಳ್ಳುತ್ತೇನೆ.",
+    "en-IN": () => "Done, I will remember this rule.",
+  },
+  rule_forgotten: {
+    "hi-IN": () => "ठीक है, यह नियम हटा दिया।",
+    "kn-IN": () => "ಸರಿ, ಈ ನಿಯಮವನ್ನು ತೆಗೆದುಹಾಕಿದೆ.",
+    "en-IN": () => "Done, I have dropped this rule.",
+  },
+  rule_unclear: {
+    "hi-IN": () => "मुझे साफ़ हाँ सुनाई नहीं दी; यह नियम रख लूँ, हाँ या नहीं?",
+    "kn-IN": () => "ಸ್ಪಷ್ಟವಾಗಿ ಹೌದು ಎಂದು ಕೇಳಿಸಲಿಲ್ಲ; ಈ ನಿಯಮ ಇಟ್ಟುಕೊಳ್ಳಲೇ, ಹೌದು ಅಥವಾ ಇಲ್ಲ?",
+    "en-IN": () => "I did not hear a clear yes; shall I keep this rule, yes or no?",
+  },
+  rule_forget_unclear: {
+    "hi-IN": () => "आपने हाँ कहा, इसलिए नियम नहीं हटाया।",
+    "kn-IN": () => "ನೀವು ಹೌದು ಎಂದಿರಿ, ಹಾಗಾಗಿ ನಿಯಮ ತೆಗೆದಿಲ್ಲ.",
+    "en-IN": () => "You said yes, so I have not dropped the rule.",
+  },
+  no_spoken_rule: {
+    "hi-IN": () => "अभी कोई नया नियम आपकी हाँ का इंतज़ार नहीं कर रहा।",
+    "kn-IN": () => "ಈಗ ಯಾವ ಹೊಸ ನಿಯಮವೂ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತಿಲ್ಲ.",
+    "en-IN": () => "No new rule is waiting for your yes right now.",
+  },
+  rule_not_found: {
+    "hi-IN": () => "ऐसा कोई नियम नहीं मिला।",
+    "kn-IN": () => "ಅಂಥ ನಿಯಮ ಸಿಗಲಿಲ್ಲ.",
+    "en-IN": () => "I could not find such a rule.",
+  },
+  my_agent_rules: {
+    "hi-IN": (v) => `आपके ${v.count} नियम हैं: ${v.list}`,
+    "kn-IN": (v) => `ನಿಮ್ಮ ${v.count} ನಿಯಮಗಳು: ${v.list}`,
+    "en-IN": (v) => `You have ${v.count} ${v.count === 1 ? "rule" : "rules"}: ${v.list}`,
+  },
+  my_agent_empty: {
+    "hi-IN": () => "अभी कोई नियम नहीं है; बताइए, आप कैसे खरीदना पसंद करते हैं।",
+    "kn-IN": () => "ಇನ್ನೂ ಯಾವ ನಿಯಮವೂ ಇಲ್ಲ; ನೀವು ಹೇಗೆ ಖರೀದಿಸಲು ಇಷ್ಟಪಡುತ್ತೀರಿ ಎಂದು ಹೇಳಿ.",
+    "en-IN": () => "No rules yet; tell me how you like to buy.",
+  },
+  usual_quantity_offer: {
+    "hi-IN": (v) => `आम तौर पर आप ${v.item} ${v.quantity} ${v.unit} लेते हैं।`,
+    "kn-IN": (v) => `ಸಾಮಾನ್ಯವಾಗಿ ನೀವು ${v.item} ${v.quantity} ${v.unit} ತೆಗೆದುಕೊಳ್ಳುತ್ತೀರಿ.`,
+    "en-IN": (v) => `You usually take ${v.quantity} ${v.unit} of ${v.item}.`,
+  },
+  usual_quantity_question: {
+    "hi-IN": () => "क्या इस बार भी इतना ही लूँ?",
+    "kn-IN": () => "ಈ ಬಾರಿಯೂ ಅಷ್ಟೇ ತೆಗೆದುಕೊಳ್ಳಲೇ?",
+    "en-IN": () => "Shall I take the same this time?",
+  },
+  quantity_ask: {
+    "hi-IN": () => "बताइए, कितनी मात्रा चाहिए?",
+    "kn-IN": () => "ಎಷ್ಟು ಪ್ರಮಾಣ ಬೇಕು, ಹೇಳಿ?",
+    "en-IN": () => "Please tell me how much you need.",
+  },
   order_status: {
     "hi-IN": (v) => `ऑर्डर ${v.po} ${v.status} है${v.payment ? `, ${v.payment}` : ""}${v.more ? `; कुल ${v.count} ऑर्डर हैं` : ""}।`,
     "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ${v.status}${v.payment ? `, ${v.payment}` : ""}${v.more ? `; ಒಟ್ಟು ${v.count} ಆರ್ಡರ್‌ಗಳಿವೆ` : ""}.`,
@@ -485,9 +559,12 @@ function sourcingResultSpoken(businessId, requirementId) {
   require("../agora/narrator").suppress(businessId, `sourcing.done:${requirementId}`);
 }
 
-/** Vendors of a requirement, best first (scoring.rankVendors); the order vendorRank counts in. */
+/**
+ * Vendors of a requirement Sahay may deal with, best first (scoring.rankVendors under the owner's
+ * rules: avoided vendors left out, a preferred one first on a tie); the order vendorRank counts in.
+ */
 function rankedVendors(businessId, requirement) {
-  return rankVendors(repo.listVendors(businessId, { requirement_id: requirement.id }), requirement);
+  return policy.rankedVendors(businessId, requirement);
 }
 
 /** "Several qualify" is never resolved by guessing: the owner hears the choices. */
@@ -569,6 +646,25 @@ function rankedDeals(businessId, requirementId) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Run `decide(history)` on this call's Agora /history. /history can lag the transcript by about
+ * 0.5 s, so an answer that is not there yet is looked for again before the refusal stands.
+ */
+async function withHistory(ctx, decide) {
+  const agent = require("../agora/agent");
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return decide(await agent.history(ctx.agentId));
+    } catch (err) {
+      if (VOICE_RETRY.has(err?.code) && attempt < HISTORY_ATTEMPTS) {
+        await sleep(HISTORY_RETRY_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 /* ----------------------------------------------------- sourcing runner --- */
 
@@ -785,6 +881,73 @@ function paymentClause(order, payment, language) {
   return PAYMENT_WORDS[payment.linkExists ? "pending_link" : "pending_no_link"][language];
 }
 
+/* -------------------------------------------------------------- rules --- */
+
+/** Gate and rule refusals said about a rule, not about an order (the codes stay the same). */
+const RULE_REFUSALS = {
+  NOT_AFFIRMATIVE: "rule_unclear",
+  NO_ANSWER_YET: "rule_unclear",
+  ANSWER_DURING_READBACK: "rule_unclear",
+  READBACK_SUPERSEDED: "rule_unclear",
+  NOT_NEGATIVE: "rule_forget_unclear",
+  READBACK_NOT_SPOKEN: "rule_tap",
+  READBACK_NOT_HEARD: "rule_tap",
+  EVIDENCE_UNORDERED: "rule_tap",
+  EVIDENCE_REQUIRED: "rule_tap",
+  RULE_NOT_FOUND: "rule_not_found",
+};
+
+function ruleRefusal(err, language) {
+  const key = RULE_REFUSALS[err?.code];
+  if (!key) return err;
+  return new ToolError(err.code, phrase(key, language), { status: err.code === "RULE_NOT_FOUND" ? 404 : 409, message: err.message, cause: err });
+}
+
+/** A rule from teach_rule's flat arguments: only the fields of its kind are taken. */
+function ruleParams(args) {
+  const fields = agentRules.KINDS[args.kind]?.fields ?? [];
+  return Object.fromEntries(fields.filter((f) => args[f] !== undefined && args[f] !== null).map((f) => [f, args[f]]));
+}
+
+/** Rules forget_rule may mean: active or still suggested, narrowed by what the owner named. */
+function rulesNamed(businessId, args) {
+  if (args.ruleId) {
+    const rule = agentRules.get(businessId, args.ruleId);
+    return rule && rule.status !== "off" ? [rule] : [];
+  }
+  const live = agentRules.list(businessId).filter((r) => r.status !== "off");
+  return live.filter((r) => {
+    if (args.kind && r.kind !== args.kind) return false;
+    if (args.item && !(r.params.item && (policy.covers(args.item, r.params.item) || policy.covers(r.params.item, args.item)))) return false;
+    if (args.name && !(r.params.name && agentRules.fold(r.params.name) === agentRules.fold(args.name))) return false;
+    return Boolean(args.kind || args.item || args.name);
+  });
+}
+
+/**
+ * Offer the active usual_quantity rule for a need saved without a quantity: the server says the
+ * usual quantity itself (so the owner's yes answers exactly those words) and the model asks.
+ * Returns the offer, or null when there is no rule, no call or the line could not be spoken.
+ */
+async function offerUsualQuantity(ctx, requirement, language) {
+  if (!ctx.agentId || requirement.quantity != null) return null;
+  const rule = policy.usualQuantity(ctx.businessId, requirement.item);
+  if (!rule || (requirement.unit && !sameUnit(requirement.unit, rule.params.unit))) return null;
+  const text = phrase("usual_quantity_offer", language, {
+    item: spokenItem(ctx.businessId, requirement, language),
+    quantity: money(rule.params.quantity),
+    unit: unitWord(rule.params.unit, language, rule.params.quantity !== 1),
+  });
+  require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
+  try {
+    await require("../agora/agent").speak(ctx.agentId, text, { priority: "APPEND", interruptable: false });
+  } catch {
+    return null; // the owner is simply asked for the quantity
+  }
+  agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text, sessionId: ctx.sessionId ?? null });
+  return { quantity: rule.params.quantity, unit: rule.params.unit };
+}
+
 /* -------------------------------------------------------------- tools --- */
 
 const OWNER = [SCOPES.owner];
@@ -819,6 +982,10 @@ const TOOLS = [
         target_price: { type: "number", exclusiveMinimum: 0, description: "Price per unit the owner hopes for, in rupees." },
         delivery_by: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "YYYY-MM-DD" },
         notes: { type: "string", maxLength: 500 },
+        use_usual_quantity: {
+          type: "boolean",
+          description: "Only after this tool returned usualQuantity and the owner then said yes to it: fills the usual quantity. The server checks the owner's own spoken yes.",
+        },
       },
       [],
     ),
@@ -835,6 +1002,25 @@ const TOOLS = [
       }
       if (fields.city !== undefined) fields.city = cityName(fields.city);
 
+      // The usual quantity is filled only on the owner's spoken yes to the server's own offer of it.
+      let usual = null;
+      if (args.use_usual_quantity) {
+        if (fields.item || fields.quantity !== undefined) throw new ToolError("INVALID", sayFor("invalid", language), { message: "use_usual_quantity goes without an item or a quantity." });
+        if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", phrase("quantity_ask", language), { status: 409 });
+        const need = args.requirementId
+          ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
+          : repo.listRequirements(ctx.businessId).filter((r) => ctx.sessionId && r.session_id === ctx.sessionId).at(-1);
+        const rule = need && policy.usualQuantity(ctx.businessId, need.item);
+        if (!rule) throw new ToolError("RULE_NOT_FOUND", phrase("quantity_ask", language), { status: 409 });
+        try {
+          await withHistory(ctx, (history) => agentRules.spokenYes(ctx.businessId, rule.id, { agentId: ctx.agentId, history }));
+        } catch (err) {
+          throw new ToolError(err?.code ?? "NOT_AFFIRMATIVE", phrase("quantity_ask", language), { status: 409, message: err?.message, cause: err });
+        }
+        usual = { quantity: rule.params.quantity, unit: rule.params.unit };
+        Object.assign(fields, usual);
+      }
+
       const update = Boolean(args.requirementId || !fields.item);
       let target = null;
       if (update) {
@@ -849,8 +1035,8 @@ const TOOLS = [
       const changed = (column) => fields[column] !== undefined && (!target || fields[column] !== target[column]);
       const notHeard = await unheardFields(ctx, args, {
         item: changed("item") ? fields.item : undefined,
-        quantity: changed("quantity") ? fields.quantity : undefined,
-        unit: changed("unit") ? fields.unit : undefined,
+        quantity: !usual && changed("quantity") ? fields.quantity : undefined,
+        unit: !usual && changed("unit") ? fields.unit : undefined,
       });
       if (notHeard.length) {
         return {
@@ -869,6 +1055,10 @@ const TOOLS = [
       const missing = missingFields(requirement);
       const item = spokenItem(ctx.businessId, requirement, language);
       if (missing.length) {
+        const offer = missing.includes("quantity") ? await offerUsualQuantity(ctx, requirement, language) : null;
+        if (offer) {
+          return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, usualQuantity: offer, next: "save_requirement with use_usual_quantity on a yes", say: phrase("usual_quantity_question", language) };
+        }
         const say = phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") });
         return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, say };
       }
@@ -1032,9 +1222,14 @@ const TOOLS = [
         language: businessLanguage,
         sayLanguage: language,
       });
-      const say = counterpart === "human"
+      const startedSay = counterpart === "human"
         ? phrase("negotiation_started_human", language)
         : phrase("negotiation_started_simulated", language, { vendor: vendor.name });
+      // The owner hears when their own rule set the ceiling, and which figure it replaced.
+      const cap = started.ceiling?.byRule
+        ? ` ${phrase("negotiation_rule_cap", language, { price: money(started.ceiling.price), unit, owner: started.ceiling.ownerMax != null ? money(started.ceiling.ownerMax) : null })}`
+        : "";
+      const say = `${startedSay}${cap}`;
       return { ...started, vendorId: vendor.id, vendorName: vendor.name, vendorRank: ranked.findIndex((v) => v.id === vendor.id) + 1, counterpart, say };
     },
   },
@@ -1133,26 +1328,16 @@ const TOOLS = [
       // The gate reads the owner's answer from this call's /history itself and ties it to the
       // read-back the server spoke (approvals.answerToReadback). /history can lag the transcript
       // by about 0.5 s, so an answer not there yet is looked for again.
-      const agent = require("../agora/agent");
-      let decided;
-      for (let attempt = 1; ; attempt++) {
-        try {
-          decided = approvals.confirmApproval(ctx.businessId, approval.id, {
-            decision: args.decision,
-            via: "voice",
-            agentId: ctx.agentId,
-            history: await agent.history(ctx.agentId),
-            sessionId: ctx.sessionId ?? null,
-          });
-          break;
-        } catch (err) {
-          if (VOICE_RETRY.has(err?.code) && attempt < HISTORY_ATTEMPTS) {
-            await sleep(HISTORY_RETRY_MS);
-            continue;
-          }
-          throw err; // gate refusals map to a spoken line in errors.js CODE_MAP
-        }
-      }
+      // Gate refusals map to a spoken line in errors.js CODE_MAP.
+      const decided = await withHistory(ctx, (history) =>
+        approvals.confirmApproval(ctx.businessId, approval.id, {
+          decision: args.decision,
+          via: "voice",
+          agentId: ctx.agentId,
+          history,
+          sessionId: ctx.sessionId ?? null,
+        }),
+      );
       return {
         approvalId: decided.id,
         status: decided.status,
@@ -1245,6 +1430,104 @@ const TOOLS = [
     },
   },
 
+  /* ---- "My Sahay": rules the owner teaches by talking. None of them can order or approve. ---- */
+  {
+    name: "teach_rule",
+    scopes: OWNER,
+    description:
+      "When the owner tells you how they like to buy, propose it as one rule: max_price (item, unit, price per unit in rupees), prefer_vendor (name), avoid_vendor (name), usual_quantity (item, quantity, unit), reply_language (language) or bargain_style (style gentle, balanced or tough). In a call the server reads the rule out itself; then say only `say` (a short question) and wait. The owner's yes or no is answered with confirm_rule. A rule never places an order or approves a deal.",
+    inputSchema: ownerObj(
+      {
+        kind: { type: "string", enum: Object.keys(agentRules.KINDS) },
+        item: { type: "string", maxLength: 200, description: "max_price, usual_quantity: the item in the owner's own words and script." },
+        unit: { type: "string", maxLength: 40, description: `max_price, usual_quantity: the unit as the owner said it. Stored as one of: ${UNIT_CODES.join(", ")}.` },
+        price: { type: "number", exclusiveMinimum: 0, description: "max_price: the most to pay per unit, in rupees." },
+        quantity: { type: "number", exclusiveMinimum: 0, description: "usual_quantity: how much the owner usually buys." },
+        name: { type: "string", maxLength: 200, description: "prefer_vendor, avoid_vendor: the vendor's name as the owner said it." },
+        language: { type: "string", enum: LANGS, description: "reply_language: the language to always reply in." },
+        style: { type: "string", enum: agentRules.BARGAIN_STYLES, description: "bargain_style: gentle, balanced or tough." },
+      },
+      ["kind"],
+    ),
+    async handler(ctx, args, language) {
+      const rule = agentRules.propose(ctx.businessId, { kind: args.kind, params: ruleParams(args), source: "owner_said" }, { sessionId: ctx.sessionId ?? null });
+      const sentence = rule.sentence[language];
+      const result = { ruleId: rule.id, status: rule.status, sentence };
+      if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${phrase("rule_tap", language)}` };
+      // The server says the rule itself, so a spoken yes can only answer exactly these words.
+      require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
+      try {
+        await require("../agora/agent").speak(ctx.agentId, sentence, { priority: "APPEND", interruptable: false });
+      } catch (err) {
+        return { ...result, readbackSpoken: false, say: `${sentence} ${phrase("rule_tap", language)}`, message: `The rule could not be read out: ${err.message}` };
+      }
+      agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text: sentence, sessionId: ctx.sessionId ?? null });
+      return { ...result, readbackSpoken: true, next: "confirm_rule", say: phrase("rule_question", language) };
+    },
+  },
+  {
+    name: "confirm_rule",
+    scopes: OWNER,
+    description:
+      "Records the owner's spoken yes or no to the rule teach_rule just read out: call it, with no id, as soon as the owner answers (decision keep on a clear yes, forget on a no). The server checks the owner's own spoken words; a typed yes never keeps a rule (the owner taps the tick on the screen instead).",
+    inputSchema: ownerObj({ ruleId: idArg("rule", "the rule read out last in this call"), decision: { type: "string", enum: ["keep", "forget"] } }, ["decision"]),
+    async handler(ctx, args, language) {
+      if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", phrase("rule_tap", language), { status: 409 });
+      const rule = args.ruleId ? agentRules.get(ctx.businessId, args.ruleId) : agentRules.lastSpokenSuggestion(ctx.businessId, ctx.agentId);
+      if (!rule) throw new ToolError("NO_SPOKEN_RULE", phrase("no_spoken_rule", language), { status: 409 });
+      let decided;
+      try {
+        decided = await withHistory(ctx, (history) =>
+          agentRules.decide(ctx.businessId, rule.id, args.decision, { via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
+        );
+      } catch (err) {
+        throw ruleRefusal(err, language);
+      }
+      return { ruleId: decided.id, status: decided.status, say: phrase(decided.status === "active" ? "rule_kept" : "rule_forgotten", language) };
+    },
+  },
+  {
+    name: "forget_rule",
+    scopes: OWNER,
+    description:
+      "When the owner asks you to drop one of their rules: name it by kind and its item or vendor name (or ruleId from get_my_agent). Several matches are read out for the owner to choose.",
+    inputSchema: ownerObj({
+      ruleId: idArg("rule", "the rule named by kind, item or name"),
+      kind: { type: "string", enum: Object.keys(agentRules.KINDS) },
+      item: { type: "string", maxLength: 200 },
+      name: { type: "string", maxLength: 200 },
+    }),
+    async handler(ctx, args, language) {
+      if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", phrase("rule_tap", language), { status: 409 });
+      const named = rulesNamed(ctx.businessId, args);
+      if (!named.length) throw new ToolError("RULE_NOT_FOUND", phrase("rule_not_found", language), { status: 404 });
+      if (named.length > 1) throw ambiguous(language, named.map((r) => r.sentence[language]));
+      let decided;
+      try {
+        decided = await withHistory(ctx, (history) =>
+          agentRules.decide(ctx.businessId, named[0].id, "forget", { via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
+        );
+      } catch (err) {
+        throw ruleRefusal(err, language);
+      }
+      return { ruleId: decided.id, status: decided.status, say: phrase("rule_forgotten", language) };
+    },
+  },
+  {
+    name: "get_my_agent",
+    scopes: OWNER,
+    description: "The owner's own Sahay: speaking speed, bargaining style, language, the rules in force (and any waiting for a yes) and what Sahay remembers from past orders.",
+    inputSchema: ownerObj({}),
+    async handler(ctx, args, language) {
+      const rules = agentRules.list(ctx.businessId).filter((r) => r.status !== "off");
+      const active = rules.filter((r) => r.status === "active");
+      const say = active.length
+        ? phrase("my_agent_rules", language, { count: active.length, list: active.slice(0, 3).map((r) => r.sentence[language]).join(" ") })
+        : phrase("my_agent_empty", language);
+      return { profile: agentProfile.get(ctx.businessId), rules, memories: agentMemories.list(ctx.businessId), say };
+    },
+  },
+
   /* ---- negotiation agent only: numbers come from strategy.js, the model only words them ---- */
   {
     name: "get_negotiation_brief",
@@ -1295,8 +1578,9 @@ function toolsFor(scope) {
 async function callTool(ctx, name, args = {}) {
   if (!ctx || typeof ctx.businessId !== "string" || !ctx.businessId) throw new ToolError("UNAUTHORIZED", sayFor("internal", "en-IN"), { status: 401 });
   const businessLanguage = languageOf(ctx.businessId);
-  // `say` follows the language the owner just used; the business language is the fallback.
-  const replyLanguage = LANGS.includes(args?.reply_language) ? args.reply_language : null;
+  // `say` follows the language the owner just used; the business language is the fallback. An
+  // owner's reply_language rule fixes it, whatever the model passes.
+  const replyLanguage = policy.replyLanguage(ctx.businessId) ?? (LANGS.includes(args?.reply_language) ? args.reply_language : null);
   const language = replyLanguage ?? businessLanguage;
   const tool = BY_NAME.get(name);
   if (!tool || !tool.scopes.includes(ctx.toolScope)) {

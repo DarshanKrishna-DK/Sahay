@@ -97,7 +97,8 @@ test("tools/list follows the session kind: owner tools for an owner call, negoti
   await withServer(async (url) => {
     const owner = await (await rpc(url, seed("owner").token, toolsList)).json();
     const names = owner.result.tools.map((t) => t.name);
-    assert.equal(names.length, 12);
+    assert.equal(names.length, 16);
+    assert.ok(names.includes("teach_rule") && names.includes("confirm_rule"));
     assert.ok(names.includes("create_order"));
     assert.ok(!names.includes("record_vendor_offer"));
     for (const tool of owner.result.tools) assert.equal(tool.inputSchema.type, "object");

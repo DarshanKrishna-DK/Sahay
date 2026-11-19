@@ -125,11 +125,13 @@ const nameKey = (v) => String(v.name ?? '').toLocaleLowerCase('en-IN');
  * listings were found in. Returns a new array.
  * @param {object[]} vendors     vendors rows (score, listed_price, listed_unit, pack_size?, rating, rating_count, name, id)
  * @param {{unit: string|null}} requirement
+ * @param {{preferred?: (vendor: object) => boolean}} [options]  an owner's preferred vendor wins a score tie (src/agent/policy.js)
  */
-function rankVendors(vendors, requirement) {
+function rankVendors(vendors, requirement, { preferred = () => false } = {}) {
   return vendors
-    .map((vendor, index) => ({ vendor, index, price: comparableListedPrice(vendor, requirement?.unit)?.value ?? null }))
+    .map((vendor, index) => ({ vendor, index, preferred: preferred(vendor) ? 1 : 0, price: comparableListedPrice(vendor, requirement?.unit)?.value ?? null }))
     .sort((a, b) => descending(a.vendor.score, b.vendor.score)
+      || b.preferred - a.preferred
       || ascending(a.price, b.price)
       || descending(a.vendor.rating, b.vendor.rating)
       || descending(a.vendor.rating_count, b.vendor.rating_count)

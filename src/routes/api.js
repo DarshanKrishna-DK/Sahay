@@ -31,13 +31,13 @@ const agent = require("../agora/agent");
 const narrator = require("../agora/narrator");
 const { buildRtcRtmToken } = require("../agora/token");
 const registry = require("../tools/registry");
-const scoring = require("../procurement/scoring");
 const negotiation = require("../negotiation/session");
 const telegram = require("../notify/telegram");
 const { ToolError, toToolError } = require("../tools/errors");
 const agentProfile = require("../agent/profile");
 const agentRules = require("../agent/rules");
 const agentMemories = require("../agent/memories");
+const agentPolicy = require("../agent/policy");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -224,11 +224,7 @@ function snapshot(businessId) {
     requirement,
     requirements,
     jobs: repo.listJobs(businessId),
-    // Same order as the get_shortlist tool (scoring.rankVendors); `rank` 1 = best, so the
-    // console shows the vendor the agent calls number one as #1.
-    vendors: forRequirement
-      ? scoring.rankVendors(repo.listVendors(businessId, forRequirement), requirement).map((v, i) => ({ ...v, rank: i + 1 }))
-      : [],
+    vendors: forRequirement ? rankedForState(businessId, requirement) : [],
     negotiations: forRequirement ? repo.listNegotiations(businessId, forRequirement) : [],
     quotes: forRequirement ? repo.listQuotes(businessId, forRequirement) : [],
     deals: requirement ? registry.rankedDeals(businessId, requirement.id) : [],
@@ -242,6 +238,18 @@ function snapshot(businessId) {
     voice: v ? { channel: v.channel, agentId: v.agentId ?? null, active: Boolean(v.agentId) } : null,
     telegramLinked: Boolean(repo.getTelegramLink(businessId)),
   };
+}
+
+/**
+ * The requirement's vendors in the order the get_shortlist tool ranks them (src/agent/policy.js:
+ * the owner's rules applied); `rank` 1 = best, so the app shows the vendor the agent calls number
+ * one as #1. A vendor the owner's rule avoids is listed last, unranked and marked `avoided`.
+ */
+function rankedForState(businessId, requirement) {
+  const ranked = agentPolicy.rankedVendors(businessId, requirement).map((v, i) => ({ ...v, rank: i + 1, avoided: false }));
+  const seen = new Set(ranked.map((v) => v.id));
+  const avoided = repo.listVendors(businessId, { requirement_id: requirement.id }).filter((v) => !seen.has(v.id)).map((v) => ({ ...v, rank: null, avoided: true }));
+  return [...ranked, ...avoided];
 }
 
 /* ------------------------------------------------------- vendor join page --- */

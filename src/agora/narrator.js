@@ -24,7 +24,8 @@
  * hold window or the queue, so the owner hears "search done" once (E2E r2).
  *
  * Approval hold: from approval.requested (or holdForApproval) until that approval is decided,
- * the request fails, or settings.approvalHoldMs passes, nothing is spoken. The server speaks the
+ * the request fails, or settings.approvalHoldMs passes, nothing is spoken (the same from
+ * rule.spoken, or holdForRule, until that rule is decided). The server speaks the
  * read-back and the owner's next words are the answer to it (approvals.answerToReadback); a
  * progress line between the two would stand between the question and the answer (E2E r3, item 5).
  *
@@ -53,6 +54,7 @@ const suppressed = new Map();
 
 let speakImpl = (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true });
 let statusImpl = (agentId, text) => agent.updateCallStatus(agentId, text);
+let rulesImpl = (agentId, businessId) => agent.refreshRules(agentId, businessId);
 let unsubscribe = null;
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -264,6 +266,15 @@ function holdForApproval(businessId, approvalId = null, ms = settings.approvalHo
   if (state) startHold(state, approvalId, ms);
 }
 
+/**
+ * The same hold while a rule the server just read out waits for the owner's yes or no
+ * (teach_rule, or the usual-quantity offer); it ends when that rule is decided.
+ */
+function holdForRule(businessId, ruleId, ms = settings.approvalHoldMs) {
+  const state = live.get(businessId);
+  if (state) startHold(state, `rule:${ruleId}`, ms);
+}
+
 function isHeld(businessId) {
   const state = live.get(businessId);
   return Boolean(state && approvalHoldLeft(state) > 0);
@@ -377,6 +388,21 @@ function onEvent(event) {
       if (hold && (hold.approvalId ? hold.approvalId === d.approvalId : !d.reason)) endHold(state);
       return;
     }
+    case "rule.spoken":
+      startHold(state, `rule:${d.ruleId}`);
+      return;
+    case "rule.decided":
+      if (state.approvalHold?.approvalId === `rule:${d.rule?.id}`) endHold(state);
+      // The agent's prompt lists the active rules: a rule that started or stopped applying changes it.
+      state.statusChain = state.statusChain.then(async () => {
+        if (state.closed) return;
+        try {
+          await rulesImpl(state.agentId, event.businessId);
+        } catch (err) {
+          console.warn(`[narrator] rules update failed: ${err.message}`);
+        }
+      });
+      return;
     case "error":
       if (d.tool === "request_approval") endHold(state);
       return;
@@ -457,13 +483,14 @@ function stop() {
 }
 
 /** Tests: replace the /speak and /update calls and the timing. */
-function configure({ speak, status, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs } = {}) {
+function configure({ speak, status, rules, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs } = {}) {
   if (speak) speakImpl = speak;
   if (status) statusImpl = status;
+  if (rules) rulesImpl = rules;
   Object.assign(
     settings,
     Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs }).filter(([, v]) => v !== undefined)),
   );
 }
 
-module.exports = { start, stop, attach, detach, isLive, isHeld, holdForApproval, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };
+module.exports = { start, stop, attach, detach, isLive, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };
