@@ -2,9 +2,10 @@
 
 /**
  * Speak-it: every card in the app has a 🔊 that reads it aloud, so reading is never required.
- * The browser sends only a key ("now", "rule:<id>", "memory:<id>", "approval:<id>", "order:<id>",
- * "need:<id>", "invoice:<id>", "item:<id>", "owed:<customerId>"); the sentence is always built here from this business's own rows, in its current
- * reply language and script. Free text from a client is never spoken.
+ * The browser sends only a key ("now", "customers", "rule:<id>", "memory:<id>", "approval:<id>",
+ * "order:<id>", "need:<id>", "invoice:<id>", "item:<id>", "owed:<customerId>"); the sentence is
+ * always built here from this business's own rows, in its current reply language and script.
+ * Free text from a client is never spoken.
  *
  * In a live call the agent says it (/speak APPEND). Otherwise Murf Falcon renders it over HTTP
  * (POST https://<region>.api.murf.ai/v1/speech/stream, docs/build/agora-findings.md "Track B3"),
@@ -34,7 +35,10 @@ const SAMPLE_RATE = 24000;
 const RATE = Object.freeze({ slow: -20, normal: 0 });
 const REQUEST_TIMEOUT_MS = 15000;
 const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
-const KEY = /^(?:now|(rule|memory|approval|order|need|invoice|item|owed):([A-Za-z0-9_]{1,64}))$/;
+/** A whole-screen key (no id), or a card key "<kind>:<id>". */
+const KEY = /^(?:(now|customers)|(rule|memory|approval|order|need|invoice|item|owed):([A-Za-z0-9_]{1,64}))$/;
+/** Names read out by the customers key; the rest are counted ("and 3 more"). */
+const CUSTOMER_NAMES_READ = 10;
 
 let fetchImpl = (...args) => fetch(...args);
 
@@ -84,6 +88,16 @@ const BILL_STATE = {
   part: { "hi-IN": (open) => `${open} बाकी है`, "kn-IN": (open) => `${open} ಬಾಕಿ ಇದೆ`, "en-IN": (open) => `${open} still due` },
   paid: { "hi-IN": () => "भुगतान हो गया", "kn-IN": () => "ಪಾವತಿ ಆಗಿದೆ", "en-IN": () => "Paid" },
   cancelled: { "hi-IN": () => "यह बिल रद्द है", "kn-IN": () => "ಈ ಬಿಲ್ ರದ್ದಾಗಿದೆ", "en-IN": () => "Cancelled" },
+};
+
+/** The Sell screen's customer list: how many, then the names. */
+const CUSTOMERS = {
+  none: { "hi-IN": "अभी कोई ग्राहक नहीं है।", "kn-IN": "ಇನ್ನೂ ಗ್ರಾಹಕರು ಇಲ್ಲ.", "en-IN": "No customers yet." },
+  list: {
+    "hi-IN": (v) => `${v.n} ग्राहक: ${v.names}${v.more ? ` और ${v.more} अन्य` : ""}।`,
+    "kn-IN": (v) => `${v.n} ${v.n === 1 ? "ಗ್ರಾಹಕ" : "ಗ್ರಾಹಕರು"}: ${v.names}${v.more ? ` ಮತ್ತು ಇನ್ನೂ ${v.more} ಜನ` : ""}.`,
+    "en-IN": (v) => `${v.n} ${v.n === 1 ? "customer" : "customers"}: ${v.names}${v.more ? `, and ${v.more} more` : ""}.`,
+  },
 };
 
 /** The language the owner hears now: an active reply_language rule, else the business language. */
@@ -160,6 +174,13 @@ function invoiceSentence(businessId, id, language) {
   return BILL[language]({ name: customer?.name ?? invoice.recipient?.name ?? "", number: invoice.number, total: khata.spokenRupees(invoice.totals.totalPaise, language), state });
 }
 
+function customersSentence(businessId, language) {
+  const names = require("../sell/customers").list(businessId).map((c) => c.name).filter(Boolean);
+  if (!names.length) return CUSTOMERS.none[language];
+  const read = names.slice(0, CUSTOMER_NAMES_READ);
+  return CUSTOMERS.list[language]({ n: names.length, names: read.join(", "), more: names.length - read.length });
+}
+
 function itemSentence(businessId, id, language) {
   const item = require("../stock/items").get(businessId, id);
   if (!item) throw notFound();
@@ -180,9 +201,10 @@ function sentenceFor(businessId, key) {
   const match = typeof key === "string" ? KEY.exec(key) : null;
   if (!match) throw notFound();
   const language = currentLanguage(businessId);
-  const [, kind, id] = match;
+  const [, screen, kind, id] = match;
   let text;
-  if (!kind) text = nowSentence(businessId, language);
+  if (screen === "now") text = nowSentence(businessId, language);
+  else if (screen === "customers") text = customersSentence(businessId, language);
   else if (kind === "rule") {
     const rule = rules.get(businessId, id);
     if (!rule) throw notFound();

@@ -164,7 +164,6 @@ const T = {
 
   /* --------------------------------------------------- spoken sentences -- */
   "say.totals": ["People owe you {amt} in all.", "कुल {amt} लेना है।", "ಒಟ್ಟು {amt} ಬರಬೇಕು."],
-  "say.customers": ["{n} customers.", "{n} ग्राहक।", "{n} ಗ್ರಾಹಕರು."],
 };
 
 addStrings(T);

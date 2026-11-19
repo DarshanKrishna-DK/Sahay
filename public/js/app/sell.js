@@ -222,7 +222,7 @@ export function createSell() {
           h("section", { class: "sb-customers", "aria-labelledby": "sb-cust-h" },
             h("div", { class: "sb-head-row" },
               sectionHead("sb-cust-h", "users", st("sell.customers"), sell.customers.size || null),
-              names.length ? readButton("customers", () => `${st("say.customers", { n: names.length })} ${names.join(", ")}`) : null),
+              names.length ? readButton("customers") : null),
             customersList(owedBy))),
       ];
     });

@@ -323,3 +323,37 @@ test("POST /api/speak reads a bill aloud with Murf, under the same rate limit", 
     assert.match(calls.at(-1).body.text, /Ramesh Traders/);
   });
 });
+
+test("customers reads the Sell screen's customer list: how many and their names, this business's only, in the reply language", () => {
+  const biz = seedBusiness("en-IN");
+  assert.equal(speak.sentenceFor(biz, "customers").text, "No customers yet.");
+  sellCustomers.save(biz, { name: "Ramesh Traders" });
+  assert.equal(speak.sentenceFor(biz, "customers").text, "1 customer: Ramesh Traders.");
+  sellCustomers.save(biz, { name: "Lakshmi Stores" });
+  const other = seedBusiness("en-IN");
+  sellCustomers.save(other, { name: "Someone Else Entirely" });
+  const en = speak.sentenceFor(biz, "customers").text;
+  assert.match(en, /^2 customers: (Ramesh Traders, Lakshmi Stores|Lakshmi Stores, Ramesh Traders)\.$/);
+  assert.doesNotMatch(en, /Someone Else/, "another business's customers are never read");
+
+  const hi = seedBusiness("hi-IN");
+  sellCustomers.save(hi, { name: "रमेश ट्रेडर्स" });
+  assert.equal(speak.sentenceFor(hi, "customers").text, "1 ग्राहक: रमेश ट्रेडर्स।");
+  const kn = seedBusiness("kn-IN");
+  assert.equal(speak.sentenceFor(kn, "customers").text, "ಇನ್ನೂ ಗ್ರಾಹಕರು ಇಲ್ಲ.");
+  sellCustomers.save(kn, { name: "ರಮೇಶ್" });
+  assert.equal(speak.sentenceFor(kn, "customers").text, "1 ಗ್ರಾಹಕ: ರಮೇಶ್.");
+  for (const key of ["customers:x", "customer", "Customers"]) assert.throws(() => speak.sentenceFor(biz, key), (err) => err.code === "SPEAK_KEY_NOT_FOUND", key);
+});
+
+test("POST /api/speak with key customers is Murf audio under the per-business speak limit (E2E 2026-11-19: it was 404)", async (t) => {
+  const calls = fakeMurf(t);
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    sellCustomers.save(me.business.id, { name: "Ramesh Traders" });
+    const res = await post(base, me.cookie, { key: "customers" });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "audio/mpeg");
+    assert.match(calls.at(-1).body.text, /Ramesh Traders/);
+  });
+});

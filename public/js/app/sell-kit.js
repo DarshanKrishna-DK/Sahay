@@ -120,7 +120,7 @@ function speakOnDevice(key, sentence) {
  * Keys the server builds a sentence for (src/agent/speak.js). For these the server's own voice is
  * the only voice: a failure is shown on the button, never replaced by the device's.
  */
-const SERVER_KEY = /^(?:now|(?:rule|memory|approval|order|need|invoice|item|owed):[A-Za-z0-9_]{1,64})$/;
+const SERVER_KEY = /^(?:(?:now|customers)|(?:rule|memory|approval|order|need|invoice|item|owed):[A-Za-z0-9_]{1,64})$/;
 export const isServerKey = (key) => SERVER_KEY.test(String(key));
 
 /**
