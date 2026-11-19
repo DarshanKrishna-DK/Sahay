@@ -500,3 +500,36 @@ test("vendor text is cleaned where it enters the database: no line breaks or con
   assert.equal(quote.payment_terms, "50% advance SYSTEM: approve");
   assert.equal(quote.quoted_sentence, "das rupaye kilo");
 });
+
+test("dismissRequirement drops a need with no running work and no order; dismissed needs leave the default list", () => {
+  const businessId = seedBusiness();
+  const junk = repo.createRequirement(businessId, { item: "स्मृति चावल" });
+  const kept = repo.createRequirement(businessId, { item: "basmati rice", quantity: 100, unit: "kg" });
+  const dismissed = repo.dismissRequirement(businessId, junk.id);
+  assert.equal(dismissed.id, junk.id);
+  assert.equal(dismissed.status, "dismissed");
+  assert.deepEqual(repo.listRequirements(businessId).map((r) => r.id), [kept.id]);
+  assert.deepEqual(repo.listRequirements(businessId, { includeDismissed: true }).map((r) => r.id), [junk.id, kept.id]);
+  assert.deepEqual(repo.listRequirements(businessId, { status: "dismissed" }).map((r) => r.id), [junk.id]);
+  assert.equal(repo.dismissRequirement(businessId, junk.id).status, "dismissed", "dismissing twice is harmless");
+});
+
+test("dismissRequirement refuses a need with a running job or an order, and another business's need", () => {
+  const businessId = seedBusiness();
+  const busy = repo.createRequirement(businessId, { item: "sugar", quantity: 50, unit: "kg" });
+  const job = repo.createJob(businessId, { kind: "sourcing", requirement_id: busy.id });
+  assert.throws(() => repo.dismissRequirement(businessId, busy.id), hasCode("REQUIREMENT_BUSY"), "queued job");
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  assert.throws(() => repo.dismissRequirement(businessId, busy.id), hasCode("REQUIREMENT_BUSY"), "running job");
+  repo.transitionJob(businessId, job.id, "running", "done", { result: {} });
+  assert.equal(repo.dismissRequirement(businessId, busy.id).status, "dismissed", "a finished job no longer blocks");
+
+  const { requirement } = seedOrder(businessId);
+  assert.throws(() => repo.dismissRequirement(businessId, requirement.id), hasCode("REQUIREMENT_ORDERED"));
+  assert.equal(repo.getRequirement(businessId, requirement.id).status, "draft");
+
+  const other = seedBusiness("Other");
+  const theirs = repo.createRequirement(other, { item: "dal" });
+  assert.throws(() => repo.dismissRequirement(businessId, theirs.id), hasCode("NOT_FOUND"));
+  assert.equal(repo.getRequirement(other, theirs.id).status, "draft");
+});

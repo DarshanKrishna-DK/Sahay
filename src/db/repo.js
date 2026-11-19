@@ -232,8 +232,32 @@ function createRequirement(businessId, fields) {
 
 const getRequirement = (businessId, requirementId) => getRow("requirements", businessId, requirementId);
 
-function listRequirements(businessId, { status } = {}) {
-  return listRows("requirements", businessId, { status });
+const DISMISSED = "dismissed";
+
+/** A need the owner dismissed is left out unless asked for (by its status or includeDismissed). */
+function listRequirements(businessId, { status, includeDismissed = false } = {}) {
+  const rows = listRows("requirements", businessId, { status });
+  return status !== undefined || includeDismissed ? rows : rows.filter((r) => r.status !== DISMISSED);
+}
+
+/**
+ * The owner drops a need (a garbled turn saved junk). Only a need with no queued or running job
+ * and no order; dismissing again returns it unchanged. Throws NOT_FOUND, REQUIREMENT_BUSY or
+ * REQUIREMENT_ORDERED.
+ */
+function dismissRequirement(businessId, requirementId) {
+  const need = owned("requirements", businessId, requirementId, "requirement");
+  if (need.status === DISMISSED) return need;
+  const busy = db
+    .prepare("SELECT 1 FROM jobs WHERE business_id = ? AND requirement_id = ? AND status IN ('queued', 'running') LIMIT 1")
+    .get(tenant(businessId), requirementId);
+  if (busy) throw new RepoError("REQUIREMENT_BUSY", "Sahay is still working on this need.");
+  const ordered = db
+    .prepare("SELECT 1 FROM orders o JOIN quotes q ON q.id = o.quote_id WHERE o.business_id = ? AND q.requirement_id = ? LIMIT 1")
+    .get(tenant(businessId), requirementId);
+  if (ordered) throw new RepoError("REQUIREMENT_ORDERED", "This need already has an order.");
+  updateRow("requirements", businessId, requirementId, { status: DISMISSED });
+  return getRequirement(businessId, requirementId);
 }
 
 function updateRequirement(businessId, requirementId, fields) {
@@ -900,7 +924,7 @@ module.exports = {
   RepoError, SIMULATED_LABEL, newId,
   createBusiness, getBusiness, updateBusiness,
   createSession, getSession, listSessions, updateSession,
-  createRequirement, getRequirement, listRequirements, updateRequirement,
+  createRequirement, getRequirement, listRequirements, updateRequirement, dismissRequirement,
   createJob, getJob, listJobs, transitionJob, appendJobProgress,
   createVendor, getVendor, listVendors, setVendorScore,
   createNegotiation, getNegotiation, listNegotiations, appendNegotiationTurn, updateNegotiation,

@@ -474,6 +474,28 @@ function createApiRouter() {
     }),
   );
 
+  // The ✕ on an earlier need: the owner drops a need saved from a garbled turn. Only a need with
+  // no running work and no order; it then leaves /api/state and the agent's "current need".
+  router.post(
+    "/api/requirements/:id/dismiss",
+    wrap(async (req, res) => {
+      const { businessId } = req.auth;
+      const before = repo.getRequirement(businessId, req.params.id);
+      let need;
+      try {
+        need = repo.dismissRequirement(businessId, req.params.id);
+      } catch (err) {
+        if (err?.code === "NOT_FOUND") throw new HttpError(404, "NOT_FOUND", "No such need.");
+        if (err?.code === "REQUIREMENT_BUSY" || err?.code === "REQUIREMENT_ORDERED") throw new HttpError(409, err.code, err.message);
+        throw err;
+      }
+      if (before && before.status !== need.status) {
+        events.emit(businessId, "requirement.saved", need, { sessionId: voice.get(businessId)?.sessionId ?? null, actor: "owner" });
+      }
+      res.json({ requirement: need });
+    }),
+  );
+
   router.get(
     "/api/orders/:id/po.pdf",
     wrap(async (req, res) => {

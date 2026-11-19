@@ -300,3 +300,50 @@ test("bad JSON and unknown API routes answer with {code, message}", async () => 
     assert.equal(missing.json.code, "NOT_FOUND");
   });
 });
+
+test("POST /api/requirements/:id/dismiss drops this business's idle need, logs it as the owner's and hides it from /api/state", async () => {
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    const biz = me.business.id;
+    const junk = repo.createRequirement(biz, { item: "स्मृति चावल" });
+    const kept = repo.createRequirement(biz, { item: "basmati rice", quantity: 100, unit: "kg" });
+
+    const noCookie = await call(base, "POST", `/api/requirements/${junk.id}/dismiss`);
+    assert.equal(noCookie.status, 401);
+
+    const out = await call(base, "POST", `/api/requirements/${junk.id}/dismiss`, { cookie: me.cookie, body: {} });
+    assert.equal(out.status, 200);
+    assert.equal(out.json.requirement.id, junk.id);
+    assert.equal(out.json.requirement.status, "dismissed");
+    const row = repo.listAudit(biz, { type: "requirement.saved" }).at(-1);
+    assert.equal(row.actor, "owner");
+    assert.equal(row.detail.id, junk.id);
+    assert.equal(row.detail.status, "dismissed");
+
+    const state = await call(base, "GET", "/api/state", { cookie: me.cookie });
+    assert.deepEqual(state.json.requirements.map((r) => r.id), [kept.id]);
+    assert.equal(state.json.requirement.id, kept.id);
+
+    const again = await call(base, "POST", `/api/requirements/${junk.id}/dismiss`, { cookie: me.cookie, body: {} });
+    assert.equal(again.status, 200, "dismissing twice is harmless");
+    assert.equal(repo.listAudit(biz, { type: "requirement.saved" }).filter((r) => r.detail.id === junk.id).length, 1, "no second event");
+  });
+});
+
+test("POST /api/requirements/:id/dismiss refuses a need with running work, and another business's need", async () => {
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    const other = await signUp(base, { name: "Other Stores", city: "Mysuru", language: "kn-IN" });
+    const busy = repo.createRequirement(me.business.id, { item: "sugar", quantity: 50, unit: "kg" });
+    repo.createJob(me.business.id, { kind: "sourcing", requirement_id: busy.id });
+    const refused = await call(base, "POST", `/api/requirements/${busy.id}/dismiss`, { cookie: me.cookie, body: {} });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.json.code, "REQUIREMENT_BUSY");
+    assert.equal(repo.getRequirement(me.business.id, busy.id).status, "draft");
+
+    const theirs = repo.createRequirement(other.business.id, { item: "dal" });
+    const cross = await call(base, "POST", `/api/requirements/${theirs.id}/dismiss`, { cookie: me.cookie, body: { businessId: other.business.id } });
+    assert.equal(cross.status, 404);
+    assert.equal(repo.getRequirement(other.business.id, theirs.id).status, "draft");
+  });
+});
