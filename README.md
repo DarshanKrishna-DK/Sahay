@@ -58,6 +58,8 @@ npm test                  # node:test suite
 npm start                 # http://localhost:3000  (landing at /, app at /app)
 ```
 
+On Windows, `run.bat` starts the server and shares it through Tailscale Funnel (a stable public https link; set `PUBLIC_URL` to it).
+
 ## Honest limits
 - Vendors in a negotiation are **simulated** (labelled everywhere); seller discovery uses **real** public IndiaMART listings.
 - Payments are Razorpay **test mode** only; a live key is refused at boot.
