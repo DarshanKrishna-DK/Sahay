@@ -225,12 +225,17 @@ const STATUS = {
   negotiationEnded: (v) =>
     `The negotiation with ${v.sim ? "the simulated vendor" : "the vendor"} has ended ${v.price ? `with a quote of ${v.price} rupees per ${v.unit}, which the owner has not approved; get_ranked_deals has it` : "with no deal"}. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.`,
   negotiationFailed: () => "The last negotiation stopped before a result. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.",
+  // final-2 B: after a "maybe", the model forgot a read-back was waiting and asked "shall I ask for approval?".
+  approvalWaiting: () =>
+    "A deal has been read out to the owner by the server and is waiting for the owner's answer. The owner's next clear yes or no answers it: call confirm_approval with no id (approve on a yes, reject on a no). Do not call request_approval again and do not ask whether to ask for approval. A maybe or a question is not an answer: say there is no hurry.",
+  orderPlaced: (v) =>
+    `The owner approved the deal and order ${v.po} has been placed, with its purchase order. Do not call create_order for it again. If the owner wants to pay, call create_payment_link with no id.`,
 };
 
 /** Write the job state into the owner agent's LLM context; in order, never blocking speech. */
 function setStatus(state, kind, text) {
   state.callStatus[kind] = text;
-  const combined = [state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
+  const combined = [state.callStatus.approval, state.callStatus.order, state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
   state.statusChain = state.statusChain.then(async () => {
     if (state.closed) return;
     try {
@@ -368,6 +373,7 @@ function onEvent(event) {
       return;
     }
     case "order.created":
+      setStatus(state, "order", STATUS.orderPlaced({ po: d.poNumber ?? d.po_number }));
       if (isSuppressed(event.businessId, "order.created")) return;
       enqueue(state, `order:${d.orderId}`, line("order_created", lang, { po: d.poNumber ?? d.po_number, sim: Boolean(d.simulated) }));
       return;
@@ -379,10 +385,18 @@ function onEvent(event) {
       enqueue(state, `followup:${d.followupId ?? d.orderId}`, followupLine(event.businessId, d, lang));
       return;
     case "approval.requested":
-    case "approval.spoken":
       startHold(state, d.approvalId);
       return;
+    case "approval.spoken":
+      startHold(state, d.approvalId);
+      state.waitingApprovalId = d.approvalId;
+      setStatus(state, "approval", STATUS.approvalWaiting());
+      return;
     case "approval.decided": {
+      if (state.waitingApprovalId && state.waitingApprovalId === d.approvalId) {
+        state.waitingApprovalId = null;
+        setStatus(state, "approval", null);
+      }
       const hold = state.approvalHold;
       // A deal the system withdrew (it carries a reason) does not answer the read-back being held for.
       if (hold && (hold.approvalId ? hold.approvalId === d.approvalId : !d.reason)) endHold(state);
@@ -438,7 +452,8 @@ function attach(businessId, { agentId, sessionId, language }) {
     vendorBatches: new Map(),
     jobStartedAt: new Map(),
     lastSourcingStartedAt: null,
-    callStatus: { sourcing: null, negotiation: null },
+    callStatus: { approval: null, order: null, sourcing: null, negotiation: null },
+    waitingApprovalId: null,
     statusChain: Promise.resolve(),
     approvalHold: null,
     closed: false,

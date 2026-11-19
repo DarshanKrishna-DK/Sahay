@@ -86,6 +86,20 @@ async function createOrder(businessId, approvalId, { sessionId = null } = {}) {
   return repo.getOrder(businessId, order.id);
 }
 
+/**
+ * Place the order for an approval the owner has just given (the Yes card's tick). Same gate as
+ * createOrder. A purchase order PDF that could not be rendered does not undo the order: the
+ * order is returned and the error event is already emitted; issuePurchaseOrder can run again.
+ */
+async function placeApproved(businessId, approvalId, { sessionId = null } = {}) {
+  try {
+    return await createOrder(businessId, approvalId, { sessionId });
+  } catch (err) {
+    if (err?.code === "PO_NOT_ISSUED" && err.orderId) return repo.getOrder(businessId, err.orderId);
+    throw err;
+  }
+}
+
 /** Make sure the order's PDF exists on disk and return its path. */
 async function issuePurchaseOrder(businessId, orderId) {
   const document = repo.getOrderDocument(businessId, orderId);
@@ -117,4 +131,4 @@ function advanceOrder(businessId, orderId, to, { sessionId = null, actor = "syst
   });
 }
 
-module.exports = { OrderError, ALLOWED, INITIAL_STATUS, canTransition, createOrder, issuePurchaseOrder, advanceOrder };
+module.exports = { OrderError, ALLOWED, INITIAL_STATUS, canTransition, createOrder, placeApproved, issuePurchaseOrder, advanceOrder };
