@@ -3,6 +3,7 @@
 import { h, patch } from "./dom.js";
 import { t } from "./i18n.js";
 import { stateView, talkAction } from "./empty.js";
+import { createTalk } from "./talk.js";
 
 function simple(navKey, titleKey, textKey, ic) {
   return () => {
@@ -19,7 +20,7 @@ function simple(navKey, titleKey, textKey, ic) {
 }
 
 export const SCREENS = {
-  talk: simple("nav.talk", "empty.work.title", "empty.work.text", "mic"),
+  talk: createTalk,
   work: simple("nav.work", "empty.work.title", "empty.work.text", "river"),
   orders: simple("nav.orders", "empty.orders.title", "empty.orders.text", "receipt"),
   me: simple("nav.me", "empty.rules.title", "empty.rules.text", "spark"),
