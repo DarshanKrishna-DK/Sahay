@@ -858,3 +858,106 @@ BEGIN
   SELECT RAISE(ABORT, 'a recorded item tax read-back cannot be changed');
 END;
 -- ===================================== end SELL =============================================
+
+-- ============================================================================================
+-- KHATA: receipts and the khata (src/sell/khata.js). Money is integer paise.
+-- What a customer owes = their issued invoices (issued, part_paid, paid) minus their receipts.
+-- A receipt is append-only: a wrong entry is never edited or deleted.
+-- ============================================================================================
+
+-- Money a customer paid the shop. invoice_id NULL is "on account". recorded_via says how it got
+-- here: the owner's spoken yes to the server's read-back (voice, with the owner's words), the
+-- owner's button (button), or a verified Razorpay test-mode checkout of an invoice (razorpay).
+CREATE TABLE IF NOT EXISTS receipts (
+  id                  TEXT PRIMARY KEY,
+  business_id         TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_id         TEXT NOT NULL REFERENCES customers(id),
+  invoice_id          TEXT REFERENCES invoices(id),
+  amount_paise        INTEGER NOT NULL CHECK (amount_paise > 0 AND amount_paise <= 1000000000),
+  mode                TEXT NOT NULL CHECK (mode IN ('cash', 'upi', 'razorpay_test')),
+  note                TEXT CHECK (note IS NULL OR length(note) <= 200),
+  recorded_via        TEXT NOT NULL CHECK (recorded_via IN ('voice', 'button', 'razorpay')),
+  evidence_utterance  TEXT,
+  razorpay_payment_id TEXT,
+  created_at          TEXT NOT NULL,
+  CHECK ((mode = 'razorpay_test') = (recorded_via = 'razorpay')),
+  CHECK (recorded_via <> 'voice' OR evidence_utterance IS NOT NULL),
+  CHECK (recorded_via <> 'razorpay' OR (invoice_id IS NOT NULL AND razorpay_payment_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS receipts_by_customer ON receipts (business_id, customer_id, created_at);
+CREATE INDEX IF NOT EXISTS receipts_by_invoice ON receipts (business_id, invoice_id);
+-- One receipt per Razorpay test payment, however often its paid event is heard (an invoice may
+-- take several online payments: a part payment, then the rest).
+CREATE UNIQUE INDEX IF NOT EXISTS receipts_razorpay_once ON receipts (business_id, razorpay_payment_id) WHERE razorpay_payment_id IS NOT NULL;
+
+CREATE TRIGGER IF NOT EXISTS receipts_same_business
+BEFORE INSERT ON receipts
+WHEN NOT EXISTS (SELECT 1 FROM customers c WHERE c.id = NEW.customer_id AND c.business_id = NEW.business_id)
+  OR (NEW.invoice_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM invoices i
+    WHERE i.id = NEW.invoice_id AND i.business_id = NEW.business_id AND i.customer_id = NEW.customer_id
+      AND i.status IN ('issued', 'part_paid', 'paid')
+  ))
+BEGIN
+  SELECT RAISE(ABORT, 'a receipt is for a customer of the same business, and an issued invoice of that customer');
+END;
+
+CREATE TRIGGER IF NOT EXISTS receipts_are_fixed
+BEFORE UPDATE ON receipts
+BEGIN
+  SELECT RAISE(ABORT, 'a receipt cannot be changed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS receipts_never_deleted
+BEFORE DELETE ON receipts
+BEGIN
+  SELECT RAISE(ABORT, 'a receipt cannot be deleted');
+END;
+
+-- A payment the agent heard and read back, waiting for the owner's spoken yes (record_payment).
+-- The server speaks `readback` into the call itself; a yes counts only after that exact sentence
+-- (approvals.answerAfterSpoken). One pending draft per business: a new one withdraws the old.
+-- Named *_readbacks so every other gate treats a payment read-back as a question the server
+-- asked: a yes after it never approves a deal, invoice or rule that was read out earlier.
+CREATE TABLE IF NOT EXISTS receipt_readbacks (
+  id           TEXT PRIMARY KEY,
+  business_id  TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_id  TEXT NOT NULL REFERENCES customers(id),
+  invoice_id   TEXT REFERENCES invoices(id),
+  amount_paise INTEGER NOT NULL CHECK (amount_paise > 0 AND amount_paise <= 1000000000),
+  mode         TEXT NOT NULL CHECK (mode IN ('cash', 'upi')),
+  note         TEXT CHECK (note IS NULL OR length(note) <= 200),
+  owner_words  TEXT,
+  readback     TEXT NOT NULL,
+  status       TEXT NOT NULL CHECK (status IN ('pending', 'recorded', 'withdrawn')),
+  agent_id     TEXT,
+  spoken_text  TEXT,
+  spoken_at    TEXT,
+  receipt_id   TEXT REFERENCES receipts(id),
+  created_at   TEXT NOT NULL,
+  decided_at   TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS receipt_readbacks_one_pending ON receipt_readbacks (business_id) WHERE status = 'pending';
+
+CREATE TRIGGER IF NOT EXISTS receipt_readbacks_same_business
+BEFORE INSERT ON receipt_readbacks
+WHEN NEW.status <> 'pending'
+  OR NOT EXISTS (SELECT 1 FROM customers c WHERE c.id = NEW.customer_id AND c.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a receipt draft starts pending, for a customer of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS receipt_readbacks_status_flow
+BEFORE UPDATE OF status ON receipt_readbacks
+WHEN NOT (OLD.status = 'pending' AND NEW.status IN ('recorded', 'withdrawn'))
+  OR (NEW.status = 'recorded' AND NEW.receipt_id IS NULL)
+BEGIN
+  SELECT RAISE(ABORT, 'a receipt draft is decided once; recorded names its receipt');
+END;
+
+CREATE TRIGGER IF NOT EXISTS receipt_readbacks_figures_fixed
+BEFORE UPDATE OF business_id, customer_id, invoice_id, amount_paise, mode, note, readback ON receipt_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'the figures of a receipt draft cannot be changed; make a new one');
+END;
+-- ===================================== end KHATA ============================================

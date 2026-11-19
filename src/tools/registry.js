@@ -1582,6 +1582,7 @@ const TOOLS = [
   },
 ];
 TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields })); // STK: stock tools
+TOOLS.push(...require("./khata").TOOLS); // KHATA: record_payment, who_owes_me, send_payment_reminder
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
