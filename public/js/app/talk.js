@@ -109,7 +109,7 @@ export function createTalk() {
       items.push(h("button", { class: "btn btn-ghost", type: "button", on: { click: () => startCall(call.mode) } }, icon("refresh", 20), h("span", { text: t("retry") })));
     }
     if (call.status === "idle" && call.ended && (call.ended.reason === "offline" || call.ended.reason === "stuck")) {
-      items.push(h("div", { class: "issue issue-bad", role: "status" }, icon(call.ended.reason === "offline" ? "alert" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
+      items.push(h("div", { class: "issue issue-bad issue-line", role: "status" }, icon(call.ended.reason === "offline" ? "alert" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
     }
     if ((call.status === "idle" || call.status === "error") && state.voiceServer && state.voiceServer.active) {
       items.push(h("div", { class: "issue issue-warn" }, icon("alert", 22), h("span", { text: t("talk.otherTab") }),

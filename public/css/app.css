@@ -499,6 +499,8 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .issue-bad { border-color: var(--coral); }
 .issue-bad > svg { color: var(--coral-text); }
 .issue-warn { border-color: var(--marigold); }
+.issue-line { flex-wrap: nowrap; }
+.issue-line > span { flex: 0 1 auto; }
 
 .talk-controls { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .seg { display: inline-flex; padding: 5px; gap: 4px; border-radius: var(--r-pill); background: var(--glass); border: 1px solid var(--edge); }
@@ -683,6 +685,8 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .vname.sim { border-style: dashed; }
 .vname.more { border-color: var(--edge); color: var(--text-hi); background: var(--ink-2); }
 .vname.pop { animation: rise var(--t-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+/* Wide river: the pocket under Searching is wider than tall, so the names wrap into rows. */
+.river:not(.river-v) .river-sellers { flex-direction: row; flex-wrap: wrap; justify-content: center; width: 220px; transform: translate(-50%, 100px); }
 .vbub.more { background: var(--ink-2); color: var(--text-hi); border-color: var(--edge); }
 .vbub.pop { animation: pop var(--t-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
 .vbub.static { position: static; transform: none; flex: none; }
@@ -745,7 +749,7 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .earlier-x:focus-visible { border-radius: 50%; }
 @media (min-width: 900px) {
   .work.has-ladder .ladder { padding: 18px 24px; gap: 8px; }
-  .work.has-ladder .ladder-plot { height: 200px; margin: 30px 28px 18px; }
+  .work.has-ladder .ladder-plot { height: 190px; margin: 26px 28px 14px; }
 }
 @media (max-width: 760px) {
   .ladder { padding: 18px 16px; }

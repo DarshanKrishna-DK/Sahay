@@ -136,7 +136,7 @@ export function renderRiver(model, { vertical, onStation, freshVendorIds = new S
   const sellers = h("ul", { class: "river-sellers", style: `--x:${sx};--y:${sy}`, "aria-label": t("work.sellers", { n: vendors.length }) });
   shown.forEach((v, i) => {
     const full = String(v.name || "");
-    const label = v.simulated ? `${full} (${t("simulated")})` : full;
+    const label = v.simulated ? `${full}, ${t("simulated")}` : full;
     sellers.append(h("li", {
       class: `vname${freshVendorIds.has(String(v.id)) ? " pop" : ""}${v.simulated ? " sim" : ""}`,
       style: `--i:${i}`, title: label,
