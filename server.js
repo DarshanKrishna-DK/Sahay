@@ -147,8 +147,10 @@ function createApp({ publicDir = PUBLIC_DIR } = {}) {
   app.use("/mcp", createMcpRouter());
   app.use(require("./src/routes/auth").createAuthRouter()); // before /vendor/:code and the api router's requireSession
   app.use(createVendorRouter());
+  app.use(require("./src/routes/sell").createSellRouter()); // SELL: /api/sell, /api/invoices/*, invoice pay tokens (before the purchase pay router)
   app.use(createPayRouter());
   app.use(require("./src/routes/stock").createStockRouter()); // STK: /api/stock, delivered, reorder decision
+  app.use(require("./src/routes/khata").createKhataRouter()); // KHATA: POST /api/receipts, /api/customers/:id/remind
   app.use(createApiRouter());
   app.use("/api", (_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "No such API route." }));
   const sendApp = (_req, res, next) => res.sendFile(path.join(publicDir, "app.html"), { maxAge: "5m" }, (err) => err && next(err.status === 404 ? undefined : err));

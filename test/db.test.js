@@ -59,7 +59,7 @@ test("the schema creates every table of the contract", () => {
   assert.deepEqual(tables, [
     "account_businesses", "accounts",
     "agent_memories", "agent_profiles", "agent_rules", "approval_readbacks", "approvals", "audit_log", "businesses", "customers", "followups", "invoice_approvals", "invoice_lines", "invoice_readbacks", "invoices", "item_tax_readbacks", "items", "jobs",
-    "link_codes", "negotiations", "orders", "passkeys", "payment_checkouts", "quotes", "reorder_proposals", "reorder_readbacks", "requirements", "rule_readbacks",
+    "link_codes", "negotiations", "orders", "passkeys", "payment_checkouts", "quotes", "receipt_readbacks", "receipts", "reorder_proposals", "reorder_readbacks", "requirements", "rule_readbacks",
     "sell_settings", "sessions", "stock_moves", "telegram_links", "vendors",
   ]);
   assert.equal(db.getDb().prepare("PRAGMA user_version").get().user_version, db.SCHEMA_VERSION);
