@@ -23,6 +23,8 @@ const CLIPS = {
   "hi-approve": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "हाँ, यह ऑर्डर कर दीजिए।" },
   "hi-paylink": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "भुगतान का लिंक भी बना दीजिए।" },
   "hi-status": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "मेरे ऑर्डर का क्या हाल है?" },
+  "hi-teach-rule": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "एक नियम याद रखिए: बासमती चावल के लिए कभी भी अस्सी रुपये किलो से ज़्यादा मत देना।" },
+  "hi-yes": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "हाँ, ठीक है।" },
   "kn-request": { locale: "kn-IN", voiceId: "hi-IN-chirag", text: "ನನಗೆ ಇನ್ನೂರು ಕಿಲೋ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ ಬೇಕು, ಬೆಂಗಳೂರಿಗೆ ಡೆಲಿವರಿ ಬೇಕು." },
   "en-request": { locale: "en-IN", voiceId: "en-IN-aarav", text: "I need two hundred kilos of basmati rice delivered to Bengaluru, under ninety rupees a kilo." },
   "mix-request": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "मुझे 500 cotton t-shirts चाहिए, Bengaluru delivery, एक सौ अस्सी rupees per piece तक।" },
