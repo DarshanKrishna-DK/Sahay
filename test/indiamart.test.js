@@ -391,6 +391,10 @@ test('findVendors', async (t) => {
 /* ------------------------------------------------------------------ live --- */
 
 test('LIVE IndiaMART: basmati rice in Bengaluru returns at least 3 real vendors with names and phones', async (t) => {
+  if (process.env.INDIAMART_LIVE_TEST !== '1') {
+    t.skip('live IndiaMART call is opt-in (INDIAMART_LIVE_TEST=1)');
+    return;
+  }
   try {
     await dns.lookup('dir.indiamart.com');
   } catch (err) {

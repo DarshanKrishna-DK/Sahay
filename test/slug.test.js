@@ -333,6 +333,10 @@ test('suggestSlugs surfaces a missing key as an LLMError', async () => {
 /* ------------------------------------------------------------------ live --- */
 
 test('LIVE IndiaMART: "basmati chawal" in Bangalore resolves to the Bengaluru basmati-rice page', async (t) => {
+  if (process.env.INDIAMART_LIVE_TEST !== '1') {
+    t.skip('live IndiaMART call is opt-in (INDIAMART_LIVE_TEST=1)');
+    return;
+  }
   try {
     await dns.lookup('dir.indiamart.com');
   } catch (err) {

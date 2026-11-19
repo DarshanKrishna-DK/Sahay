@@ -201,7 +201,7 @@ test('the API key never appears in an error message', async (t) => {
   await assert.rejects(completeJSON(ask), (err) => err.code === 'bad_json' && !err.message.includes(FAKE_KEY));
 });
 
-test('LIVE Groq: returns a JSON object for a real extraction', { skip: liveKey ? false : 'GROQ_API_KEY is not set' }, async (t) => {
+test('LIVE Groq: returns a JSON object for a real extraction', { skip: liveKey ? false : 'live Groq call is opt-in (GROQ_LIVE_TEST=1 with GROQ_API_KEY set)' }, async (t) => {
   assert.equal(globalThis.fetch, realFetch, 'a stub from an earlier test is still installed: this would not be a live result');
   process.env.GROQ_API_KEY = liveKey;
   if (liveModel) process.env.GROQ_EXTRACT_MODEL = liveModel;
