@@ -499,8 +499,6 @@ function liveCall(businessId) {
   return state && !state.closed ? { agentId: state.agentId, sessionId: state.sessionId, language: state.language } : null;
 }
 
-
-
 function isLive(businessId) {
   return live.has(businessId);
 }
