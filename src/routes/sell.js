@@ -108,7 +108,7 @@ function createSellRouter() {
     wrap(async (req, res, next) => {
       if (!checkout.isInvoiceToken(req.params.token)) return next();
       limit(`pay:ip:${req.socket?.remoteAddress ?? "unknown"}`, PAY_LIMIT);
-      res.set("Cache-Control", "no-store").json(checkout.checkoutForToken(req.params.token));
+      res.set("Cache-Control", "no-store").json(await checkout.checkoutForToken(req.params.token));
     }),
   );
   router.post(

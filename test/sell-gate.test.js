@@ -156,10 +156,13 @@ test("refused while a purchase deal waits for the owner's answer", () => {
 
 /* ------------------------------------------------- PDF and pay page --- */
 
+/** Razorpay order ids are unique across every fake server, as they are in Razorpay. */
+let ordersMade = 0;
 async function fakeRazorpay(t) {
   const calls = [];
   const orders = new Map();
-  let made = 0;
+  /** razorpay order id -> the amount_paid Razorpay reports (default: the order's whole amount). */
+  const paidAmounts = new Map();
   const server = http.createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -168,20 +171,20 @@ async function fakeRazorpay(t) {
     let answer;
     if (req.method === "GET" && req.url.startsWith("/v1/orders?")) answer = [200, { entity: "collection", count: 0, items: [] }];
     else if (req.method === "POST" && req.url === "/v1/orders") {
-      made += 1;
-      const order = { id: `order_Inv${String(made).padStart(10, "0")}`, entity: "order", amount: body.amount, amount_paid: 0, currency: body.currency, receipt: body.receipt, status: "created" };
+      ordersMade += 1;
+      const order = { id: `order_Inv${String(ordersMade).padStart(10, "0")}`, entity: "order", amount: body.amount, amount_paid: 0, currency: body.currency, receipt: body.receipt, status: "created" };
       orders.set(order.id, order);
       answer = [200, order];
     } else if (req.method === "GET" && req.url.startsWith("/v1/orders/")) {
       const order = orders.get(decodeURIComponent(req.url.slice("/v1/orders/".length)));
-      answer = order ? [200, { ...order, amount_paid: order.amount, status: "paid" }] : [404, { error: { description: "no order" } }];
+      answer = order ? [200, { ...order, amount_paid: paidAmounts.get(order.id) ?? order.amount, status: "paid" }] : [404, { error: { description: "no order" } }];
     } else answer = [404, { error: { description: "no such route" } }];
     res.writeHead(answer[0], { "Content-Type": "application/json" });
     res.end(JSON.stringify(answer[1]));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
-  return { calls, razorpay: { keyId: "rzp_test_fake", keySecret: "fake-secret", base: `http://127.0.0.1:${server.address().port}/v1` } };
+  return { calls, paidAmounts, razorpay: { keyId: "rzp_test_fake", keySecret: "fake-secret", base: `http://127.0.0.1:${server.address().port}/v1` } };
 }
 
 const PUBLIC = "https://sahay.example.test";
@@ -204,6 +207,7 @@ test("issued invoice: PDF with Indic names, pay page bound to the invoice, verif
   assert.match(invoice.payUrl, /^https:\/\/sahay\.example\.test\/pay\/inv_[A-Za-z0-9_-]{22}$/);
   const post = calls.find((c) => c.method === "POST");
   assert.equal(post.body.amount, invoice.totals.totalPaise);
+  assert.equal(post.body.receipt, `${draft.id}-1`, "the invoice's first pay order");
   assert.ok(repo.listAudit(biz).some((r) => r.type === "invoice.issued"));
 
   const model = invoicePdf.invoiceModel(invoices.get(biz, draft.id), gate.approvalRow(biz, approval.id));
@@ -212,7 +216,7 @@ test("issued invoice: PDF with Indic names, pay page bound to the invoice, verif
   assert.deepEqual(model.taxColumns, ["igst"]);
 
   const token = invoice.payUrl.split("/").pop();
-  const page = checkout.checkoutForToken(token, { razorpay });
+  const page = await checkout.checkoutForToken(token, { razorpay });
   assert.equal(page.kind, "invoice");
   assert.equal(page.merchant, "Asha Stores");
   assert.equal(page.buyer, "रमेश ट्रेडर्स");
@@ -236,8 +240,75 @@ test("issued invoice: PDF with Indic names, pay page bound to the invoice, verif
   assert.equal(paid[0].detail.amountPaise, invoice.totals.totalPaise);
   assert.equal(paid[0].detail.testMode, true);
 
-  assert.throws(() => checkout.checkoutForToken("inv_" + "A".repeat(22), { razorpay }), refuses("PAY_LINK_INVALID"));
-  assert.throws(() => checkout.checkoutForToken(token, { razorpay: { ...razorpay, keyId: "rzp_live_x" } }), refuses("RAZORPAY_LIVE_KEY"));
+  await assert.rejects(checkout.checkoutForToken("inv_" + "A".repeat(22), { razorpay }), refuses("PAY_LINK_INVALID"));
+  await assert.rejects(checkout.checkoutForToken(token, { razorpay: { ...razorpay, keyId: "rzp_live_x" } }), refuses("RAZORPAY_LIVE_KEY"));
+});
+
+/** An issued invoice with its pay page made through the fake Razorpay. */
+async function issuedWithPage(t) {
+  const { biz, customer, invoice: draft } = shop();
+  const { approval, text } = putToOwner(biz, draft.id);
+  gate.confirmInvoice(biz, approval.id, { decision: "approve", via: "voice", agentId: AGENT, history: heard([text], "yes") });
+  const fake = await fakeRazorpay(t);
+  const { invoice, problems } = await gate.finishIssue(biz, draft.id, { checkoutOptions: { razorpay: fake.razorpay, publicUrl: PUBLIC } });
+  assert.deepEqual(problems, []);
+  return { biz, customer, invoice, token: invoice.payUrl.split("/").pop(), ...fake };
+}
+
+const signed = (secret, orderId, paymentId) => ({
+  razorpay_payment_id: paymentId,
+  razorpay_order_id: orderId,
+  razorpay_signature: crypto.createHmac("sha256", secret).update(`${orderId}|${paymentId}`).digest("hex"),
+});
+
+test("after a part payment the pay page charges only what is open: a new test-mode order per attempt, on the same link", async (t) => {
+  const { biz, customer, invoice, token, razorpay, calls } = await issuedWithPage(t);
+  const total = invoice.totals.totalPaise;
+  const posts = () => calls.filter((c) => c.method === "POST");
+  const first = await checkout.checkoutForToken(token, { razorpay });
+  assert.equal(first.amountPaise, total);
+  assert.equal(posts().length, 1, "nothing paid yet: the order made at issue is reused");
+
+  // ₹2,000 cash against the bill: what is open is now less than the bound order.
+  require("../src/sell/khata").recordReceipt(biz, { customerId: customer.id, amount: 2000, mode: "cash", invoiceId: invoice.id });
+  const open = total - 200000;
+  const page = await checkout.checkoutForToken(token, { razorpay });
+  assert.equal(page.amountPaise, open, "the page shows the open amount");
+  assert.notEqual(page.razorpayOrderId, first.razorpayOrderId, "and Checkout opens a new order for it");
+  assert.equal(posts().length, 2);
+  assert.deepEqual([posts()[1].body.amount, posts()[1].body.receipt], [open, `${invoice.id}-2`], "receipt id unique per attempt");
+
+  // Opening it again, or the owner asking for the link, keeps that order; the link never changes.
+  assert.equal((await checkout.checkoutForToken(token, { razorpay })).razorpayOrderId, page.razorpayOrderId);
+  const again = await checkout.ensureCheckout(biz, invoice.id, { razorpay, publicUrl: PUBLIC });
+  assert.deepEqual([again.existing, again.razorpayOrderId, again.amountPaise, again.url], [true, page.razorpayOrderId, open, invoice.payUrl]);
+  assert.equal(posts().length, 2);
+
+  const paid = await checkout.verifyPayment(token, signed(razorpay.keySecret, page.razorpayOrderId, "pay_Part000000001"), { razorpay });
+  assert.equal(paid.already, false);
+  const event = repo.listAudit(biz, { type: "invoice.paid" })[0];
+  assert.deepEqual([event.detail.amountPaise, event.detail.razorpayOrderId], [open, page.razorpayOrderId]);
+});
+
+test("verify refuses a paid amount that is not the bound order's, and an order never made for this invoice", async (t) => {
+  const { biz, invoice, token, razorpay, paidAmounts } = await issuedWithPage(t);
+  const page = await checkout.checkoutForToken(token, { razorpay });
+
+  paidAmounts.set(page.razorpayOrderId, 100);
+  await assert.rejects(checkout.verifyPayment(token, signed(razorpay.keySecret, page.razorpayOrderId, "pay_Short00000001"), { razorpay }), refuses("PAYMENT_AMOUNT_MISMATCH"));
+  await assert.rejects(checkout.verifyPayment(token, signed(razorpay.keySecret, "order_Elsewhere0001", "pay_Other00000001"), { razorpay }), refuses("PAYMENT_SIGNATURE_INVALID"));
+  assert.equal(repo.listAudit(biz, { type: "invoice.paid" }).length, 0, "nothing was recorded as paid");
+  assert.ok(repo.listAudit(biz, { type: "error" }).some((r) => r.detail.code === "PAYMENT_AMOUNT_MISMATCH" && r.detail.invoiceId === invoice.id));
+
+  paidAmounts.delete(page.razorpayOrderId);
+  assert.equal((await checkout.verifyPayment(token, signed(razorpay.keySecret, page.razorpayOrderId, "pay_Whole00000001"), { razorpay })).already, false);
+});
+
+test("a customer bill's pay data is never marked simulated", async (t) => {
+  const { token, razorpay } = await issuedWithPage(t);
+  const page = await checkout.checkoutForToken(token, { razorpay });
+  assert.equal(page.kind, "invoice");
+  assert.strictEqual(page.simulated, false);
 });
 
 test("no PDF and no pay page for an invoice that was not issued", async () => {

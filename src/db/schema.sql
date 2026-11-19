@@ -639,6 +639,20 @@ CREATE INDEX IF NOT EXISTS invoices_by_customer ON invoices (business_id, custom
 CREATE UNIQUE INDEX IF NOT EXISTS invoices_number_once ON invoices (business_id, number) WHERE number IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS invoices_seq_once ON invoices (business_id, fy, seq) WHERE seq IS NOT NULL;
 
+-- Every Razorpay test-mode order made for an invoice's pay page, one per attempt (seq 1, 2, ...,
+-- Razorpay receipt "<invoice id>-<seq>"), each for what was open on the invoice when it was made.
+-- invoices.razorpay_order_id names the one Checkout opens now; a payment is verified against the
+-- amount of the order it was made on (src/sell/checkout.js).
+CREATE TABLE IF NOT EXISTS invoice_pay_orders (
+  business_id       TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  invoice_id        TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  seq               INTEGER NOT NULL CHECK (seq > 0),
+  razorpay_order_id TEXT NOT NULL UNIQUE,
+  amount_paise      INTEGER NOT NULL CHECK (amount_paise > 0),
+  created_at        TEXT NOT NULL,
+  PRIMARY KEY (invoice_id, seq)
+);
+
 -- item_id is an items row of the same business (src/stock/items.js; checked in code). Name, unit
 -- and HSN are copied from the item when the line is written, so a later rename does not change it.
 CREATE TABLE IF NOT EXISTS invoice_lines (

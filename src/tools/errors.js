@@ -205,6 +205,7 @@ const CODE_MAP = {
   PAY_LINK_EXPIRED: ["payment_link_unavailable", 410],
   PAYMENT_DETAILS_INVALID: ["payment_unverified", 400],
   PAYMENT_SIGNATURE_INVALID: ["payment_unverified", 400],
+  PAYMENT_AMOUNT_MISMATCH: ["payment_unverified", 409],
 };
 
 /** DiscoveryError and LLMError codes are lower case. */

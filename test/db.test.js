@@ -58,7 +58,7 @@ test("the schema creates every table of the contract", () => {
   const tables = db.getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((r) => r.name);
   assert.deepEqual(tables, [
     "account_businesses", "accounts",
-    "agent_memories", "agent_profiles", "agent_rules", "approval_readbacks", "approvals", "audit_log", "businesses", "customers", "followups", "invoice_approvals", "invoice_lines", "invoice_readbacks", "invoices", "item_tax_readbacks", "items", "jobs",
+    "agent_memories", "agent_profiles", "agent_rules", "approval_readbacks", "approvals", "audit_log", "businesses", "customers", "followups", "invoice_approvals", "invoice_lines", "invoice_pay_orders", "invoice_readbacks", "invoices", "item_tax_readbacks", "items", "jobs",
     "link_codes", "negotiations", "orders", "passkeys", "payment_checkouts", "quotes", "receipt_readbacks", "receipts", "reorder_proposals", "reorder_readbacks", "requirements", "rule_readbacks",
     "sell_settings", "sessions", "stock_moves", "telegram_links", "vendors",
   ]);
