@@ -4,6 +4,7 @@ import { h, patch } from "./dom.js";
 import { t } from "./i18n.js";
 import { stateView, talkAction } from "./empty.js";
 import { createTalk } from "./talk.js";
+import { createWork } from "./work.js";
 
 function simple(navKey, titleKey, textKey, ic) {
   return () => {
@@ -21,7 +22,7 @@ function simple(navKey, titleKey, textKey, ic) {
 
 export const SCREENS = {
   talk: createTalk,
-  work: simple("nav.work", "empty.work.title", "empty.work.text", "river"),
+  work: createWork,
   orders: simple("nav.orders", "empty.orders.title", "empty.orders.text", "receipt"),
   me: simple("nav.me", "empty.rules.title", "empty.rules.text", "spark"),
   history: simple("nav.history", "empty.history.title", "empty.history.text", "history"),
