@@ -57,6 +57,7 @@ test("link flow: a one-time code links the chat that sends /start <code>, once",
   assert.equal(repo.getTelegramLink(businessId).chat_id, "555");
   assert.equal(calls[0].method, "sendMessage");
   assert.equal(calls[0].body.chat_id, 555);
+  assert.deepEqual(calls[0].body.link_preview_options, { is_disabled: true });
   assert.match(calls[0].body.text, /Asha Kirana/);
   assert.match(calls[0].body.text, /सहाय/);
 
@@ -94,7 +95,8 @@ test("sendToOwner sends the text, then the document as multipart", async (t) => 
 
   const out = await telegram.sendToOwner(businessId, "ऑर्डर पक्का", { documentPath: pdf });
   assert.deepEqual(out, { sent: true, messageId: 7, documentMessageId: 7 });
-  assert.deepEqual(calls[0], { method: "sendMessage", body: { chat_id: "777", text: "ऑर्डर पक्का" } });
+  // E2E regress bug 6: a message with a pay link showed a huge preview; previews are off (Bot API LinkPreviewOptions.is_disabled).
+  assert.deepEqual(calls[0], { method: "sendMessage", body: { chat_id: "777", text: "ऑर्डर पक्का", link_preview_options: { is_disabled: true } } });
   assert.equal(calls[1].method, "sendDocument");
   assert.ok(calls[1].body instanceof FormData);
   assert.equal(calls[1].body.get("chat_id"), "777");

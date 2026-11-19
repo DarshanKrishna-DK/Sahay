@@ -5,7 +5,9 @@
  * confirmed, PO PDF, payment link, delivery due. Messages go only to a chat the
  * owner linked with a one-time code; the bot answers nothing but `/start <code>`.
  *
- * Bot API (core.telegram.org/bots/api, read 2026-11-19): sendMessage {chat_id, text},
+ * Bot API (core.telegram.org/bots/api, read 2026-11-19): sendMessage {chat_id, text,
+ * link_preview_options: LinkPreviewOptions {is_disabled: true}} (re-read 2026-11-20: every message goes
+ * without a link preview; a pay link made a huge card, E2E regress bug 6),
  * sendDocument multipart {chat_id, document}, getUpdates {offset, timeout, allowed_updates}.
  * The bot token is part of every URL, so a URL is never logged.
  */
@@ -72,11 +74,14 @@ async function api(method, { json, form, timeoutMs = REQUEST_TIMEOUT_MS, signal 
  * Resolves `{sent: false, reason: "not_linked" | "not_configured"}` when there is
  * nowhere to send; throws TelegramError when Telegram refuses.
  */
+/** A sendMessage body: never a link preview. */
+const textMessage = (chatId, text) => ({ chat_id: chatId, text, link_preview_options: { is_disabled: true } });
+
 async function sendToOwner(businessId, text, { documentPath } = {}) {
   if (!isConfigured()) return { sent: false, reason: "not_configured" };
   const link = repo.getTelegramLink(businessId);
   if (!link) return { sent: false, reason: "not_linked" };
-  const message = await api("sendMessage", { json: { chat_id: link.chat_id, text: String(text).slice(0, 4096) } });
+  const message = await api("sendMessage", { json: textMessage(link.chat_id, String(text).slice(0, 4096)) });
   let document = null;
   if (documentPath) {
     const form = new FormData();
@@ -115,14 +120,14 @@ async function handleUpdate(update) {
 
   const businessId = repo.system.redeemLinkCode(match[1]);
   if (!businessId) {
-    await api("sendMessage", { json: { chat_id: message.chat.id, text: BAD_CODE } });
+    await api("sendMessage", { json: textMessage(message.chat.id, BAD_CODE) });
     return { handled: true, linked: false };
   }
   repo.setTelegramLink(businessId, String(message.chat.id));
   const business = repo.getBusiness(businessId);
   const say = LINKED[business?.language] ?? LINKED["en-IN"];
   events.emit(businessId, "telegram.linked", { linked: true }, { actor: "owner" });
-  await api("sendMessage", { json: { chat_id: message.chat.id, text: say(business?.name ?? "") } });
+  await api("sendMessage", { json: textMessage(message.chat.id, say(business?.name ?? "")) });
   return { handled: true, linked: true, businessId };
 }
 
