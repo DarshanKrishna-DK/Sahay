@@ -1619,7 +1619,7 @@ async function callTool(ctx, name, args = {}) {
   } catch (err) {
     const toolError = toToolError(err, language);
     if (toolError.code === "INTERNAL" || toolError.status >= 500) {
-      events.emit(ctx.businessId, "error", { code: toolError.code, message: toolError.message, tool: name }, { sessionId: ctx.sessionId ?? null, actor: "system" });
+      events.emit(ctx.businessId, "error", { code: toolError.code, message: toolError.message, say: toolError.say ?? null, tool: name }, { sessionId: ctx.sessionId ?? null, actor: "system" });
     }
     throw toolError;
   }
