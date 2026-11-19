@@ -427,3 +427,110 @@ CREATE TABLE IF NOT EXISTS agent_memories (
   updated_at  TEXT NOT NULL,
   UNIQUE (business_id, kind, key)
 );
+
+-- ============================================================================================
+-- STK: stock (src/stock/*). Items, an append-only stock ledger and low-stock reorder proposals.
+-- ============================================================================================
+
+-- What the business buys or sells. `name_key` is the item's words folded the same way across
+-- scripts (src/stock/items.js nameKey: "rice", "चावल" and "ಅಕ್ಕಿ" share one key), so one item is
+-- never stored twice under two spellings. Quantities of an item are in its `unit` (a units.js code).
+CREATE TABLE IF NOT EXISTS items (
+  id            TEXT PRIMARY KEY,
+  business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  name_native   TEXT,
+  name_key      TEXT NOT NULL,
+  unit          TEXT NOT NULL,
+  hsn           TEXT CHECK (hsn IS NULL OR (length(hsn) BETWEEN 4 AND 8 AND hsn NOT GLOB '*[^0-9]*')),
+  gst_rate      REAL CHECK (gst_rate IS NULL OR (gst_rate >= 0 AND gst_rate <= 40)),
+  sale_price    REAL CHECK (sale_price IS NULL OR sale_price >= 0),
+  reorder_level REAL CHECK (reorder_level IS NULL OR reorder_level >= 0),
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  UNIQUE (business_id, name),
+  UNIQUE (business_id, name_key)
+);
+
+-- The stock ledger. Append-only: on hand = SUM(qty), in the item's unit (+ in, - out).
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  item_id     TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  qty         REAL NOT NULL CHECK (qty <> 0),
+  reason      TEXT NOT NULL CHECK (reason IN ('opening', 'purchase', 'sale', 'adjust')),
+  ref_id      TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS stock_moves_by_item ON stock_moves (business_id, item_id, created_at);
+-- A delivered purchase order comes into stock once per item.
+CREATE UNIQUE INDEX IF NOT EXISTS stock_moves_purchase_once ON stock_moves (business_id, item_id, ref_id) WHERE reason = 'purchase';
+
+CREATE TRIGGER IF NOT EXISTS stock_moves_same_business
+BEFORE INSERT ON stock_moves
+WHEN NOT EXISTS (SELECT 1 FROM items i WHERE i.id = NEW.item_id AND i.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a stock move needs an item of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS stock_moves_are_fixed
+BEFORE UPDATE ON stock_moves
+BEGIN
+  SELECT RAISE(ABORT, 'a stock move cannot be changed; record an adjustment');
+END;
+
+-- Sahay noticed an item at or below its reorder level and asks the owner whether to buy more.
+-- Nothing is bought here: on the owner's yes a requirement is saved and a vendor search starts
+-- (the usual buying flow, with its own approval gate before any order). One open proposal per item.
+-- `last_move_rowid` is the item's newest stock_moves rowid when it was proposed: the item is
+-- proposed again only after its stock has been back above the level since then.
+CREATE TABLE IF NOT EXISTS reorder_proposals (
+  id                 TEXT PRIMARY KEY,
+  business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  item_id            TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  on_hand            REAL NOT NULL,
+  level              REAL NOT NULL,
+  quantity           REAL CHECK (quantity IS NULL OR quantity > 0),
+  unit               TEXT NOT NULL,
+  status             TEXT NOT NULL CHECK (status IN ('open', 'accepted', 'declined', 'closed')),
+  requirement_id     TEXT REFERENCES requirements(id) ON DELETE SET NULL,
+  decided_via        TEXT CHECK (decided_via IN ('voice', 'button') OR decided_via IS NULL),
+  evidence_utterance TEXT,
+  last_move_rowid    INTEGER NOT NULL DEFAULT 0,
+  created_at         TEXT NOT NULL,
+  decided_at         TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS reorder_proposals_one_open ON reorder_proposals (business_id, item_id) WHERE status = 'open';
+
+CREATE TRIGGER IF NOT EXISTS reorder_proposals_same_business
+BEFORE INSERT ON reorder_proposals
+WHEN NEW.status <> 'open' OR NOT EXISTS (SELECT 1 FROM items i WHERE i.id = NEW.item_id AND i.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a reorder proposal starts open, for an item of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS reorder_proposals_status_flow
+BEFORE UPDATE OF status ON reorder_proposals
+WHEN NOT (OLD.status = 'open' AND NEW.status IN ('accepted', 'declined', 'closed'))
+BEGIN
+  SELECT RAISE(ABORT, 'a reorder proposal is decided once');
+END;
+
+-- Every time the server itself spoke a proposal's question into a live call. A spoken yes is
+-- evidence only for a question recorded here (approvals.answerAfterSpoken).
+CREATE TABLE IF NOT EXISTS reorder_readbacks (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  proposal_id TEXT NOT NULL REFERENCES reorder_proposals(id) ON DELETE CASCADE,
+  agent_id    TEXT NOT NULL,
+  spoken_text TEXT NOT NULL,
+  spoken_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reorder_readbacks_by_proposal ON reorder_readbacks (business_id, proposal_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS reorder_readbacks_are_fixed
+BEFORE UPDATE ON reorder_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded reorder question cannot be changed');
+END;
+-- ===================================== end STK ==============================================
