@@ -13,7 +13,9 @@
  *
  * Demo: config.followups.delaySeconds (env FOLLOWUP_DELAY_SECONDS, read in
  * src/config.js) makes payment_due fire that many seconds after the order and
- * delivery_check twice that, instead of the real intervals.
+ * delivery_check twice that, instead of the real intervals. A demo delay is never shorter than
+ * MIN_DEMO_DELAY_SECONDS, so the reminder cannot land on top of the order's own spoken result
+ * (E2E regress bug 2); in a call the narrator also waits for a quiet moment to say it.
  *
  * Timing: every row scheduled while the server runs gets its own timer at its due
  * time, so it fires on time (e2e r3: a 30 s ticker fired one 20 s late). The ticker
@@ -34,6 +36,7 @@ const MAX_TIMER_MS = 6 * 60 * 60 * 1000;
 const PAYMENT_DUE_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PDF_WAIT_MS = 15000;
+const MIN_DEMO_DELAY_SECONDS = 30;
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const money = (n) => String(round2(n));
@@ -86,13 +89,13 @@ const SETTLED_FOR = {
  * Create the follow-up rows for a new order. Idempotent per order.
  * @returns {object[]} the rows created
  */
-function scheduleForOrder(businessId, orderId, { now = Date.now() } = {}) {
+function scheduleForOrder(businessId, orderId, { now = Date.now(), demoSeconds = demoDelaySeconds() } = {}) {
   if (repo.listFollowups(businessId, { order_id: orderId }).length) return [];
   const order = repo.getOrder(businessId, orderId);
   if (!order) return [];
   const quote = repo.getQuote(businessId, order.quote_id);
   const language = languageOf(businessId);
-  const demo = demoDelaySeconds();
+  const demo = demoSeconds ? Math.max(demoSeconds, MIN_DEMO_DELAY_SECONDS) : null;
   const rows = [];
 
   rows.push(
@@ -251,4 +254,4 @@ function start({ intervalMs = demoDelaySeconds() ? DEMO_TICK_MS : TICK_MS, timer
   };
 }
 
-module.exports = { start, tick, arm, scheduleForOrder, cancelPaymentDue, onEvent, TEXT, TICK_MS, DEMO_TICK_MS };
+module.exports = { start, tick, arm, scheduleForOrder, cancelPaymentDue, onEvent, TEXT, TICK_MS, DEMO_TICK_MS, MIN_DEMO_DELAY_SECONDS };

@@ -19,7 +19,9 @@ const repo = require("../src/db/repo");
 const events = require("../src/events");
 const { isNativeScript, scriptProblems } = require("../src/agora/script");
 
-const DEFAULTS = { minGapMs: 5000, vendorDebounceMs: 2500, holdMs: 6000, approvalHoldMs: 60000, queueLimit: 3 };
+const DEFAULTS = { minGapMs: 5000, vendorDebounceMs: 2500, holdMs: 6000, approvalHoldMs: 60000, queueLimit: 3, quietMs: 8000, followupGapMs: 15000, deferRetryMs: 1500, maxDeferMs: 120000, owner: null };
+/** No owner turn known (tests never read a real /history), and follow-ups need no long gap. */
+const QUIET = { owner: async () => null, followupGapMs: 0, quietMs: 50, deferRetryMs: 10 };
 
 function seedBusiness(language = "hi-IN") {
   const id = repo.newId("biz");
@@ -31,7 +33,7 @@ function seedBusiness(language = "hi-IN") {
 function liveNarrator(t, { language = "hi-IN", ...timing } = {}) {
   const businessId = seedBusiness(language);
   const spoken = [];
-  narrator.configure({ speak: async (_agentId, text) => spoken.push({ text, at: Date.now() }), status: async () => {}, minGapMs: 5, holdMs: 0, ...timing });
+  narrator.configure({ speak: async (_agentId, text) => spoken.push({ text, at: Date.now() }), status: async () => {}, minGapMs: 5, holdMs: 0, ...QUIET, ...timing });
   const state = narrator.attach(businessId, { agentId: "AG1", sessionId: null, language });
   state.lastSpokeAt = 0;
   t.after(() => {
@@ -92,7 +94,7 @@ test("follow-ups that fired between calls are said at the start of the next call
   t.mock.method(repo, "listFollowups", () => [{ id: "fu_9", kind: "payment_due", order_id: "ord_9", status: "fired", fired_at: new Date().toISOString(), message: "भुगतान बाकी है" }]);
   t.mock.method(repo, "getOrder", () => ({ id: "ord_9", po_number: "SAHAY/2026/0009", amount: 2500.5, simulated: false }));
   const spoken = [];
-  narrator.configure({ speak: async (_a, text) => spoken.push(text), minGapMs: 5 });
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), minGapMs: 5, ...QUIET });
   t.after(() => {
     narrator.detach(businessId);
     narrator.configure({ speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }), ...DEFAULTS });
@@ -259,4 +261,87 @@ test("Track POLISH: every extra wording is in its own script and carries exactly
       }
     }
   }
+});
+
+/* ------------------------------------- follow-ups never hold the call (regress #2) --- */
+
+const toolCalls = require("../src/tools/calls");
+
+const payDue = (businessId) => ({ businessId, type: "followup.fired", data: { followupId: "fu_q", orderId: "ord_q", kind: "payment_due", message: "x" } });
+const mockOrder = (t) => t.mock.method(repo, "getOrder", (_b, id) => (id === "ord_q" ? { id, po_number: "SAHAY/2026/6799-0001", amount: 11000, simulated: true } : null));
+
+test("E2E regress bug 2: the narrator speaks APPEND and interruptable, so the owner can always talk over a follow-up", async (t) => {
+  const bodies = [];
+  agent.setFetch(async (url, init) => {
+    bodies.push({ url, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ agent_id: "AG" }), { status: 200 });
+  });
+  t.after(() => agent.setFetch(null));
+  await narrator.defaultSpeak("AGQ", "याद दिला दूँ।");
+  assert.match(bodies[0].url, /\/agents\/AGQ\/speak$/);
+  assert.deepEqual({ priority: bodies[0].body.priority, interruptable: bodies[0].body.interruptable }, { priority: "APPEND", interruptable: true });
+});
+
+test("E2E regress bug 2: a follow-up waits while a tool runs or a read-back waits, and other lines still go first", async (t) => {
+  const { businessId, spoken, state } = liveNarrator(t, { language: "hi-IN" });
+  mockOrder(t);
+  const end = toolCalls.begin(businessId, "set_opening_stock");
+  narrator.onEvent(payDue(businessId));
+  await sleep(80);
+  assert.equal(spoken.length, 0, "not while a tool call is running");
+  // A milestone is not stuck behind the deferred follow-up.
+  narrator.onEvent({ businessId, type: "job.failed", data: { jobId: "jq", kind: "sourcing" } });
+  await until(() => spoken.length >= 1);
+  assert.equal(spoken[0].text, "विक्रेताओं की खोज पूरी नहीं हो पाई, कारण स्क्रीन पर है।");
+  end();
+  // A read-back waiting for the owner's answer also defers it.
+  narrator.onEvent({ businessId, type: "invoice.spoken", data: { approvalId: "iap_q" } });
+  await sleep(120);
+  assert.equal(spoken.length, 1, "not while a bill read-back waits for the owner's yes");
+  state.callStatus.invoice = null;
+  await until(() => spoken.length >= 2, 3000);
+  assert.equal(spoken[1].text, "याद दिला दूँ: ऑर्डर SAHAY/2026/6799-0001 (सिम्युलेटेड विक्रेता) का भुगतान बाकी है, 11000 रुपये।");
+});
+
+test("E2E regress bug 2: a follow-up waits while the owner is talking or just spoke, and right after the server spoke a result", async (t) => {
+  let owner = { at: Date.now(), awaitingReply: false };
+  const { businessId, spoken } = liveNarrator(t, { language: "hi-IN", owner: async () => owner, quietMs: 300 });
+  mockOrder(t);
+  narrator.onEvent(payDue(businessId));
+  await sleep(150);
+  assert.equal(spoken.length, 0, "the owner spoke within quietMs");
+  owner = { at: Date.now() - 10000, awaitingReply: true };
+  await sleep(150);
+  assert.equal(spoken.length, 0, "the owner's last turn has no reply yet");
+  owner = { at: Date.now() - 10000, awaitingReply: false };
+  await until(() => spoken.length >= 1, 3000);
+
+  // The server's own outcome line ("ऑर्डर बन गया ...") opens a gap no follow-up may enter.
+  narrator.configure({ followupGapMs: 400 });
+  narrator.noteSpoken(businessId);
+  narrator.onEvent({ ...payDue(businessId), data: { ...payDue(businessId).data, followupId: "fu_q2" } });
+  await sleep(200);
+  assert.equal(spoken.length, 1, "inside the gap after the server spoke");
+  await until(() => spoken.length >= 2, 3000);
+});
+
+test("E2E regress bug 2: a follow-up that cannot find a quiet moment is left to the screen and Telegram, never forced in", async (t) => {
+  const { businessId, spoken } = liveNarrator(t, { language: "hi-IN", owner: async () => ({ at: Date.now(), awaitingReply: true }), maxDeferMs: 100 });
+  mockOrder(t);
+  const warned = [];
+  t.mock.method(console, "warn", (msg) => warned.push(String(msg)));
+  narrator.onEvent(payDue(businessId));
+  await sleep(300);
+  assert.equal(spoken.length, 0);
+  assert.ok(warned.some((w) => /followup:fu_q/.test(w) && /not spoken/.test(w)), warned.join(" | "));
+});
+
+test("E2E regress bug 2: the outcome line of a confirmed action marks the call busy for follow-ups", async (t) => {
+  const outcome = require("../src/agora/outcome");
+  const { businessId, state } = liveNarrator(t, { language: "hi-IN" });
+  outcome.configure({ speak: async () => {} });
+  t.after(() => outcome.configure({ speak: null }));
+  state.lastServerSpokeAt = 0;
+  await outcome.announce({ businessId, agentId: "AG1" }, "ऑर्डर बन गया।");
+  assert.ok(Date.now() - state.lastServerSpokeAt < 1000);
 });

@@ -184,3 +184,17 @@ test("a verified payment (order.paid) cancels the order's payment reminder at on
   assert.equal(followups.cancelPaymentDue(businessId, other.order.id), 0);
   assert.equal(repo.listFollowups(other.businessId, { order_id: other.order.id }).find((r) => r.kind === "payment_due").status, "scheduled");
 });
+
+test("E2E regress bug 2: a demo delay never puts the payment reminder on top of the order's own spoken result", async () => {
+  const { businessId, order } = await seedOrder({ language: "en-IN", leadTime: 1 });
+  const now = Date.now();
+  const rows = followups.scheduleForOrder(businessId, order.id, { now, demoSeconds: 5 });
+  const due = Object.fromEntries(rows.map((r) => [r.kind, Date.parse(r.due_at) - now]));
+  assert.equal(due.payment_due, followups.MIN_DEMO_DELAY_SECONDS * 1000, "a short demo delay is raised to the minimum");
+  assert.equal(due.delivery_check, 2 * followups.MIN_DEMO_DELAY_SECONDS * 1000);
+  assert.ok(followups.MIN_DEMO_DELAY_SECONDS >= 30);
+
+  const other = await seedOrder({ language: "en-IN", leadTime: null });
+  const [late] = followups.scheduleForOrder(other.businessId, other.order.id, { now, demoSeconds: 90 });
+  assert.equal(Date.parse(late.due_at) - now, 90 * 1000, "a longer demo delay is kept as set");
+});

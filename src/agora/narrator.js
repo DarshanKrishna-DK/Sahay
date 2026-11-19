@@ -29,6 +29,16 @@
  * read-back and the owner's next words are the answer to it (approvals.answerToReadback); a
  * progress line between the two would stand between the question and the answer (E2E r3, item 5).
  *
+ * Follow-ups (followup.fired, and the ones said at the start of a call) never hold the conversation
+ * (E2E regress bug 2: right after an order the payment reminder was spoken while the owner talked,
+ * and the owner's next two turns got no reply). They go APPEND and interruptable like every
+ * narrator line, and they wait for a quiet moment: no tool call running or started in the last
+ * quietMs (an owner turn just happened), no read-back waiting for the owner's answer, no server
+ * line in the last followupGapMs (the order's own outcome line), and the owner neither spoke in
+ * the last quietMs nor waits for a reply (the call's /history, read once per try). Other lines are
+ * not kept behind a waiting follow-up; one that finds no quiet moment within maxDeferMs is left to
+ * the screen and Telegram (followups.js sends it there anyway).
+ *
  * Every hi/kn line is checked for stray Latin letters and for the other Indic script
  * (src/agora/script.js) before it is spoken; a violation is logged, never silently sent.
  *
@@ -45,15 +55,50 @@ const { langKey } = require("../tools/errors");
 const { unitWord } = require("../procurement/units");
 const { scriptProblems } = require("./script");
 const variety = require("./variety");
+const toolCalls = require("../tools/calls");
 
-const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000, holdMs: 6000, approvalHoldMs: 60000 };
+const settings = {
+  minGapMs: 5000,
+  vendorDebounceMs: 2500,
+  queueLimit: 3,
+  suppressMs: 20000,
+  holdMs: 6000,
+  approvalHoldMs: 60000,
+  quietMs: 8000,
+  followupGapMs: 15000,
+  deferRetryMs: 1500,
+  maxDeferMs: 120000,
+};
+
+/** Every narrator line: after the reply in flight, and the owner can always talk over it. */
+const SPEAK_OPTIONS = Object.freeze({ priority: "APPEND", interruptable: true });
+const OWNER_HISTORY_TIMEOUT_MS = 2500;
 
 /** businessId -> live narration state for the active owner call */
 const live = new Map();
 /** businessId -> Map(eventType -> until ms): lines a tool already spoke */
 const suppressed = new Map();
 
-let speakImpl = (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true });
+const defaultSpeak = (agentId, text) => agent.speak(agentId, text, { ...SPEAK_OPTIONS });
+
+/**
+ * The owner's latest turn in the call: {at: ms|null, awaitingReply}, from /history (bounded), or
+ * null when there is none. awaitingReply: nothing the agent said comes after it yet.
+ */
+async function defaultOwner(agentId) {
+  const contents = await agent.history(agentId, { timeoutMs: OWNER_HISTORY_TIMEOUT_MS });
+  for (let i = contents.length - 1; i >= 0; i--) {
+    const item = contents[i];
+    if (item?.role !== "user" || item?.metadata?.source !== "asr") continue;
+    const at = Number.isFinite(item.timestamp) ? item.timestamp : null;
+    const awaitingReply = !contents.slice(i + 1).some((after) => after?.role === "assistant");
+    return { at, awaitingReply };
+  }
+  return null;
+}
+
+let speakImpl = defaultSpeak;
+let ownerImpl = defaultOwner;
 let statusImpl = (agentId, text) => agent.updateCallStatus(agentId, text);
 let rulesImpl = (agentId, businessId) => agent.refreshRules(agentId, businessId);
 let unsubscribe = null;
@@ -250,10 +295,10 @@ function isSuppressed(businessId, type) {
 
 /* ---------------------------------------------------------------- queue --- */
 
-function enqueue(state, key, text, type = null) {
+function enqueue(state, key, text, type = null, { quiet = false } = {}) {
   const existing = state.queue.findIndex((item) => item.key === key);
   if (existing !== -1) state.queue.splice(existing, 1);
-  state.queue.push({ key, text, type });
+  state.queue.push({ key, text, type, quiet, queuedAt: Date.now() });
   while (state.queue.length > settings.queueLimit) state.queue.shift();
   pump(state);
 }
@@ -267,15 +312,74 @@ function approvalHoldLeft(state) {
   return 0;
 }
 
+/**
+ * Why a follow-up may not be spoken now, or null when the call is quiet. In-process signals first;
+ * the call's /history only when they are all quiet. A /history that cannot be read does not block.
+ */
+async function quietBlocker(state) {
+  const now = Date.now();
+  const { approval, invoice, receipt, rule, stock } = state.callStatus;
+  if (approval || invoice || receipt || rule || stock) return "a read-back waits for the owner";
+  if (toolCalls.inFlight(state.businessId)) return "a tool is running";
+  if (toolCalls.startedSince(state.businessId, null, now - settings.quietMs)) return "the owner just spoke (a tool started)";
+  if (now - Math.max(state.lastSpokeAt, state.lastServerSpokeAt) < settings.followupGapMs) return "the server just spoke";
+  let owner = null;
+  try {
+    owner = await ownerImpl(state.agentId);
+  } catch {
+    owner = null;
+  }
+  if (owner?.awaitingReply) return "the owner waits for a reply";
+  if (owner?.at != null && Date.now() - owner.at < settings.quietMs) return "the owner just spoke";
+  return null;
+}
+
+/**
+ * The next line to speak, or null to try again later: the first line, unless it is a follow-up
+ * and the call is not quiet; then the first line that is not a follow-up.
+ */
+async function nextItem(state) {
+  const now = Date.now();
+  state.queue = state.queue.filter((item) => {
+    if (!item.quiet || now - item.queuedAt <= settings.maxDeferMs) return true;
+    console.warn(`[narrator] ${item.key} not spoken: no quiet moment in ${settings.maxDeferMs} ms (it is on the screen and in Telegram)`);
+    return false;
+  });
+  if (!state.queue.length) return null;
+  if (!state.queue[0].quiet) return state.queue.shift();
+  const blocker = await quietBlocker(state);
+  if (state.closed || !state.queue.length) return null;
+  if (!blocker || !state.queue[0].quiet) return state.queue.shift();
+  const loud = state.queue.findIndex((item) => !item.quiet);
+  return loud === -1 ? null : state.queue.splice(loud, 1)[0];
+}
+
 function pump(state) {
-  if (state.timer || !state.queue.length || state.closed) return;
+  if (state.timer || state.pumping || !state.queue.length || state.closed) return;
   const wait = Math.max(0, state.lastSpokeAt + settings.minGapMs - Date.now(), approvalHoldLeft(state));
   state.timer = setTimeout(async () => {
     state.timer = null;
     if (state.closed) return;
     if (approvalHoldLeft(state) > 0) return pump(state);
-    const item = state.queue.shift();
-    if (!item || state.closed) return;
+    state.pumping = true;
+    let item;
+    try {
+      item = await nextItem(state);
+    } finally {
+      state.pumping = false;
+    }
+    if (state.closed) return;
+    if (!item) {
+      // Only follow-ups wait, and the call is not quiet: look again shortly.
+      if (state.queue.length && !state.timer) {
+        state.timer = setTimeout(() => {
+          state.timer = null;
+          pump(state);
+        }, settings.deferRetryMs);
+        state.timer.unref?.();
+      }
+      return;
+    }
     state.lastSpokeAt = Date.now();
     try {
       await speakImpl(state.agentId, item.text);
@@ -285,6 +389,12 @@ function pump(state) {
     pump(state);
   }, wait);
   state.timer.unref?.();
+}
+
+/** The server just said something in this business's call (a confirmed action's outcome): follow-ups keep a gap after it. */
+function noteSpoken(businessId) {
+  const state = live.get(businessId);
+  if (state) state.lastServerSpokeAt = Date.now();
 }
 
 /* ----------------------------------------------------------- call status --- */
@@ -509,7 +619,7 @@ function onEvent(event) {
       enqueue(state, `payment:${d.orderId}`, line("payment_link", lang, {}, event.businessId));
       return;
     case "followup.fired":
-      enqueue(state, `followup:${d.followupId ?? d.orderId}`, followupLine(event.businessId, d, lang));
+      enqueue(state, `followup:${d.followupId ?? d.orderId}`, followupLine(event.businessId, d, lang), null, { quiet: true });
       return;
     case "approval.requested":
       startHold(state, d.approvalId);
@@ -605,7 +715,9 @@ function attach(businessId, { agentId, sessionId, language }) {
     language: langKey(language),
     queue: [],
     lastSpokeAt: Date.now(),
+    lastServerSpokeAt: 0,
     timer: null,
+    pumping: false,
     timers: new Set(),
     vendorBatches: new Map(),
     jobStartedAt: new Map(),
@@ -619,7 +731,7 @@ function attach(businessId, { agentId, sessionId, language }) {
   };
   live.set(businessId, state);
   for (const f of missedFollowups(businessId, sessionId)) {
-    enqueue(state, `followup:${f.id}`, followupLine(businessId, { kind: f.kind, orderId: f.order_id }, state.language));
+    enqueue(state, `followup:${f.id}`, followupLine(businessId, { kind: f.kind, orderId: f.order_id }, state.language), null, { quiet: true });
   }
   return state;
 }
@@ -666,14 +778,15 @@ function stop() {
 }
 
 /** Tests: replace the /speak and /update calls and the timing. */
-function configure({ speak, status, rules, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs } = {}) {
+function configure({ speak, status, rules, owner, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs, quietMs, followupGapMs, deferRetryMs, maxDeferMs } = {}) {
   if (speak) speakImpl = speak;
+  if (owner !== undefined) ownerImpl = owner ?? defaultOwner;
   if (status) statusImpl = status;
   if (rules) rulesImpl = rules;
   Object.assign(
     settings,
-    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs }).filter(([, v]) => v !== undefined)),
+    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs, quietMs, followupGapMs, deferRetryMs, maxDeferMs }).filter(([, v]) => v !== undefined)),
   );
 }
 
-module.exports = { VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };
+module.exports = { SPEAK_OPTIONS, defaultSpeak, noteSpoken, VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };

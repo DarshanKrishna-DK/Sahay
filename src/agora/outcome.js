@@ -38,6 +38,8 @@ async function announce(ctx, text) {
   if (!ctx?.agentId || !line) return false;
   try {
     await speakImpl(ctx.agentId, line);
+    // Follow-ups keep a gap after this line, so a reminder never lands on top of a result (E2E regress bug 2).
+    if (ctx.businessId) require("./narrator").noteSpoken(ctx.businessId);
     return true;
   } catch (err) {
     console.warn(`[outcome] could not speak a result: ${err.message}`);
