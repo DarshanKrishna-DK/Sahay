@@ -360,10 +360,101 @@ test("E2E r2 bug 1: the prompt answers in the language of the owner's last sente
     assert.match(prompt, /An English sentence gets an English reply/);
     assert.match(prompt, /does not decide your reply language/);
     assert.match(prompt, /Code-mixed: reply in the language most of the owner's words are in/);
-    // Filler examples in every language, not one Hindi example that biases the model.
-    for (const filler of Object.values(agent.FILLER)) assert.ok(prompt.includes(filler), `${language} prompt carries "${filler}"`);
     assert.doesNotMatch(prompt, /usually speaks/, "no line nudging the model toward the business language");
+    // Without Agora's filler words the model says one itself: examples in every language, not one Hindi example that biases the model.
+    const noFillers = agent.systemPrompt({ name: "Ganesh Traders", city: "Bengaluru", language }, { fillerWords: false });
+    for (const filler of Object.values(agent.FILLER)) assert.ok(noFillers.includes(filler), `${language} prompt carries "${filler}"`);
   }
+});
+
+test("Track POLISH: with Agora filler words on, the prompt calls tools at once and never adds its own 'one moment'", () => {
+  const prompt = agent.systemPrompt({ name: "Ganesh Traders", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /call it straight away without saying anything first/);
+  for (const filler of Object.values(agent.FILLER)) assert.ok(!prompt.includes(filler), `no forced "${filler}" before tools`);
+});
+
+test("Track POLISH: the prompt teaches a spoken, varied, Indian conversational style with native-script examples in each language", () => {
+  const { isNativeScript } = require("../src/agora/script");
+  const prompt = agent.systemPrompt({ name: "Ganesh Traders", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /never start two replies in a row with the same word/);
+  assert.match(prompt, /हाँ जी, अच्छा, ठीक है/);
+  assert.match(prompt, /ಸರಿ, ಹೌದು, ಆಯ್ತು/);
+  assert.match(prompt, /Ask one question at a time/);
+  assert.match(prompt, /Never laugh/);
+  assert.match(prompt, /maybe or later, say there is no hurry/);
+  // Every quoted Hindi and Kannada example line is entirely in its own script (digits aside).
+  for (const [label, language] of [["Hindi. ", "hi-IN"], ["Kannada. ", "kn-IN"]]) {
+    const line = prompt.split("\n").find((l) => l.startsWith(label));
+    assert.ok(line, `${label}examples present`);
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(quoted.length >= 5);
+    for (const sentence of quoted) assert.ok(isNativeScript(sentence, language), `${language}: ${sentence}`);
+  }
+});
+
+test("Track POLISH: buildJoinBody adds Agora filler words and turn detection only when asked (owner calls), in the documented shape", () => {
+  const base = { name: "n", channel: "c", token: "t", agentUid: 1001, remoteUids: [1002], voiceId: "v", prompt: "p" };
+  const plain = agent.buildJoinBody({ ...base, language: "hi-IN" }).properties;
+  assert.equal(plain.filler_words, undefined);
+  assert.equal(plain.turn_detection, undefined);
+  assert.equal(plain.interruption, undefined);
+
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const p = agent.buildJoinBody({ ...base, language, tuning: true }).properties;
+    const fw = p.filler_words;
+    assert.equal(fw.enable, true);
+    assert.equal(fw.trigger.fixed_time_config.response_wait_ms, 1000);
+    assert.ok(fw.trigger.fixed_time_config.response_wait_ms >= 100 && fw.trigger.fixed_time_config.response_wait_ms <= 10000);
+    assert.equal(fw.content.mode, "generated");
+    assert.equal(fw.content.static_config.selection_rule, "shuffle");
+    assert.deepEqual(fw.content.static_config.phrases, agent.FILLER_PHRASES[language]);
+    assert.ok(fw.content.static_config.phrases.length >= 4 && fw.content.static_config.phrases.length <= 100);
+    for (const phrase of fw.content.static_config.phrases) {
+      if (language === "en-IN") assert.ok(phrase.split(/\s+/).length <= 20, phrase);
+      else {
+        assert.ok([...phrase].length <= 20, `${phrase} is ${[...phrase].length} characters; the docs allow 20 non-Latin characters`);
+        assert.ok(require("../src/agora/script").isNativeScript(phrase, language), phrase);
+      }
+    }
+    assert.equal(fw.content.generated_config.context_message_limit, 1);
+    assert.match(fw.content.generated_config.prompt, /Devanagari/);
+    assert.deepEqual(Object.keys(p.turn_detection), ["mode", "config"]);
+    assert.equal(p.turn_detection.config.start_of_speech.mode, "vad");
+    assert.equal(p.turn_detection.config.end_of_speech.mode, "vad");
+    assert.deepEqual(p.interruption, { enable: true, mode: "start_of_speech" });
+  }
+});
+
+test("Track POLISH: an owner call joins with the voice tuning; if Agora refuses it (400) the call still starts with the verified body and the model's own filler", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const session = repo.createSession(businessId, { kind: "owner", channel: "own-tune", status: "connecting" });
+  let joins = 0;
+  const calls = fakeAgora(t, (url) => {
+    if (!url.endsWith("/join")) return { json: {} };
+    joins += 1;
+    return joins === 1 ? { status: 400, json: { detail: "bad", reason: "InvalidFieldValue" } } : { json: { agent_id: "AGT2", create_ts: 1, status: "RUNNING" } };
+  });
+  const warned = [];
+  t.mock.method(console, "warn", (line) => warned.push(line));
+  const started = await agent.startOwnerAgent({ businessId, sessionId: session.id, channel: "own-tune", agentUid: 1001, userUid: 1002 });
+  assert.equal(started.agentId, "AGT2");
+  assert.equal(started.voiceTuning, false);
+  assert.ok(calls[0].body.properties.filler_words, "first try carries the filler words");
+  assert.equal(calls[1].body.properties.filler_words, undefined, "the retry is the S0 body");
+  assert.ok(calls[1].body.properties.llm.system_messages[0].content.includes(agent.FILLER["hi-IN"]), "without Agora fillers the model says one itself");
+  assert.match(warned.join(" "), /refused the voice tuning block/);
+
+  const ok = repo.createSession(businessId, { kind: "owner", channel: "own-tune2", status: "connecting" });
+  const calls2 = fakeAgora(t, () => ({ json: { agent_id: "AGT3", create_ts: 1, status: "RUNNING" } }));
+  const second = await agent.startOwnerAgent({ businessId, sessionId: ok.id, channel: "own-tune2", agentUid: 1001, userUid: 1002 });
+  assert.equal(second.voiceTuning, true);
+  assert.equal(calls2.length, 1);
+  assert.ok(calls2[0].body.properties.filler_words);
+
+  // Any other failure is not retried.
+  const other = repo.createSession(businessId, { kind: "owner", channel: "own-tune3", status: "connecting" });
+  fakeAgora(t, () => ({ status: 401, json: { reason: "Unauthorized" } }));
+  await assert.rejects(agent.startOwnerAgent({ businessId, sessionId: other.id, channel: "own-tune3", agentUid: 1001, userUid: 1002 }), (err) => err.status === 401);
 });
 
 test("E2E r2 bug 2: the prompt makes the model call the start tool every time, never answer 'already running' from memory", () => {

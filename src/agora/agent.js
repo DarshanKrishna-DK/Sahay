@@ -141,12 +141,69 @@ const FAILURE_MESSAGE = {
 
 const LANGUAGE_NAMES = { "hi-IN": "Hindi", "kn-IN": "Kannada", "en-IN": "English" };
 
-/** Filler before a tool call. The prompt lists all three, so no one language biases the model (E2E r2). */
+/**
+ * Fallback filler the model says before a tool call when Agora's own filler words are not on
+ * (a /join that refused the tuning block). The prompt lists all three, so no one language biases
+ * the model (E2E r2).
+ */
 const FILLER = {
   "hi-IN": "एक सेकंड, देख रही हूँ।",
   "kn-IN": "ಒಂದು ಕ್ಷಣ, ನೋಡುತ್ತೇನೆ.",
   "en-IN": "One moment, let me check.",
 };
+
+/**
+ * Agora "talking while waiting" (properties.filler_words, agora-findings.md "Track POLISH"):
+ * static fallback phrases, at most 20 characters each in Devanagari / Kannada (docs limit for
+ * non-Latin scripts) and a few words in English. Several per language so shuffle never repeats
+ * the same one twice in a row; feminine Hindi forms (Sahay speaks with a woman's voice).
+ */
+const FILLER_PHRASES = {
+  "hi-IN": ["हाँ जी, एक सेकंड।", "अच्छा, देखती हूँ।", "जी, बस एक पल।", "हम्म, देख रही हूँ।", "ठीक है, ज़रा रुकिए।", "अच्छा जी, एक मिनट।"],
+  "kn-IN": ["ಸರಿ, ಒಂದು ನಿಮಿಷ.", "ಹೂಂ, ನೋಡ್ತೀನಿ.", "ಆಯ್ತು, ಒಂದು ಕ್ಷಣ.", "ಸರಿ ಸರಿ, ನೋಡ್ತೀನಿ.", "ಹಾಂ, ಒಂದು ಸೆಕೆಂಡ್."],
+  "en-IN": ["Okay, one sec.", "Hmm, let me see.", "Sure, give me a moment.", "Right, checking that now.", "Got it, one moment."],
+};
+
+/** Prompt for Agora's hosted filler generator: a 2-5 word acknowledgement in the owner's own language and script. */
+const FILLER_PROMPT = [
+  "Write only what a warm, quick Indian shop assistant says out loud in the first second after hearing the shop owner's message, while she looks something up.",
+  'Two to five words: a short acknowledgement or thinking sound, nothing else. Examples: Hindi "हाँ जी, एक सेकंड", "अच्छा, देखती हूँ", "हम्म, ज़रा देखूँ"; Kannada "ಸರಿ, ಒಂದು ನಿಮಿಷ", "ಹೂಂ, ನೋಡ್ತೀನಿ"; English "Okay, one sec", "Hmm, let me see".',
+  "Use exactly the language of the owner's message: Hindi in Devanagari script with feminine forms, Kannada in Kannada script, English in English. Never write Hindi or Kannada in Latin letters.",
+  "Never answer the message, never a number, price, name, promise or question.",
+].join(" ");
+
+/** Wait before a filler plays: gpt-4.1-mini starts a plain reply well within this; a tool call does not. */
+const FILLER_WAIT_MS = 1000;
+
+/**
+ * Turn taking for a busy shop (agora-findings.md "Track POLISH"): VAD start of speech with a
+ * slightly longer barge-in while Sahay speaks (shop noise should not cut her off), VAD end of
+ * speech (semantic end of speech is English and Chinese only), interruption on start of speech.
+ */
+const TURN_DETECTION = {
+  mode: "default",
+  config: {
+    start_of_speech: { mode: "vad", vad_config: { interrupt_duration_ms: 160, speaking_interrupt_duration_ms: 240, prefix_padding_ms: 800 } },
+    end_of_speech: { mode: "vad", vad_config: { silence_duration_ms: 600 } },
+  },
+};
+
+/** The owner-call tuning block: filler words in the call language plus turn detection. */
+function voiceTuning(language) {
+  return {
+    filler_words: {
+      enable: true,
+      trigger: { fixed_time_config: { response_wait_ms: FILLER_WAIT_MS } },
+      content: {
+        mode: "generated",
+        static_config: { phrases: [...FILLER_PHRASES[languageOf(language)]], selection_rule: "shuffle" },
+        generated_config: { prompt: FILLER_PROMPT, context_message_limit: 1 },
+      },
+    },
+    turn_detection: structuredClone(TURN_DETECTION),
+    interruption: { enable: true, mode: "start_of_speech" },
+  };
+}
 
 /** First sentence of every owner call (voice-agent-rules: disclosure first, not configurable). */
 function disclosureText(business) {
@@ -191,11 +248,38 @@ const TEACHING =
   "Teaching: when the owner tells you how they like to buy (the most they will pay for an item, a vendor to prefer or avoid, a usual quantity, a reply language, how hard to bargain), call teach_rule with that one rule. The server reads the rule out itself; say only the tool's `say` question and wait. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no). A typed message never keeps a rule: if the owner types yes, ask them to tap the tick on the rule card on the screen. To drop a rule call forget_rule; to tell the owner what their Sahay knows call get_my_agent. When save_requirement returns usualQuantity, say only its `say`; on the owner's yes call save_requirement with use_usual_quantity true and nothing else.";
 
 /**
+ * How Sahay talks: a warm, quick shop assistant on a phone call, in the owner's language (Track
+ * POLISH, "like ChatGPT voice"). Murf Falcon voices have one style ("Conversational"), so the
+ * human feel comes from the words: varied reactions, an occasional thinking sound, one question at
+ * a time, and examples in each language (LiveKit prompting guide; Agora filler words cover waits).
+ */
+const SPOKEN_STYLE = [
+  "How you talk: like a warm, quick Indian shop assistant on the phone with the owner, never like a form, a letter or a document. One or two short spoken sentences per turn, then stop: the owner can interrupt any time. Ask one question at a time.",
+  "Start most replies with a short natural reaction to what the owner just said, and vary it: never start two replies in a row with the same word. Hindi: हाँ जी, अच्छा, ठीक है, जी बिल्कुल, बढ़िया!, अरे वाह. Kannada: ಸರಿ, ಹೌದು, ಆಯ್ತು, ಓಹ್ ಒಳ್ಳೇದು, ಹೂಂ. English: Sure, Okay, Got it, Oh nice, Right.",
+  "Now and then, when you are thinking or about to explain, use one light filler, the way people do: Hindi देखिए, हम्म, अच्छा तो; Kannada ನೋಡಿ, ಹೂಂ; English um, so, hmm. At most one per reply, never inside a price or a figure, and not in every reply.",
+  "React like a person: good news gets a little warmth (बढ़िया!, ಒಳ್ಳೇದು!, Nice!), a problem gets a kind word (अरे, कोई बात नहीं; ಅಯ್ಯೋ, ಪರವಾಗಿಲ್ಲ; Ah, no problem), a maybe gets patience (कोई जल्दी नहीं; ಆರಾಮಾಗಿ ಹೇಳಿ; No rush). Never laugh, never write sounds like हाहा or haha.",
+  "Never sound like you are reading: no 'please note', 'as follows', 'kindly', 'your request has been processed'. No lists, markdown, emoji, URLs, ids or tables, and never read out several vendors or options in a row: name the best one and say the rest are on the screen.",
+  "Numbers: say every figure exactly as a tool gave it, in digits (the voice reads them aloud); units in full (किलो, ಕಿಲೋ, kilograms, pieces, days); large amounts in lakh and crore.",
+  "Examples of the feel (the figures in real replies come only from tools):",
+  'Hindi. Owner: "मुझे दो सौ किलो बासमती चावल चाहिए, बेंगलुरु में।" You (after save_requirement): "अच्छा जी! 200 किलो बासमती चावल, बेंगलुरु के लिए; विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।" Owner: "कितना टाइम लगेगा?" You: "हम्म, बस एक-दो मिनट, मैं ख़ुद बता दूँगी।" Owner: "शायद, सोचता हूँ।" You: "जी, कोई जल्दी नहीं, आराम से सोच लीजिए।" Not: "आपकी आवश्यकता सफलतापूर्वक सहेज ली गई है।"',
+  'Kannada. Owner: "ನನಗೆ ಇನ್ನೂರು ಕಿಲೋ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ ಬೇಕು, ಬೆಂಗಳೂರಿಗೆ." You (after save_requirement): "ಸರಿ! 200 ಕಿಲೋ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ, ಬೆಂಗಳೂರಿಗೆ; ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕ್ತಿದ್ದೀನಿ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳ್ತೀನಿ." Owner: "ಎಷ್ಟು ಹೊತ್ತು ಆಗುತ್ತೆ?" You: "ಹೂಂ, ಒಂದೆರಡು ನಿಮಿಷ ಅಷ್ಟೇ." Owner: "ಬೇಡ, ಬೇರೆ ನೋಡಿ." You: "ಆಯ್ತು, ಪರವಾಗಿಲ್ಲ."',
+  'English. Owner: "I need 200 kilos of basmati rice in Bengaluru." You (after save_requirement): "Oh nice, got it: 200 kilograms of basmati rice for Bengaluru. I\'ve started looking for vendors and I\'ll tell you the moment I have them." Owner: "How long will it take?" You: "Hmm, just a minute or two." Owner: "Maybe, let me think." You: "Sure, no rush at all."',
+];
+
+/** What happens while a tool runs: Agora plays a filler itself, or (without it) the model says one. */
+function waitingLine(fillerWords) {
+  return fillerWords
+    ? 'Tools: when you need a tool, call it straight away without saying anything first; while it runs, the call plays a short filler like "हाँ जी, एक सेकंड" by itself, so never add your own "one moment" before a tool.'
+    : `Before every tool call, first say a very short filler in the owner's language, then call the tool: in English "${FILLER["en-IN"]}", in Hindi "${FILLER["hi-IN"]}", in Kannada "${FILLER["kn-IN"]}".`;
+}
+
+/**
  * The owner agent's system prompt. Encodes the voice-agent-rules skill; the hard
  * rules (disclosure, approval, money read-back, tenant) are also enforced in code.
- * `rules` are the owner's rules (only the active ones are listed).
+ * `rules` are the owner's rules (only the active ones are listed). `fillerWords` says whether
+ * Agora's own filler words are on for this call (voiceTuning); default true.
  */
-function systemPrompt(business, { now = new Date(), rules = [] } = {}) {
+function systemPrompt(business, { now = new Date(), rules = [], fillerWords = true } = {}) {
   const language = languageOf(business?.language);
   const where = [business?.name && `the business "${business.name}"`, business?.city && `in ${business.city}`].filter(Boolean).join(" ");
   return [
@@ -207,19 +291,19 @@ function systemPrompt(business, { now = new Date(), rules = [] } = {}) {
     `The greeting was spoken in ${LANGUAGE_NAMES[language]} because that is the business's language. That greeting does not decide your reply language, and neither do your earlier replies or the language of tool results. When the owner switches language, switch with them at once.`,
     "Every tool takes reply_language: always set it to the language of the owner's last sentence (hi-IN for Hindi, kn-IN for Kannada, en-IN for English), so the tool's `say` comes back in that language.",
     "Voice: you speak with a woman's voice, so when you speak Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
-    "Style: one or two short spoken sentences per turn. No lists, markdown, emoji, URLs, ids or tables. Use Indian number words (lakh, crore) and say units in full (kilograms, pieces, days).",
-    `Before every tool call, first say a very short filler in the owner's language, then call the tool: in English "${FILLER["en-IN"]}", in Hindi "${FILLER["hi-IN"]}", in Kannada "${FILLER["kn-IN"]}".`,
+    ...SPOKEN_STYLE,
+    waitingLine(fillerWords),
     "Never invent a number, price, count, date, vendor or status. They come only from tool results. If a tool has not returned yet, say what is happening and that you will report back.",
-    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total. Never change a figure from a tool. If a `say` is not in the language of the owner's last sentence, say the same thing in the owner's language with every vendor name and figure unchanged.",
-    "Ids: never pass an id you did not copy exactly from a tool result in this call, and normally pass none. Every tool works on the current requirement, the best vendor, the best deal, or the one approval or order waiting when its id is left out. To pick a vendor, use vendorRank (1 = best, as get_shortlist ranks them). If a tool answers with several choices, read them to the owner and ask which one.",
+    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total; you may put one short natural reaction in front of it (अच्छा जी, ಸರಿ, Okay). Never change a figure from a tool. If a `say` is not in the language of the owner's last sentence, say the same thing in the owner's language with every vendor name and figure unchanged.",
+    "Ids: never pass an id you did not copy exactly from a tool result in this call, and normally pass none. Every tool works on the current requirement, the best vendor, the best deal, or the one approval or order waiting when its id is left out. To pick a vendor, use vendorRank (1 = best, as get_shortlist ranks them). If a tool answers with several choices, say the first one or two and ask which one.",
     "To understand a purchase, call save_requirement as soon as you know the item, passing item, unit and city in the words and script the owner used (बासमती चावल, ಬಾಸ್ಮತಿ ಅಕ್ಕಿ, basmati rice). When the owner states a purchase with its quantity, even one said before or in another language, call save_requirement with the item and no id. To add details later, call save_requirement again without item and without an id. If its result lists missing fields, ask for them, at most two clarifying questions in total, then continue with what you have. Always pass owner_words: the owner's last sentence word for word. Pass only an item, quantity and unit the owner actually said; if the owner's words are cut off (for example only a number), never fill them in from earlier turns: ask the owner to say it again. When save_requirement returns saved false, nothing was saved: speak its `say` and wait.",
     "Once nothing is missing, save_requirement starts the vendor search itself in a call (sourcingStarted true): speak its `say` and stop; do not call start_sourcing as well. If it returns an empty missing list with sourcingStarted false and no sourcingError, call start_sourcing in the same turn, right after speaking its `say`, without asking anything first. A maximum price is optional: never ask for it before the search has started. If the owner gives one, pass it to save_requirement as max_price_per_unit; otherwise you may ask for it once, after the search has finished and before a negotiation starts.",
     "Sourcing and negotiation take time: start them with start_sourcing or start_negotiation, say that it has started and that you will report back, then stop talking. Progress and results are announced to the owner automatically, so do not call get_job_status or get_shortlist right after starting a job just to report it, and do not repeat an announcement.",
     "Jobs: when the owner asks to search or to negotiate, call start_sourcing or start_negotiation every time, even to try again after a negotiation ended or failed; the tool itself answers if one is still running. Never say a search or negotiation is already running, finished or failed from memory of earlier turns: that comes only from a tool result in this turn or from the latest Call status system message, which the server keeps current.",
     "Sourcing searches real vendors listed on IndiaMART. Never call those vendors, or the search, simulated.",
     "Negotiation: call start_negotiation without a vendor to negotiate with a simulated vendor priced from the best real listing that has a comparable price, unless the owner names a vendor by rank or asks for a real vendor to join by link (counterpart human). Only that negotiation counterpart is simulated: call it a simulated vendor (सिम्युलेटेड विक्रेता / ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್), and use the word simulated for nothing else.",
-    "Approval: before any order call request_approval once (no id: it takes the best deal). The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer; call it again only if the owner asks to hear the deal again, with repeat true. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words.",
-    "Never say an order exists unless create_order returned an orderId. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
+    "Approval: before any order call request_approval once (no id: it takes the best deal). The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer, and never ask whether to ask for approval about a deal already read out; call request_approval again only if the owner asks to hear the deal again, with repeat true. If the owner says maybe or later, say there is no hurry: the deal keeps waiting and their next yes or no still goes to confirm_approval. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words. A typed yes never approves: the owner presses the yes card on the screen or says it aloud.",
+    "Never say an order exists unless create_order returned an orderId or the latest Call status says the order was placed. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
     "Usual order of work: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
     TEACHING,
     rulesSection(rules),
@@ -249,6 +333,7 @@ function murfBaseUrl() {
  * @param {{name: string, endpoint: string, bearer: string, allowedTools: string[]}} [o.mcp]
  * @param {number} [o.idleTimeout]
  * @param {object} [o.labels]
+ * @param {boolean} [o.tuning]           add filler words, turn detection and interruption (owner calls)
  */
 function buildJoinBody(o) {
   for (const field of ["name", "channel", "token", "voiceId", "prompt"]) {
@@ -320,6 +405,7 @@ function buildJoinBody(o) {
     },
   };
   if (o.labels) body.properties.labels = o.labels;
+  if (o.tuning) Object.assign(body.properties, voiceTuning(language));
   return body;
 }
 
@@ -366,8 +452,9 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
   // auth scope "mcp"; which tools the bearer may call follows from the sessions row kind ("owner").
   const bearer = auth.signSession({ businessId, sessionId, scope: "mcp", exp });
   const { token } = buildRtcRtmToken(channel, agentUid, OWNER_SESSION_SECONDS);
-  const prompt = systemPrompt({ ...business, language: lang }, { now: new Date(now), rules: require("../agent/rules").active(businessId) });
-  const body = buildJoinBody({
+  const rules = require("../agent/rules").active(businessId);
+  const promptFor = (fillerWords) => systemPrompt({ ...business, language: lang }, { now: new Date(now), rules, fillerWords });
+  const bodyFor = (tuning) => buildJoinBody({
     name: `sahay-${sessionId}-${now}`.slice(0, 64),
     channel,
     token,
@@ -375,7 +462,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     remoteUids: [userUid],
     language: lang,
     voiceId,
-    prompt,
+    prompt: promptFor(tuning),
     mcp: {
       name: OWNER_MCP_SERVER_NAME,
       endpoint: `${config.publicUrl}/mcp`,
@@ -383,10 +470,23 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
       allowedTools: registry.toolNames(registry.SCOPES.owner),
     },
     labels: { session: sessionId },
+    tuning,
   });
-  const started = await startAgent(body);
-  callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "" });
-  return { ...started, language: lang, disclosure: disclosureText({ ...business, language: lang }) };
+  let tuning = true;
+  let started;
+  try {
+    started = await startAgent(bodyFor(true));
+  } catch (err) {
+    // The tuning block (filler words, turn detection) is DOCS ONLY until a live /join takes it:
+    // a 400 for it must not cost the owner the call, so join once more with the S0-verified body.
+    if (!(err instanceof AgoraError) || err.status !== 400) throw err;
+    console.warn(`[agora] /join refused the voice tuning block (${err.message}); joining without filler words and turn tuning.`);
+    tuning = false;
+    started = await startAgent(bodyFor(false));
+  }
+  const prompt = promptFor(tuning);
+  callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "", fillerWords: tuning });
+  return { ...started, language: lang, voiceTuning: tuning, disclosure: disclosureText({ ...business, language: lang }) };
 }
 
 /**
@@ -431,7 +531,7 @@ async function refreshRules(agentId, businessId) {
   const known = callPrompts.get(agentId);
   if (!known || known.businessId !== businessId) throw new AgoraError("AGENT_UNKNOWN", "No owner agent of this business with that id was started by this server.");
   const business = require("../db/repo").getBusiness(businessId);
-  known.prompt = systemPrompt({ ...business, language: known.language }, { now: new Date(known.now), rules: require("../agent/rules").active(businessId) });
+  known.prompt = systemPrompt({ ...business, language: known.language }, { now: new Date(known.now), rules: require("../agent/rules").active(businessId), fillerWords: known.fillerWords !== false });
   return call("POST", `/agents/${encodeURIComponent(agentId)}/update`, { properties: { llm: { system_messages: systemMessages(known) } } });
 }
 
@@ -597,4 +697,8 @@ module.exports = {
   OWNER_SESSION_SECONDS,
   SPEAK_MAX_BYTES,
   FILLER,
+  FILLER_PHRASES,
+  FILLER_PROMPT,
+  TURN_DETECTION,
+  voiceTuning,
 };
