@@ -3,18 +3,32 @@
 /**
  * How a business bills: GST scheme (regular -> tax invoice, composition -> bill of supply,
  * unregistered -> plain bill), its GSTIN, address and invoice prefix. No row means the default:
- * regular, prefix INV. Nothing here is guessed: a regular or composition business needs its own
- * GSTIN before it can bill, and the state comes from the GSTIN or the business's own state.
+ * unregistered (a plain bill, no GSTIN needed, so a first-time owner can bill at once), prefix INV.
+ * Saving a GSTIN without a scheme makes the shop regular. Nothing here is guessed: a regular or
+ * composition business needs its own GSTIN before it can bill, and the state comes from the GSTIN,
+ * the saved state, the business's own state, or its city when the city is one of the known ones.
  */
 
 const db = require("../db");
 const repo = require("../db/repo");
 const events = require("../events");
 const gst = require("./gst");
+const { citySlug } = require("../discovery/slug");
 const { SellError } = require("./errors");
 
-const DEFAULTS = Object.freeze({ gst_scheme: "regular", gstin: null, state_code: null, address: null, invoice_prefix: "INV" });
+const DEFAULTS = Object.freeze({ gst_scheme: "unregistered", gstin: null, state_code: null, address: null, invoice_prefix: "INV" });
 const ADDRESS_MAX = 300;
+
+/**
+ * GST state code of a city, for a business whose signup gave no state. Only cities whose state is
+ * a fact (the IndiaMART city table in src/discovery/slug.js); any other city stays unknown.
+ */
+const CITY_STATE = Object.freeze({
+  bengaluru: "29", mysuru: "29", hubli: "29", mangalore: "29", tumkur: "29", belgaum: "29", shimoga: "29", gulbarga: "29", bellary: "29", davangere: "29",
+  delhi: "07", mumbai: "27", pune: "27", kolkata: "19", chennai: "33", gurgaon: "06", kochi: "32", trivandrum: "32",
+  vadodara: "24", ahmedabad: "24", visakhapatnam: "37", hyderabad: "36", allahabad: "09", lucknow: "09", varanasi: "09", jaipur: "08", pondicherry: "34",
+});
+const stateOfCity = (city) => CITY_STATE[citySlug(city)] ?? null;
 
 function row(businessId) {
   return db.prepare("SELECT * FROM sell_settings WHERE business_id = ?").get(businessId) ?? null;
@@ -26,7 +40,7 @@ function get(businessId) {
   if (!business) throw new SellError("NOT_FOUND", "There is no such business.", { status: 404 });
   const saved = row(businessId);
   const s = { ...DEFAULTS, ...(saved ? { gst_scheme: saved.gst_scheme, gstin: saved.gstin, state_code: saved.state_code, address: saved.address, invoice_prefix: saved.invoice_prefix } : {}) };
-  const stateCode = s.gstin ? s.gstin.slice(0, 2) : s.state_code ?? gst.stateCode(business.state);
+  const stateCode = s.gstin ? s.gstin.slice(0, 2) : s.state_code ?? gst.stateCode(business.state) ?? stateOfCity(business.city);
   return {
     gstScheme: s.gst_scheme,
     kind: gst.documentKind(s.gst_scheme),
@@ -45,10 +59,11 @@ function get(businessId) {
  */
 function save(businessId, fields = {}, { sessionId = null } = {}) {
   const current = get(businessId);
-  const scheme = fields.gst_scheme ?? current.gstScheme;
-  gst.documentKind(scheme); // validates
   let gstin = fields.gstin === undefined ? current.gstin : fields.gstin;
   if (gstin === "") gstin = null;
+  // A GSTIN on its own means the shop is GST-registered: an unregistered shop becomes regular.
+  const scheme = fields.gst_scheme ?? (gstin != null && current.gstScheme === "unregistered" ? "regular" : current.gstScheme);
+  gst.documentKind(scheme); // validates
   if (gstin != null) gstin = gst.parseGstin(gstin).gstin;
   if (scheme === "unregistered") gstin = null;
   let stateCode = current.saved ? row(businessId).state_code : null;

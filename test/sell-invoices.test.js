@@ -44,12 +44,14 @@ function readyShop() {
   return { biz, rice, customer };
 }
 
-test("settings default to regular and refuse a GST bill without the shop's GSTIN", () => {
+test("settings default to an unregistered shop's plain bill (no GSTIN needed); a GST scheme without the shop's GSTIN is refused", () => {
   const biz = business();
   const s = settings.get(biz);
-  assert.equal(s.gstScheme, "regular");
-  assert.equal(s.kind, "tax_invoice");
+  assert.equal(s.gstScheme, "unregistered");
+  assert.equal(s.kind, "bill");
   assert.equal(s.stateCode, "29"); // from the business's state
+  assert.equal(settings.supplier(biz).gstin, null, "a first-time owner can bill at once");
+  settings.save(biz, { gst_scheme: "regular" });
   assert.throws(() => settings.supplier(biz), refuses("GSTIN_REQUIRED"));
   assert.throws(() => settings.save(biz, { gstin: GSTIN_KA.replace(/.$/, "Q") }), refuses("GSTIN_INVALID"));
   assert.throws(() => settings.save(biz, { gstin: validGstin("27AAPFU0939F1Z"), state: "Karnataka" }), refuses("GSTIN_STATE_MISMATCH"));
@@ -180,4 +182,39 @@ test("setPaymentStatus moves only an issued invoice", () => {
   const invoice = invoices.draft(biz, { customerId: customer.id, lines: [{ itemId: rice.id, quantity: 5, rate: 95 }] });
   assert.throws(() => invoices.setPaymentStatus(biz, invoice.id, "paid"), refuses("INVOICE_NOT_PAYABLE"));
   assert.throws(() => invoices.setPaymentStatus(biz, invoice.id, "issued"), refuses("INVALID"));
+});
+
+test("a GSTIN given on its own makes the shop GST-registered (regular); unregistered drops it again", () => {
+  const biz = business();
+  const saved = settings.save(biz, { gstin: validGstin("29AAPFU0939F1Z") });
+  assert.equal(saved.gstScheme, "regular");
+  assert.equal(saved.kind, "tax_invoice");
+  assert.equal(saved.gstin, validGstin("29AAPFU0939F1Z"));
+  const composition = settings.save(biz, { gst_scheme: "composition" });
+  assert.equal(composition.gstin, validGstin("29AAPFU0939F1Z"), "a scheme change keeps the GSTIN");
+  assert.equal(settings.save(biz, { gst_scheme: "unregistered" }).gstin, null);
+});
+
+test("a new shop with only a city (signup asks no state) gets its state from a known city, so its first plain bill can be drafted", () => {
+  const biz = repo.newId("biz");
+  repo.createBusiness(biz, { name: "Ganesh Stores", city: "Bengaluru", language: "hi-IN" });
+  const s = settings.get(biz);
+  assert.equal(s.stateCode, "29");
+  assert.equal(s.stateName, "Karnataka");
+  const rice = items.upsert(biz, { name: "basmati rice", unit: "kg", sale_price: 90 });
+  const { customer } = customers.save(biz, { name: "Ramesh Traders" });
+  const invoice = invoices.draft(biz, { customerId: customer.id, lines: [{ itemId: (rice.item ?? rice).id, quantity: 50, rate: 90 }] });
+  assert.equal(invoice.kind, "bill");
+  assert.equal(invoice.totals.totalPaise, 450000);
+  assert.equal(invoice.totals.taxPaise, 0);
+
+  for (const [city, code] of [["Mumbai", "27"], ["मुंबई", "27"], ["Mysore", "29"], ["Chennai", "33"], ["New Delhi", "07"], ["Hyderabad", "36"]]) {
+    const other = repo.newId("biz");
+    repo.createBusiness(other, { name: "Shop", city, language: "en-IN" });
+    assert.equal(settings.get(other).stateCode, code, city);
+  }
+  const unknown = repo.newId("biz");
+  repo.createBusiness(unknown, { name: "Shop", city: "Someplace", language: "en-IN" });
+  assert.equal(settings.get(unknown).stateCode, null, "an unknown city is never guessed");
+  assert.throws(() => settings.supplier(unknown), refuses("STATE_REQUIRED"));
 });

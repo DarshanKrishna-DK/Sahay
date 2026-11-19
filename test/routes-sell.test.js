@@ -97,6 +97,7 @@ test("GET /api/sell shows only this business; a business id in the body is ignor
   assert.ok(Array.isArray(mine.json.owed) && Array.isArray(mine.json.receipts));
   const theirs = await call("GET", "/api/sell", { cookie: cookieFor(other) });
   assert.deepEqual([theirs.json.invoices, theirs.json.customers], [[], []]);
+  assert.equal(theirs.json.settings.gstScheme, "unregistered", "a new shop bills plainly until it adds a GSTIN");
   const added = await call("POST", "/api/customers", { cookie: cookieFor(other), body: { name: "Suresh", business_id: biz, businessId: biz } });
   assert.equal(added.status, 201);
   assert.equal(customers.findByName(biz, "Suresh"), null);
