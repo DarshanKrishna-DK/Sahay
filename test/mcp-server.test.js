@@ -125,6 +125,9 @@ test("tools/call runs with the tenant from the bearer; arguments cannot choose t
     })).json();
     assert.equal(sneaky.result.isError, true);
     assert.equal(JSON.parse(sneaky.result.content[0].text).error, "INVALID_ARGUMENTS");
+    // The refused argument is named to the model and in the log (never its value).
+    assert.equal(JSON.parse(sneaky.result.content[0].text).fix, "Unknown argument businessId.");
+    assert.ok(lines.some((l) => l.includes('"code":"INVALID_ARGUMENTS"') && l.includes('"problem":"Unknown argument businessId."') && !l.includes(b.businessId)));
   });
 });
 

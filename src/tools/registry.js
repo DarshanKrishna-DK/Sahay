@@ -463,6 +463,26 @@ function validateArgs(schema, args) {
   return null;
 }
 
+const NUMERIC_TEXT = /^\s*-?\d+(?:\.\d+)?\s*$/;
+
+/**
+ * The arguments a model sends, made fit for `schema` without guessing (E2E regress bug 1: every
+ * set_reorder_level call failed with INVALID_ARGUMENTS): a number sent as plain digits ("50") is
+ * that number, and owner_words, which the model copies onto every call after the tools that take
+ * it, is dropped where the tool has no use for it. Anything else is left for validateArgs.
+ */
+function normalizeArgs(schema, args) {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+  const props = schema.properties ?? {};
+  const out = {};
+  for (const [name, v] of Object.entries(args)) {
+    if (name === "owner_words" && !props.owner_words) continue;
+    const t = props[name]?.type;
+    out[name] = (t === "number" || t === "integer") && typeof v === "string" && NUMERIC_TEXT.test(v) ? Number(v) : v;
+  }
+  return out;
+}
+
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 
 const REPLY_LANGUAGE = {
@@ -978,7 +998,8 @@ async function askRule(ctx, { kind, params }, language, { question, tap }) {
   const rule = agentRules.propose(ctx.businessId, { kind, params, source: "owner_said" }, { sessionId: ctx.sessionId ?? null });
   const sentence = rule.sentence[language];
   const result = { ruleId: rule.id, status: rule.status, sentence };
-  if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${tap}` };
+  // Off a call the rule is still only proposed: the reply asks, it never promises (E2E regress bug 1).
+  if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${question} ${tap}` };
   const text = `${sentence} ${question}`;
   // The server says the rule itself, so a spoken yes can only answer exactly these words.
   require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
@@ -1699,8 +1720,10 @@ async function callTool(ctx, name, args = {}) {
   if (!tool || !tool.scopes.includes(ctx.toolScope)) {
     throw new ToolError("UNKNOWN_TOOL", sayFor("internal", language), { status: 404, message: `No tool ${name} for this agent.` });
   }
+  args = normalizeArgs(tool.inputSchema, args);
   const problem = validateArgs(tool.inputSchema, args);
-  if (problem) throw new ToolError("INVALID_ARGUMENTS", sayFor("invalid", language), { status: 400, message: problem });
+  // `details.problem` names the argument (never a value), so the model can correct its next call.
+  if (problem) throw new ToolError("INVALID_ARGUMENTS", sayFor("invalid", language), { status: 400, message: problem, details: { problem } });
   if (replyLanguage) require("../agora/narrator").useLanguage(ctx.businessId, replyLanguage);
   const end = toolCalls.begin(ctx.businessId, name, { answer: Boolean(args?.decision || args?.confirm) });
   try {

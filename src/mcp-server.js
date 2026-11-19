@@ -79,8 +79,11 @@ function buildServer(ctx, log) {
       log({ event: "tool_result", tool: name, ok: true, ms: Date.now() - started });
       return textResult(result);
     } catch (err) {
-      log({ event: "tool_result", tool: name, ok: false, code: err.code ?? "INTERNAL", ms: Date.now() - started });
-      return textResult({ error: err.code ?? "INTERNAL", say: err.say ?? null }, true);
+      // A refused argument is named (never its value) in the log and to the model, so a bad call is
+      // diagnosable and the model can correct it (E2E regress bug 1: five blind INVALID_ARGUMENTS).
+      const problem = err.code === "INVALID_ARGUMENTS" ? err.details?.problem ?? null : null;
+      log({ event: "tool_result", tool: name, ok: false, code: err.code ?? "INTERNAL", ...(problem ? { problem } : {}), ms: Date.now() - started });
+      return textResult({ error: err.code ?? "INTERNAL", say: err.say ?? null, ...(problem ? { fix: problem } : {}) }, true);
     }
   });
   return server;

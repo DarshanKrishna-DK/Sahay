@@ -766,7 +766,10 @@ test("E2E full run bug 1: the prompt forbids claiming a result no tool returned 
 
 test("E2E full run bug 5: no consoling or apologetic opener before a result, from the model or from Agora's filler generator", () => {
   const prompt = agent.systemPrompt({ name: "Annapurna Kirana", language: "hi-IN" });
-  assert.match(prompt, /A kind word \(अरे, कोई बात नहीं[^)]*\) only when a tool result in this turn reports a failure/);
+  // E2E regress bug 6: "अरे, थोड़ी दिक्कत हुई" on a refused tool. A failure is answered with the tool's say only.
+  assert.match(prompt, /A kind word \(अरे, कोई बात नहीं[^)]*\) only when the owner tells you of a problem/);
+  assert.doesNotMatch(prompt, /kind word[^.]*when a tool result in this turn reports a failure/);
+  assert.match(prompt, /When a tool fails, say only its `say`, word for word, with no opener and no guess about why/);
   assert.match(prompt, /never before a result that succeeded/);
   assert.match(agent.FILLER_PROMPT, /Never apologise, console or react to a problem/);
   assert.match(agent.FILLER_PROMPT, /कोई बात नहीं/);

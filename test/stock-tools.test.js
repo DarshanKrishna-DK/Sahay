@@ -220,3 +220,42 @@ test("confirm_reorder outside a call asks for the button; an unclear answer is r
   assert.equal(no.outcome, "All right, I will not buy more now.");
   assert.equal(call.spoken.at(-1), no.outcome);
 });
+
+// E2E regress bug 1: every set_reorder_level call failed with INVALID_ARGUMENTS in 0 ms (server log),
+// because the model passed owner_words (as it does for set_opening_stock) and the tool's schema
+// rejected the unknown argument. The clip: "बासमती चावल पचास किलो से कम हो जाए तो मुझे बताना।"
+test("set_reorder_level takes the arguments the model copies from set_opening_stock (owner_words, a unit word, a level as text)", async (t) => {
+  const biz = seedBusiness("hi-IN");
+  const call = fakeCall(t);
+  const ctx = ownerCtx(biz, { agentId: "AGL" });
+  await registry.callTool(ownerCtx(biz), "set_opening_stock", { item: "बासमती चावल", quantity: 100, unit: "किलो", owner_words: "मेरे पास सौ किलो बासमती चावल है" });
+  const asked = await registry.callTool(ctx, "set_reorder_level", {
+    item: "बासमती चावल",
+    level: 50,
+    unit: "किलो",
+    owner_words: "बासमती चावल पचास किलो से कम हो जाए तो मुझे बताना।",
+    reply_language: "hi-IN",
+  });
+  assert.equal(asked.readbackSpoken, true);
+  assert.equal(asked.say, "क्या यह नियम रखूँ?");
+  assert.equal(agentRules.get(biz, asked.ruleId).status, "suggested");
+  assert.match(call.spoken[0], /^जब बासमती चावल 50 किलो या उससे कम बचेगा.*क्या यह नियम रखूँ\?$/);
+
+  // A level the model sends as text is the same number.
+  const biz2 = seedBusiness("hi-IN");
+  const typed = await registry.callTool(ownerCtx(biz2), "set_reorder_level", { item: "बासमती चावल", level: "50", unit: "किलो" });
+  assert.equal(agentRules.get(biz2, typed.ruleId).params.level, 50);
+});
+
+test("set_reorder_level for an item with no stock record yet keeps the rule by name, or asks the unit clearly", async () => {
+  const biz = seedBusiness("hi-IN");
+  const proposed = await registry.callTool(ownerCtx(biz), "set_reorder_level", { item: "बासमती चावल", level: 50, unit: "किलो" });
+  assert.equal(agentRules.get(biz, proposed.ruleId).params.item, "बासमती चावल");
+  // Off a call the reply is a question with the tick, never a promise that the rule is kept.
+  assert.match(proposed.say, /क्या यह नियम रखूँ\?/);
+  await assert.rejects(registry.callTool(ownerCtx(biz), "set_reorder_level", { item: "चीनी", level: 5 }), (err) => {
+    assert.equal(err.code, "UNIT_NEEDED");
+    assert.equal(err.say, "चीनी किस इकाई में, किलो, पीस या बोरी?");
+    return true;
+  });
+});
