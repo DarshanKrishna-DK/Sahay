@@ -6,7 +6,8 @@
  * An order, a rate acceptance or a payment link needs an approval row for that
  * exact deal and that business. The sentence the owner hears is built here from
  * database values, never by a model. A spoken approval is accepted only when the
- * owner's own words are a clear yes; anything else leaves the approval pending.
+ * owner's own words are a clear yes that answers the read-back the server itself
+ * spoke into the call; anything else leaves the approval pending.
  */
 
 const db = require("./db");
@@ -134,9 +135,9 @@ const phrases = (list) =>
 const YES = phrases([
   "yes", "yeah", "yep", "yup", "ok", "okay", "sure", "of course", "go ahead", "confirm", "confirmed", "approve", "approved",
   "proceed", "do it", "place the order", "place it", "book it", "agreed", "fine", "alright", "all right",
-  "हाँ", "हां", "हा", "जी हाँ", "जी हां", "हाँ जी", "हां जी", "ठीक है", "ठीक", "कर दो", "कर दीजिए", "कर दीजिये", "कर दें", "करो", "कीजिए",
+  "हाँ", "हां", "जी हाँ", "जी हां", "हाँ जी", "हां जी", "ठीक है", "ठीक", "कर दो", "कर दीजिए", "कर दीजिये", "कर दें", "करो", "कीजिए",
   "पक्का", "पक्का करो", "पक्का कर दो", "मंज़ूर", "मंज़ूर है", "बिल्कुल", "बिलकुल", "ज़रूर", "सही है", "चलेगा", "ओके", "यस", "कन्फर्म", "आगे बढ़ो",
-  "haan", "han", "haa", "haanji", "ji haan", "ji han", "haan ji", "theek hai", "thik hai", "theek", "thik", "kar do", "kar dijiye",
+  "haan", "han", "haanji", "ji haan", "ji han", "haan ji", "theek hai", "thik hai", "theek", "thik", "kar do", "kar dijiye",
   "kar den", "karo", "kijiye", "pakka", "manzoor", "manjoor", "bilkul", "zaroor", "jaroor", "sahi hai", "chalega",
   "ಹೌದು", "ಹೂಂ", "ಹೂ", "ಹಾಂ", "ಸರಿ", "ಆಯ್ತು", "ಆಯಿತು", "ಮಾಡಿ", "ಮಾಡು", "ಖಂಡಿತ", "ಓಕೆ", "ಒಪ್ಪಿಗೆ", "ಒಪ್ಪಿಗೆ ಇದೆ", "ಮುಂದುವರಿಸಿ",
   "ಖಚಿತಪಡಿಸಿ", "ಯೆಸ್", "ಆರ್ಡರ್ ಮಾಡಿ",
@@ -148,6 +149,9 @@ const NO = phrases([
   "नहीं", "नही", "ना", "न", "मत", "रद्द", "कैंसिल", "nahi", "nahin", "nai", "na", "mat", "radd",
   "ಬೇಡ", "ಬೇಡಿ", "ಇಲ್ಲ", "ಅಲ್ಲ", "ರದ್ದು", "ನಿಲ್ಲಿಸಿ", "beda", "bedi", "illa", "alla",
 ]);
+
+/** Short sounds that are a yes only when they are the entire reply. */
+const WHOLE_REPLY_YES = new Set(["हा", "haa"].map(normalise));
 
 /** Words that may surround a yes without changing its meaning. Anything else makes the reply unclear. */
 const FILLER = new Set(
@@ -188,6 +192,8 @@ function classifyUtterance(text) {
   if (!tokens.length) return "unclear";
   if (strip(tokens, NO).found > 0) return "negative";
   if (String(text).includes("?")) return "unclear";
+  // "हा" / "haa" is a yes only as the whole reply; "हा हा" is laughter (security review r1 #8).
+  if (tokens.length === 1 && WHOLE_REPLY_YES.has(tokens[0])) return "affirmative";
   const { found, rest } = strip(tokens, YES);
   return found > 0 && rest.every((token) => FILLER.has(token)) ? "affirmative" : "unclear";
 }
@@ -210,7 +216,9 @@ function summary(approval) {
  * Ask for the owner's approval of one quote. Returns `{ approval, deal, created }`.
  * Asking again for an unchanged deal returns the approval that is already open
  * (pending, or approved and not yet used); if the deal has changed since, the
- * old approval is withdrawn and a new one is created.
+ * old approval is withdrawn and a new one is created. Only one approval of a
+ * business is pending at a time: putting up a deal withdraws any other deal that
+ * is still waiting for the owner (DB trigger approvals_one_pending_per_business).
  */
 function requestApproval(businessId, quoteId, { sessionId = null } = {}) {
   return db.transaction(() => {
@@ -218,18 +226,21 @@ function requestApproval(businessId, quoteId, { sessionId = null } = {}) {
     if (repo.listOrders(businessId, { quote_id: quoteId }).length) {
       throw new ApprovalError("ALREADY_ORDERED", "An order has already been placed for this quote.");
     }
+    const withdraw = (open, reason) => {
+      repo.withdrawApproval(businessId, open.id);
+      events.emit(businessId, "approval.decided", { ...summary(open), status: "rejected", reason }, { sessionId, actor: "system" });
+    };
 
+    let kept = null;
     for (const open of repo.listApprovals(businessId, { quote_id: quoteId })) {
       if (open.status !== "pending" && open.status !== "approved") continue;
-      if (matchesDeal(open, deal)) return { approval: open, deal, created: false };
-      repo.withdrawApproval(businessId, open.id);
-      events.emit(
-        businessId,
-        "approval.decided",
-        { ...summary(open), status: "rejected", reason: "The deal changed after this approval was requested." },
-        { sessionId, actor: "system" },
-      );
+      if (!kept && matchesDeal(open, deal)) kept = open;
+      else withdraw(open, "The deal changed after this approval was requested.");
     }
+    for (const other of repo.listApprovals(businessId, { status: "pending" })) {
+      if (other.quote_id !== quoteId) withdraw(other, "Another deal was put to the owner for approval.");
+    }
+    if (kept) return { approval: kept, deal, created: false };
 
     const approval = repo.createApproval(businessId, { quote_id: quoteId, readback: buildReadback(deal), total_amount: deal.total });
     events.emit(businessId, "approval.requested", { ...summary(approval), language: deal.language }, { sessionId, actor: "agent" });
@@ -237,14 +248,116 @@ function requestApproval(businessId, quoteId, { sessionId = null } = {}) {
   });
 }
 
+/* ------------------------------------------- the read-back, as heard --- */
+
+/**
+ * The server spoke `text` (this approval's read-back) into the owner's call through
+ * the agent `agentId`. Only a read-back recorded here can be answered by voice.
+ */
+function recordReadbackSpoken(businessId, approvalId, { agentId, text, sessionId = null }) {
+  return db.transaction(() => {
+    const approval = repo.getApproval(businessId, approvalId);
+    if (!approval) throw new ApprovalError("APPROVAL_NOT_FOUND", "There is no such approval for this business.");
+    if (approval.status !== "pending") throw new ApprovalError("ALREADY_DECIDED", `This approval is already ${approval.status}.`);
+    const row = repo.recordApprovalReadback(businessId, approvalId, { agent_id: agentId, spoken_text: text });
+    events.emit(businessId, "approval.spoken", { approvalId, quoteId: approval.quote_id, readback: row.spoken_text, spokenAt: row.spoken_at }, { sessionId, actor: "agent" });
+    return row;
+  });
+}
+
+/** Owner speech that ends before the read-back's audio by more than this is not an answer to it. */
+const ANSWER_OVERLAP_MS = 500;
+
+const collapse = (text) => String(text ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
+const isServerLine = (item) => item?.role === "assistant" && item?.metadata?.source === "command" && typeof item.content === "string";
+const isOwnerAsr = (item) => item?.role === "user" && item?.metadata?.source === "asr" && typeof item.content === "string" && item.content.trim() !== "";
+
+/** The pieces /speak sends for a text (agent.splitUtf8), each as /history shows it. */
+function spokenPieces(text) {
+  return require("./agora/agent").splitUtf8(text).map(collapse);
+}
+
+/**
+ * The owner's answer to this approval's read-back, from the call's /history `contents`
+ * (Agora keeps them in turn order). Fails closed:
+ * - the server must have spoken a read-back for this approval through this agent;
+ * - every piece of that read-back must be in the history as a server line, not interrupted;
+ * - the owner's last ASR turn must come after it, in array order AND by a larger numeric
+ *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence);
+ * - when Agora gives both speech timings, the owner must not have spoken over it;
+ * - no read-back of another approval may have been spoken in between.
+ * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
+ */
+function answerToReadback(businessId, approval, contents, { agentId }) {
+  const own = repo.listApprovalReadbacks(businessId, { approval_id: approval.id, agent_id: agentId });
+  if (!agentId || !own.length) throw new ApprovalError("READBACK_NOT_SPOKEN", "This deal was not read out to the owner in this call.");
+  if (!Array.isArray(contents)) throw new ApprovalError("EVIDENCE_REQUIRED", "The call history is needed as evidence.");
+  const readbacks = own.map((row) => spokenPieces(row.spoken_text));
+
+  let anchor = -1;
+  let pieces = null;
+  for (let i = contents.length - 1; i >= 0 && anchor < 0; i--) {
+    if (!isServerLine(contents[i])) continue;
+    const line = collapse(contents[i].content);
+    pieces = readbacks.find((p) => p[p.length - 1] === line) ?? null;
+    if (pieces) anchor = i;
+  }
+  if (anchor < 0) throw new ApprovalError("READBACK_NOT_HEARD", "The read-back is not in the call history.");
+  const heard = [anchor];
+  for (let p = pieces.length - 2, at = anchor; p >= 0; p--) {
+    let found = -1;
+    for (let i = at - 1; i >= 0 && found < 0; i--) if (isServerLine(contents[i]) && collapse(contents[i].content) === pieces[p]) found = i;
+    if (found < 0) throw new ApprovalError("READBACK_NOT_HEARD", "Part of the read-back is missing from the call history.");
+    heard.push(found);
+    at = found;
+  }
+  if (heard.some((i) => contents[i].metadata?.interrupted)) {
+    throw new ApprovalError("READBACK_NOT_HEARD", "The read-back was cut off before the owner heard all of it.");
+  }
+
+  let answerAt = -1;
+  for (let i = contents.length - 1; i >= 0 && answerAt < 0; i--) if (isOwnerAsr(contents[i])) answerAt = i;
+  if (answerAt <= anchor) throw new ApprovalError("NO_ANSWER_YET", "The owner has not answered since the read-back.");
+
+  const said = contents[answerAt];
+  const read = contents[anchor];
+  if (!Number.isFinite(said.turn_id) || !Number.isFinite(read.turn_id) || !(said.turn_id > read.turn_id)) {
+    throw new ApprovalError("EVIDENCE_UNORDERED", "The call history does not show that the answer came after the read-back.");
+  }
+  if (Number.isFinite(read.speech_end_ms) && Number.isFinite(said.speech_start_ms) && said.speech_start_ms < read.speech_end_ms - ANSWER_OVERLAP_MS) {
+    throw new ApprovalError("ANSWER_DURING_READBACK", "The owner spoke while the read-back was still playing.");
+  }
+
+  const others = new Set(
+    repo
+      .listApprovalReadbacks(businessId)
+      .filter((row) => row.approval_id !== approval.id)
+      .flatMap((row) => spokenPieces(row.spoken_text)),
+  );
+  for (let i = anchor + 1; i < answerAt; i++) {
+    if (isServerLine(contents[i]) && others.has(collapse(contents[i].content))) {
+      throw new ApprovalError("READBACK_SUPERSEDED", "Another deal was read out after this one.");
+    }
+  }
+  return { text: said.content.trim(), turnId: said.turn_id };
+}
+
+/** The owner's last words in the call, for a spoken rejection (no read-back binding needed to say no). */
+function lastOwnerWords(contents) {
+  const item = Array.isArray(contents) ? contents.findLast(isOwnerAsr) : null;
+  return item ? item.content.trim() : "";
+}
+
 /**
  * Record the owner's decision on a pending approval.
- * - via "button": the owner pressed approve or reject in the console.
- * - via "voice": `evidenceUtterance` is what the owner said, taken from the call
- *   history by the caller (never from the model). To approve it must be a clear
- *   yes; `evidenceAt`, when known, must not be earlier than the request.
+ * - via "button": the owner pressed approve or reject in the console, where the
+ *   read-back is on screen.
+ * - via "voice": `history` is the call's Agora /history contents, fetched by the
+ *   caller from `agentId` (never words from the model). An approval needs a clear
+ *   yes that answers the read-back the server spoke (answerToReadback); a
+ *   rejection needs the owner's last words not to be a yes.
  */
-function confirmApproval(businessId, approvalId, { decision, via, evidenceUtterance, evidenceAt, sessionId = null } = {}) {
+function confirmApproval(businessId, approvalId, { decision, via, agentId = null, history, sessionId = null } = {}) {
   if (decision !== "approve" && decision !== "reject") throw new ApprovalError("INVALID_DECISION", 'decision is "approve" or "reject".');
   if (via !== "voice" && via !== "button") throw new ApprovalError("INVALID_VIA", 'via is "voice" or "button".');
 
@@ -255,11 +368,8 @@ function confirmApproval(businessId, approvalId, { decision, via, evidenceUttera
 
     let utterance = null;
     if (via === "voice") {
-      utterance = typeof evidenceUtterance === "string" ? evidenceUtterance.trim() : "";
+      utterance = decision === "approve" ? answerToReadback(businessId, approval, history, { agentId }).text : lastOwnerWords(history);
       if (!utterance) throw new ApprovalError("EVIDENCE_REQUIRED", "A spoken decision needs the owner's words as evidence.");
-      if (evidenceAt != null && !(new Date(evidenceAt).getTime() >= Date.parse(approval.requested_at))) {
-        throw new ApprovalError("EVIDENCE_TOO_OLD", "Those words were said before this approval was requested.");
-      }
       const said = classifyUtterance(utterance);
       if (decision === "approve" && said !== "affirmative") {
         throw new ApprovalError("NOT_AFFIRMATIVE", "The owner's reply was not a clear yes; the approval is still pending.");
@@ -311,7 +421,7 @@ function assertOrderApproved(businessId, order) {
 
 module.exports = {
   ApprovalError,
-  requestApproval, confirmApproval, assertApproved, assertOrderApproved,
-  isAffirmative, classifyUtterance,
+  requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
+  answerToReadback, isAffirmative, classifyUtterance,
   buildReadback,
 };

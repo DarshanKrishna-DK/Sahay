@@ -287,3 +287,59 @@ test("saidByVendor matches vendor words only, ignoring punctuation and spacing",
   assert.equal(session.saidByVendor("हम 55 रुपये देंगे", turns), false, "the agent's words are not the vendor's");
   assert.equal(session.saidByVendor("55", turns), false, "too short to prove anything");
 });
+
+/* ------------------------------------------- security review r1 #3 and #1 --- */
+
+const limits = require("../src/limits");
+
+test("review #3: in every language the negotiator's closing line only promises to confirm with the owner", async (t) => {
+  fakeAgora(t);
+  noModel(t);
+  const expected = {
+    "en-IN": /^I will confirm 55 rupees per kilogram with the owner and send the order\. Thank you\.$/,
+    "kn-IN": /^ಸರಿ, ಒಂದು .+ಗೆ 55 ರೂಪಾಯಿ ಬೆಲೆಯನ್ನು ಮಾಲೀಕರ ಜೊತೆ ಖಚಿತಪಡಿಸಿ ಆರ್ಡರ್ ಕಳುಹಿಸುತ್ತೇನೆ, ಧನ್ಯವಾದ\.$/,
+    "hi-IN": /^ठीक है, 55 रुपये प्रति किलो पर मैं मालिक से पक्का करके ऑर्डर भेजूँगी, धन्यवाद।$/,
+  };
+  for (const [language, line] of Object.entries(expected)) {
+    const { businessId, requirement, vendor } = seed({ language });
+    const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language });
+    await jobs.whenSettled(started.jobId);
+    const agentLines = repo.getNegotiation(businessId, started.negotiationId).transcript.filter((turn) => turn.speaker === "agent").map((turn) => turn.text);
+    assert.match(agentLines.at(-1), line, language);
+    assert.doesNotMatch(agentLines.join(" "), /Agreed at|बात पक्की|ಒಪ್ಪಿಗೆ;/, language);
+  }
+});
+
+test("review #1: negotiations share a global cap; a full cap is refused politely and the slot comes back when the job ends", async (t) => {
+  fakeAgora(t);
+  noModel(t);
+  limits.reset();
+  t.after(() => limits.reset());
+  const { businessId, requirement, vendor } = seed();
+  const start = () => session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+
+  const held = [];
+  for (let release = limits.tryAcquire("negotiation"); release; release = limits.tryAcquire("negotiation")) held.push(release);
+  await assert.rejects(start(), (err) => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, "BUSY");
+    assert.equal(err.say, "अभी बहुत लोग इस्तेमाल कर रहे हैं, थोड़ी देर बाद कोशिश कीजिए।");
+    return true;
+  });
+  assert.deepEqual(repo.listNegotiations(businessId), [], "nothing was started");
+  assert.deepEqual(repo.listJobs(businessId), []);
+
+  for (const release of held) release();
+  const started = await start();
+  assert.equal(limits.usage().negotiation.inUse, 1);
+  await jobs.whenSettled(started.jobId);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(limits.usage().negotiation.inUse, 0, "the slot is given back when the negotiation ends");
+
+  // A job cancelled before it ran still gives its slot back.
+  const cancelled = await start();
+  jobs.cancelJob(businessId, cancelled.jobId);
+  await jobs.whenSettled(cancelled.jobId);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(limits.usage().negotiation.inUse, 0);
+});

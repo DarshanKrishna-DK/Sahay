@@ -9,6 +9,7 @@
  */
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const util = require("node:util");
 
@@ -34,6 +35,13 @@ class ConfigError extends Error {
  * in one channel hear each other (opt-in; falls back to "loop" when they stall).
  */
 const NEGOTIATION_MODES = ["loop", "agents"];
+function positiveInt(value, fallback, name) {
+  if (value === null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`${name} must be a positive integer, got ${JSON.stringify(value)}`);
+  return n;
+}
+
 function negotiationMode(value) {
   const mode = (value ?? "loop").toLowerCase();
   if (!NEGOTIATION_MODES.includes(mode)) {
@@ -120,11 +128,17 @@ function loadConfig(env = process.env) {
   }
 
   const dbFile = read("DB_FILE") ?? path.join(ROOT, "data", "sahay-v2.db");
-  const dataDir = dbFile === ":memory:" ? path.join(ROOT, "data") : path.dirname(path.resolve(dbFile));
+  // An in-memory database (tests) gets its own throwaway folder, so test POs never land next
+  // to (or overwrite) the real business's purchase orders (security review r1 #4).
+  const dataDir = dbFile === ":memory:"
+    ? fs.mkdtempSync(path.join(os.tmpdir(), "sahay-test-"))
+    : path.dirname(path.resolve(dbFile));
 
   return sealed(
     {
       port,
+      // Loopback by default: the tunnel (cloudflared) runs on this machine. A host such as Render needs HOST=0.0.0.0.
+      host: read("HOST") ?? "127.0.0.1",
       publicUrl,
       dbFile,
       poDir: path.join(dataDir, "po"),
@@ -174,8 +188,17 @@ function loadConfig(env = process.env) {
         delaySeconds: read("FOLLOWUP_DELAY_SECONDS") === null ? null : Number(read("FOLLOWUP_DELAY_SECONDS")),
       }),
       negotiation: Object.freeze({ mode: negotiationMode(read("NEGOTIATION_MODE")) }),
+      // Cost guards for a public URL (security review r1 #1). Global, across all businesses.
+      limits: Object.freeze({
+        ownerCalls: positiveInt(read("SAHAY_MAX_OWNER_CALLS"), 3, "SAHAY_MAX_OWNER_CALLS"),
+        negotiations: positiveInt(read("SAHAY_MAX_NEGOTIATIONS"), 1, "SAHAY_MAX_NEGOTIATIONS"),
+        sourcing: positiveInt(read("SAHAY_MAX_SOURCING_JOBS"), 3, "SAHAY_MAX_SOURCING_JOBS"),
+        callSeconds: positiveInt(read("SAHAY_MAX_CALL_SECONDS"), 45 * 60, "SAHAY_MAX_CALL_SECONDS"),
+      }),
+      // Optional: when set, POST /api/session must carry this code to create a business.
+      accessCode: read("SAHAY_ACCESS_CODE"),
     },
-    ["sessionSecret"],
+    ["sessionSecret", "accessCode"],
   );
 }
 

@@ -39,6 +39,7 @@ const assert = require("node:assert/strict");
 const { after, test } = require("node:test");
 
 const approvals = require("../src/approvals");
+const { splitUtf8 } = require("../src/agora/agent");
 const { config } = require("../src/config");
 const db = require("../src/db");
 const orders = require("../src/orders");
@@ -46,8 +47,11 @@ const payments = require("../src/orders/payments");
 const po = require("../src/orders/po");
 const repo = require("../src/db/repo");
 
-const RAZORPAY_SKIP =
-  config.razorpay.keyId && config.razorpay.keySecret
+// Opt-in: a Razorpay test account can create only 30 payment links in total, ever
+// ("test mode limit of 30 reached for payment_link"), so ordinary test runs must not spend them.
+const RAZORPAY_SKIP = process.env.RAZORPAY_LIVE_TEST !== "1"
+  ? "live Razorpay test is opt-in (RAZORPAY_LIVE_TEST=1): test accounts allow only 30 payment links in total"
+  : config.razorpay.keyId && config.razorpay.keySecret
     ? false
     : "no Razorpay test key in the environment or .env (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET); the Razorpay API is not called and no response is faked";
 
@@ -74,9 +78,16 @@ function seedPendingApproval(businessId, { source = "indiamart", counterpart = "
   return { requirement: need, vendor: seller, quote: quoted, approval: approvals.requestApproval(businessId, quoted.id).approval };
 }
 
+/** Approved by voice the only way there is: the server spoke the read-back and the owner's next turn is a yes. */
 function seedApproved(businessId, options) {
   const seeded = seedPendingApproval(businessId, options);
-  approvals.confirmApproval(businessId, seeded.approval.id, { decision: "approve", via: "voice", evidenceUtterance: "yes go ahead" });
+  const { readback, id } = seeded.approval;
+  approvals.recordReadbackSpoken(businessId, id, { agentId: "AG-orders", text: readback });
+  const history = [
+    ...splitUtf8(readback).map((content, i) => ({ role: "assistant", content, metadata: { source: "command" }, turn_id: 10 + i })),
+    { role: "user", content: "yes go ahead", metadata: { source: "asr" }, turn_id: 20 },
+  ];
+  approvals.confirmApproval(businessId, id, { decision: "approve", via: "voice", agentId: "AG-orders", history });
   return seeded;
 }
 
@@ -191,7 +202,7 @@ test("an approved deal becomes an order with a sequential PO number, a PDF on di
   assert.equal(created.session_id, session.id);
   assert.deepEqual(created.detail, {
     orderId: order.id, poNumber: order.po_number, approvalId: first.approval.id, quoteId: first.quote.id,
-    vendor: "Lakshmi Traders", amount: 3250, currency: "INR", status: "confirmed",
+    vendor: "Lakshmi Traders", simulated: false, amount: 3250, currency: "INR", status: "confirmed",
   });
 });
 
@@ -217,8 +228,10 @@ test("the purchase order of a real quote names the vendor, the freight and the a
   assert.equal(model.freight, "Rs. 150.00");
   assert.equal(model.total, "Rs. 3,250.00");
   assert.deepEqual(model.terms, [
-    "Payment: 50% advance", "Lead time: 3 days", "Deliver to: Bengaluru", "Vendor minimum order: 25 kg", 'As quoted: "62 rupees per kg, final"',
+    "Lead time: 3 days", "Deliver to: Bengaluru", "Vendor minimum order: 25 kg", 'As quoted: "62 rupees per kg, final"',
   ]);
+  // The vendor's free-text payment terms were never read back, so they are not an agreed term (review #6).
+  assert.deepEqual(model.unverified, ['Payment terms: "50% advance"']);
   assert.match(model.approval, new RegExp(`by spoken confirmation \\(approval ${approval.id}\\)`));
   assert.ok(!fs.readFileSync(order.pdf_path, "latin1").includes("simulated vendor"));
 });

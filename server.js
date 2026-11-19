@@ -7,13 +7,68 @@
  * SIGTERM every running agent is stopped before the process exits.
  */
 
+const crypto = require("node:crypto");
+const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 const { config, missingKeys } = require("./src/config");
 
-/** Basic security headers without a dependency. */
+const PUBLIC_DIR = path.join(__dirname, "public");
+
+/**
+ * Third-party scripts, each an exact pinned file that the page also checks with Subresource
+ * Integrity (public/js/voice.js, the import map in public/index.html, the vendor page).
+ */
+const CDN_SCRIPTS = [
+  "https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.3/AgoraRTC_N-production.js",
+  "https://cdn.jsdelivr.net/npm/agora-rtm@2.2.3/agora-rtm.js",
+  "https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs",
+];
+
+/**
+ * 'sha256-...' sources for the inline <script> blocks of an HTML file (the console's import map).
+ * The HTML parser turns CRLF and CR into LF before the browser hashes a script, so this does too.
+ */
+function inlineScriptHashes(html) {
+  return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => {
+    const body = m[1].replace(/\r\n?/g, "\n");
+    return `'sha256-${crypto.createHash("sha256").update(body, "utf8").digest("base64")}'`;
+  });
+}
+
+/**
+ * Content-Security-Policy for every response (security review r1 #11).
+ * - script-src: our files, the three pinned CDN files, the import map by hash, and
+ *   'wasm-unsafe-eval' because the Agora RTM SDK instantiates WebAssembly.
+ * - worker-src blob:: the RTC and RTM SDKs start workers from blob: URLs.
+ * - connect-src https: wss:: Agora's RTC/RTM gateways, edge and log hosts are many and not one
+ *   documented list we could verify, so any TLS origin is allowed for connections (never for scripts).
+ * - style-src 'unsafe-inline': the console sets a few style attributes and the vendor page has a
+ *   <style> block; fonts come from Google Fonts.
+ */
+function contentSecurityPolicy() {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+  return [
+    "default-src 'self'",
+    `script-src 'self' ${CDN_SCRIPTS.join(" ")} ${inlineScriptHashes(html).join(" ")} 'wasm-unsafe-eval'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob: mediastream:",
+    "connect-src 'self' https: wss: data: blob:",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+/** Basic security headers without a dependency. The CSP is built once (createApp refreshes it). */
 function securityHeaders(req, res, next) {
+  securityHeaders.csp ??= contentSecurityPolicy();
   res.set({
+    "Content-Security-Policy": securityHeaders.csp,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
@@ -28,6 +83,7 @@ function createApp() {
   const { createApiRouter, createVendorRouter, errorHandler } = require("./src/routes/api");
   const { createMcpRouter } = require("./src/mcp-server");
   const app = express();
+  securityHeaders.csp = contentSecurityPolicy();
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback"); // cloudflared runs on this machine and sets X-Forwarded-*
   app.use(securityHeaders);
@@ -53,6 +109,15 @@ function boot() {
   }
 
   require("./src/db").getDb();
+  const stale = endStaleSessions();
+  if (stale.ended) {
+    console.warn(`[sahay] ended ${stale.ended} session(s) a previous run left open; stopping ${stale.agentIds.length} agent(s).`);
+    const agent = require("./src/agora/agent");
+    Promise.allSettled(stale.agentIds.map((id) => agent.stopAgent(id))).then((results) => {
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed) console.warn(`[sahay] ${failed} leftover agent(s) did not answer /leave; their idle timeout ends them.`);
+    });
+  }
   const jobs = require("./src/jobs");
   const failed = jobs.failInterruptedJobs();
   if (failed) console.warn(`[sahay] marked ${failed} interrupted job(s) as failed.`);
@@ -70,8 +135,8 @@ function boot() {
   if (telegram.isConfigured()) telegram.startPolling({ signal: telegramAbort.signal });
 
   const app = createApp();
-  const server = app.listen(config.port, () => {
-    console.log(`[sahay] listening on ${config.port}${config.publicUrl ? `, public ${config.publicUrl}` : ""}`);
+  const server = app.listen(config.port, config.host, () => {
+    console.log(`[sahay] listening on ${config.host}:${config.port}${config.publicUrl ? `, public ${config.publicUrl}` : ""}`);
   });
 
   let closing = false;
@@ -96,6 +161,18 @@ function boot() {
   return server;
 }
 
+/**
+ * A process that crashed left its sessions open, and an open session keeps its 2 h MCP bearer
+ * valid (security review r1 #12). No agent of a previous process is tracked any more, so every
+ * session not yet ended is ended now. Returns the agent ids to stop.
+ */
+function endStaleSessions(now = new Date().toISOString()) {
+  const db = require("./src/db").getDb();
+  const agentIds = db.prepare("SELECT agent_id FROM sessions WHERE status <> 'ended' AND agent_id IS NOT NULL").all().map((r) => r.agent_id);
+  const { changes } = db.prepare("UPDATE sessions SET status = 'ended', ended_at = ? WHERE status <> 'ended'").run(now);
+  return { ended: Number(changes), agentIds };
+}
+
 if (require.main === module) boot();
 
-module.exports = { createApp, securityHeaders };
+module.exports = { createApp, securityHeaders, contentSecurityPolicy, inlineScriptHashes, endStaleSessions, CDN_SCRIPTS };

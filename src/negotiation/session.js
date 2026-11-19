@@ -40,6 +40,7 @@ const { sameUnit, unitWord } = require("../procurement/units");
 const agent = require("../agora/agent");
 const { buildRtcRtmToken } = require("../agora/token");
 const vendorAgent = require("./vendor-agent");
+const limits = require("../limits");
 const { ToolError, sayFor, langKey } = require("../tools/errors");
 
 const UIDS = Object.freeze({ negotiator: 2001, vendor: 2002, listener: 2003, human: 2004, nobody: 2999 });
@@ -98,10 +99,11 @@ const BUYER_LINES = {
     "kn-IN": (v) => `ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ ಕೊಡಬಹುದು, ಇದಕ್ಕೆ ಒಪ್ಪುತ್ತೀರಾ?`,
     "en-IN": (v) => `We can pay ${v.price} rupees per ${v.unit}; can you do that?`,
   },
+  // Not an acceptance: only the owner accepts a rate (CLAUDE.md rule 3, security review r1 #3).
   accept: {
-    "hi-IN": (v) => `ठीक है, ${v.price} रुपये प्रति ${v.unit} पर बात पक्की; मालिक की मंज़ूरी के बाद ऑर्डर भेजेंगे, धन्यवाद।`,
-    "kn-IN": (v) => `ಸರಿ, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿಗೆ ಒಪ್ಪಿಗೆ; ಮಾಲೀಕರ ಒಪ್ಪಿಗೆಯ ನಂತರ ಆರ್ಡರ್ ಕಳುಹಿಸುತ್ತೇವೆ, ಧನ್ಯವಾದ.`,
-    "en-IN": (v) => `Agreed at ${v.price} rupees per ${v.unit}; we will send the order after the owner approves. Thank you.`,
+    "hi-IN": (v) => `ठीक है, ${v.price} रुपये प्रति ${v.unit} पर मैं मालिक से पक्का करके ऑर्डर भेजूँगी, धन्यवाद।`,
+    "kn-IN": (v) => `ಸರಿ, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ ಬೆಲೆಯನ್ನು ಮಾಲೀಕರ ಜೊತೆ ಖಚಿತಪಡಿಸಿ ಆರ್ಡರ್ ಕಳುಹಿಸುತ್ತೇನೆ, ಧನ್ಯವಾದ.`,
+    "en-IN": (v) => `I will confirm ${v.price} rupees per ${v.unit} with the owner and send the order. Thank you.`,
   },
   walk_away: {
     "hi-IN": () => "माफ़ कीजिए, इस भाव पर हम आगे नहीं बढ़ पाएँगे, धन्यवाद।",
@@ -132,7 +134,7 @@ function negotiatorPrompt(rt) {
     `Speak only ${script}. One or two short sentences per turn. No lists, no ids.`,
     "First call get_negotiation_brief and say its `say` text word for word.",
     "Every time the vendor names a price or agrees to one, call record_vendor_offer once with that price per unit and the vendor's sentence as vendor_sentence (and freight or delivery days only if the vendor said them). Never call it twice for the same vendor sentence. Set is_final only if the vendor said the word final or last price. Then say the tool's `say` text word for word. That text holds the only price you may offer.",
-    "Never say any number that did not come from a tool. Never agree to a price on your own: only when record_vendor_offer returns action accept. When it returns accept or walk_away, say its text and then stay silent.",
+    "Never say any number that did not come from a tool. Never agree to a price, on your own or for the owner: only the owner can accept a rate. When record_vendor_offer returns accept or walk_away, say its text (it promises only to confirm with the owner) and then stay silent.",
     "If the vendor does not say a price, ask for their price per unit.",
   ].join("\n");
 }
@@ -696,6 +698,9 @@ function release(rt) {
   repo.updateSession(rt.businessId, rt.sessionId, { status: "ended", ended_at: new Date().toISOString() });
   runtimes.delete(rt.sessionId);
   if (rt.joinCode) joinCodes.delete(rt.joinCode);
+  // Its agents are stopped by now, so its global negotiation slot is free (the job's onSettled
+  // gives it back too, for a job that never got here; the release is idempotent).
+  rt.releaseSlot?.();
 }
 
 /**
@@ -795,6 +800,21 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   const open = strategy.openingOffer({ target: requirement.target_price ?? null, reservation, marketEvidence, tick });
   const business = repo.getBusiness(businessId);
 
+  // Global cap on negotiations at once, across all businesses (security review r1 #1); the slot
+  // is given back when the job ends in any way (jobs.startJob onSettled) or if it never starts.
+  const releaseSlot = limits.tryAcquire("negotiation");
+  if (!releaseSlot) throw new ToolError("BUSY", registry().phrase("busy", lang), { status: 503, message: "Too many negotiations are running." });
+  try {
+    return startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, policy }, releaseSlot);
+  } catch (err) {
+    releaseSlot();
+    throw err;
+  }
+}
+
+/** Create the session, negotiation row and runtime, and start the job that owns `releaseSlot`. */
+function startJobFor(o, releaseSlot) {
+  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, policy } = o;
   const channel = `neg-${crypto.randomBytes(6).toString("hex")}`;
   const session = repo.createSession(businessId, { kind: "negotiation", channel, status: "starting" });
   const negotiation = repo.createNegotiation(businessId, { requirement_id: requirementId, vendor_id: vendorId, session_id: session.id, counterpart });
@@ -827,6 +847,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     serverLines: new Set(),
     state: "open",
     agents: { negotiator: null, vendor: null },
+    releaseSlot,
   };
   if (counterpart === "human") {
     rt.joinCode = crypto.randomBytes(16).toString("base64url");
@@ -837,7 +858,9 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
 
   let jobId;
   try {
-    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart }, (job) => runNegotiation(rt, job));
+    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart }, (job) => runNegotiation(rt, job), {
+      onSettled: releaseSlot,
+    });
   } catch (err) {
     runtimes.delete(session.id);
     if (rt.joinCode) joinCodes.delete(rt.joinCode);
@@ -865,12 +888,37 @@ const NO_LISTED_PRICE = {
 
 /* --------------------------------------------------- human / listener --- */
 
-/** The join page asks for its token with the one-time code. Null when unknown or expired. */
-function humanJoinInfo(code) {
+/** The live entry for a join code, or null when unknown, expired or its negotiation has ended. */
+function liveJoinEntry(code) {
   const entry = joinCodes.get(String(code ?? ""));
-  if (!entry || entry.expiresAt < Date.now()) return null;
+  if (!entry || !(entry.expiresAt > Date.now())) return null;
   const rt = runtimes.get(entry.sessionId);
-  if (!rt) return null;
+  return rt ? { entry, rt } : null;
+}
+
+const sameSecret = (a, b) => {
+  const x = Buffer.from(String(a ?? ""));
+  const y = Buffer.from(String(b ?? ""));
+  return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
+};
+
+/**
+ * The join page asks for its RTC token with the one-time code. The token is issued once per
+ * code (security review r1 #9): the first answer also carries `renewKey`, and only a caller
+ * that presents it (the page that already joined) gets a renewed token. Null when the code is
+ * unknown, expired, already used without the key, or its negotiation has ended.
+ */
+function humanJoinInfo(code, { renewKey } = {}) {
+  const live = liveJoinEntry(code);
+  if (!live) return null;
+  const { entry, rt } = live;
+  let issuedKey;
+  if (!entry.renewKey) {
+    issuedKey = crypto.randomBytes(16).toString("base64url");
+    entry.renewKey = issuedKey;
+  } else if (!sameSecret(renewKey, entry.renewKey)) {
+    return null;
+  }
   const { token, expiresAt, appId } = buildRtcRtmToken(rt.channel, UIDS.human, SESSION_SECONDS);
   return {
     appId,
@@ -878,17 +926,18 @@ function humanJoinInfo(code) {
     uid: UIDS.human,
     token,
     expiresAt,
+    ...(issuedKey ? { renewKey: issuedKey } : {}),
     businessName: rt.business.name,
     item: rt.requirement.item,
     disclosure: buyerLine("disclosure", rt.language, { business: rt.business.name }),
   };
 }
 
-/** The human vendor has joined the channel: let the negotiator begin. */
+/** The human vendor has joined the channel: let the negotiator begin. Needs a live code whose token was issued. */
 async function humanJoined(code) {
-  const entry = joinCodes.get(String(code ?? ""));
-  const rt = entry && runtimes.get(entry.sessionId);
-  if (!rt) return false;
+  const live = liveJoinEntry(code);
+  if (!live || !live.entry.renewKey) return false;
+  const { rt } = live;
   if (!rt.humanJoinedAt) rt.humanJoinedAt = Date.now();
   await kickOff(rt);
   return true;

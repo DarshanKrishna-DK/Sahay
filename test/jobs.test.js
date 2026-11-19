@@ -237,3 +237,53 @@ test("jobs left unfinished by a previous process are marked failed at boot, live
   assert.equal(repo.getJob(businessId, liveJobId).status, "done");
   assert.equal(jobs.failInterruptedJobs(), 0);
 });
+
+test("onSettled runs exactly once however a job ends: done, failed, or cancelled before it began", async () => {
+  const businessId = seedBusiness();
+  const settledCount = () => {
+    const box = { n: 0 };
+    box.fn = () => {
+      box.n += 1;
+    };
+    return box;
+  };
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+  const done = settledCount();
+  const doneId = jobs.startJob(businessId, "sourcing", {}, async () => "ok", { onSettled: done.fn });
+  assert.equal(done.n, 0, "not before the job has ended");
+  await jobs.whenSettled(doneId);
+  await tick();
+  assert.equal(done.n, 1);
+
+  const failed = settledCount();
+  const failedId = jobs.startJob(businessId, "sourcing", {}, async () => {
+    throw new Error("IndiaMART did not answer");
+  }, { onSettled: failed.fn });
+  await jobs.whenSettled(failedId);
+  await tick();
+  assert.equal(failed.n, 1);
+  assert.equal(repo.getJob(businessId, failedId).status, "failed");
+
+  const cancelled = settledCount();
+  let ran = false;
+  const cancelledId = jobs.startJob(businessId, "sourcing", {}, async () => {
+    ran = true;
+  }, { onSettled: cancelled.fn });
+  jobs.cancelJob(businessId, cancelledId);
+  await jobs.whenSettled(cancelledId);
+  await tick();
+  assert.equal(ran, false);
+  assert.equal(cancelled.n, 1, "a slot taken for a job that never ran is still given back");
+
+  // A failing onSettled is reported, never thrown into the job machinery.
+  const boomId = jobs.startJob(businessId, "sourcing", {}, async () => "ok", {
+    onSettled: () => {
+      throw new Error("boom");
+    },
+  });
+  await jobs.whenSettled(boomId);
+  await tick();
+  assert.equal(repo.getJob(businessId, boomId).status, "done");
+  assert.throws(() => jobs.startJob(businessId, "sourcing", {}, async () => {}, { onSettled: "release" }), hasCode("INVALID_RUNNER"));
+});

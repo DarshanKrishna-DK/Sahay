@@ -33,14 +33,14 @@ const SIM = { "hi-IN": " (सिम्युलेटेड विक्रे�
 
 const TEXT = {
   payment_due: {
-    "hi-IN": (v) => `भुगतान बाकी है: ऑर्डर ${v.po}, ${v.amount} रुपये।`,
-    "kn-IN": (v) => `ಪಾವತಿ ಬಾಕಿ ಇದೆ: ಆರ್ಡರ್ ${v.po}, ${v.amount} ರೂಪಾಯಿ.`,
-    "en-IN": (v) => `Payment is due: order ${v.po}, ${v.amount} rupees.`,
+    "hi-IN": (v) => `भुगतान बाकी है: ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""}, ${v.amount} रुपये।`,
+    "kn-IN": (v) => `ಪಾವತಿ ಬಾಕಿ ಇದೆ: ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""}, ${v.amount} ರೂಪಾಯಿ.`,
+    "en-IN": (v) => `Payment is due: order ${v.po}${v.sim ? SIM["en-IN"] : ""}, ${v.amount} rupees.`,
   },
   delivery_check: {
-    "hi-IN": (v) => `ऑर्डर ${v.po} की डिलीवरी का समय हो गया है, क्या माल पहुँच गया?`,
-    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ಡೆಲಿವರಿ ಸಮಯ ಬಂದಿದೆ, ಸರಕು ತಲುಪಿದೆಯೇ?`,
-    "en-IN": (v) => `Order ${v.po} is due for delivery; has it arrived?`,
+    "hi-IN": (v) => `ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""} की डिलीवरी का समय हो गया है, क्या माल पहुँच गया?`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""} ಡೆಲಿವರಿ ಸಮಯ ಬಂದಿದೆ, ಸರಕು ತಲುಪಿದೆಯೇ?`,
+    "en-IN": (v) => `Order ${v.po}${v.sim ? SIM["en-IN"] : ""} is due for delivery; has it arrived?`,
   },
   order_confirmed: {
     "hi-IN": (v) => `ऑर्डर पक्का: ${v.po}, ${v.vendor}${v.sim ? SIM["hi-IN"] : ""}, ${v.amount} रुपये। खरीद आदेश साथ में है।`,
@@ -48,9 +48,9 @@ const TEXT = {
     "en-IN": (v) => `Order confirmed: ${v.po}, ${v.vendor}${v.sim ? SIM["en-IN"] : ""}, ${v.amount} rupees. The purchase order is attached.`,
   },
   payment_link: {
-    "hi-IN": (v) => `भुगतान लिंक (Razorpay टेस्ट मोड), ऑर्डर ${v.po}: ${v.url}`,
-    "kn-IN": (v) => `ಪಾವತಿ ಲಿಂಕ್ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್), ಆರ್ಡರ್ ${v.po}: ${v.url}`,
-    "en-IN": (v) => `Payment link (Razorpay test mode) for order ${v.po}: ${v.url}`,
+    "hi-IN": (v) => `भुगतान लिंक (Razorpay टेस्ट मोड), ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""}: ${v.url}`,
+    "kn-IN": (v) => `ಪಾವತಿ ಲಿಂಕ್ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್), ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""}: ${v.url}`,
+    "en-IN": (v) => `Payment link (Razorpay test mode) for order ${v.po}${v.sim ? SIM["en-IN"] : ""}: ${v.url}`,
   },
 };
 
@@ -87,7 +87,7 @@ function scheduleForOrder(businessId, orderId, { now = Date.now() } = {}) {
       order_id: order.id,
       kind: "payment_due",
       due_at: new Date(now + (demo ? demo * 1000 : PAYMENT_DUE_MS)).toISOString(),
-      message: text("payment_due", language, { po: order.po_number, amount: money(order.amount) }),
+      message: text("payment_due", language, { po: order.po_number, amount: money(order.amount), sim: Boolean(order.simulated) }),
     }),
   );
   if (quote?.lead_time_days != null) {
@@ -96,7 +96,7 @@ function scheduleForOrder(businessId, orderId, { now = Date.now() } = {}) {
         order_id: order.id,
         kind: "delivery_check",
         due_at: new Date(now + (demo ? 2 * demo * 1000 : quote.lead_time_days * DAY_MS)).toISOString(),
-        message: text("delivery_check", language, { po: order.po_number }),
+        message: text("delivery_check", language, { po: order.po_number, sim: Boolean(order.simulated) }),
       }),
     );
   }
@@ -150,12 +150,15 @@ async function onEvent(event) {
   if (event.type === "order.created" && d.orderId) {
     scheduleForOrder(event.businessId, d.orderId);
     const language = languageOf(event.businessId);
-    const message = text("order_confirmed", language, { po: d.poNumber, vendor: d.vendor ?? "", sim: Boolean(d.simulated), amount: money(d.amount) });
+    // The order row, not the event, says whether the vendor is simulated.
+    const sim = repo.isSimulated(event.businessId, { orderId: d.orderId });
+    const message = text("order_confirmed", language, { po: d.poNumber, vendor: d.vendor ?? "", sim, amount: money(d.amount) });
     const documentPath = await pdfPathOf(event.businessId, d.orderId);
     await notify(event.businessId, message, documentPath ? { documentPath } : {});
   } else if (event.type === "payment.link" && d.url) {
     const language = languageOf(event.businessId);
-    await notify(event.businessId, text("payment_link", language, { po: d.poNumber ?? "", url: d.url }));
+    const sim = repo.isSimulated(event.businessId, { orderId: d.orderId });
+    await notify(event.businessId, text("payment_link", language, { po: d.poNumber ?? "", url: d.url, sim }));
   }
 }
 

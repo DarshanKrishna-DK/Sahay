@@ -113,6 +113,18 @@ CREATE INDEX IF NOT EXISTS quotes_by_requirement ON quotes (business_id, require
 -- One quote per negotiation: ending a negotiation twice must not duplicate its quote.
 CREATE UNIQUE INDEX IF NOT EXISTS quotes_one_per_negotiation ON quotes (negotiation_id) WHERE negotiation_id IS NOT NULL;
 
+-- Who a quote is from, at what price and whether it is simulated never change after it is recorded.
+-- (negotiation_id may still become NULL through ON DELETE SET NULL.)
+CREATE TRIGGER IF NOT EXISTS quotes_deal_is_fixed
+BEFORE UPDATE OF simulated, vendor_id, unit_price, negotiation_id ON quotes
+WHEN NEW.simulated IS NOT OLD.simulated
+  OR NEW.vendor_id IS NOT OLD.vendor_id
+  OR NEW.unit_price IS NOT OLD.unit_price
+  OR (NEW.negotiation_id IS NOT OLD.negotiation_id AND NEW.negotiation_id IS NOT NULL)
+BEGIN
+  SELECT RAISE(ABORT, 'the vendor, price and simulated flag of a quote cannot be changed');
+END;
+
 CREATE TABLE IF NOT EXISTS approvals (
   id                 TEXT PRIMARY KEY,
   business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
@@ -150,6 +162,52 @@ CREATE TRIGGER IF NOT EXISTS approvals_deal_is_fixed
 BEFORE UPDATE OF business_id, quote_id, readback, total_amount ON approvals
 BEGIN
   SELECT RAISE(ABORT, 'the deal on an approval cannot be changed');
+END;
+
+-- One deal waits for the owner at a time, so a spoken yes can only be about the deal just read out.
+CREATE TRIGGER IF NOT EXISTS approvals_one_pending_per_business
+BEFORE INSERT ON approvals
+WHEN EXISTS (SELECT 1 FROM approvals a WHERE a.business_id = NEW.business_id AND a.status = 'pending')
+BEGIN
+  SELECT RAISE(ABORT, 'another approval of this business is still pending');
+END;
+
+-- Every time the server itself spoke an approval's read-back into a live call (agent /speak).
+-- Append-only. A spoken yes is evidence only for a read-back recorded here
+-- (security review r1 #2). A separate table, not columns on approvals: an existing
+-- database file gets it from CREATE TABLE IF NOT EXISTS without a migration.
+CREATE TABLE IF NOT EXISTS approval_readbacks (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  approval_id TEXT NOT NULL REFERENCES approvals(id) ON DELETE CASCADE,
+  agent_id    TEXT NOT NULL,
+  spoken_text TEXT NOT NULL,
+  spoken_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS approval_readbacks_by_approval ON approval_readbacks (business_id, approval_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS approval_readbacks_need_pending
+BEFORE INSERT ON approval_readbacks
+WHEN NOT EXISTS (
+  SELECT 1 FROM approvals a WHERE a.id = NEW.approval_id AND a.business_id = NEW.business_id AND a.status = 'pending'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'a read-back is recorded only for a pending approval of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS approval_readbacks_are_fixed
+BEFORE UPDATE ON approval_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded read-back cannot be changed');
+END;
+
+-- A voice approval needs a read-back the server spoke for that approval.
+CREATE TRIGGER IF NOT EXISTS approvals_voice_needs_spoken_readback
+BEFORE UPDATE OF status ON approvals
+WHEN NEW.status = 'approved' AND NEW.decided_via = 'voice'
+  AND NOT EXISTS (SELECT 1 FROM approval_readbacks r WHERE r.approval_id = NEW.id AND r.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a voice approval needs a read-back spoken by the server');
 END;
 
 CREATE TABLE IF NOT EXISTS orders (

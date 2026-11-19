@@ -15,16 +15,21 @@ Object.assign(process.env, {
   MURF_VOICE_KN: "kn-IN-harshitha",
   SARVAM_API_KEY: "test-sarvam-key",
   TELEGRAM_BOT_TOKEN: "123456:test-bot-token",
+  SAHAY_ACCESS_CODE: "", // the access code is tested in routes-guards.test.js
 });
 
 const assert = require("node:assert/strict");
-const { test } = require("node:test");
+const { test, beforeEach } = require("node:test");
 
 const { createApp } = require("../server");
 const agent = require("../src/agora/agent");
 const narrator = require("../src/agora/narrator");
 const repo = require("../src/db/repo");
 const events = require("../src/events");
+const limits = require("../src/limits");
+
+// Every test here signs up from 127.0.0.1; the per-IP limits are tested in routes-guards.test.js.
+beforeEach(() => limits.reset());
 
 async function withApp(run) {
   const server = await new Promise((resolve) => {

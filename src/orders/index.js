@@ -64,6 +64,7 @@ async function createOrder(businessId, approvalId, { sessionId = null } = {}) {
         approvalId,
         quoteId: created.quote_id,
         vendor: deal.vendorName,
+        simulated: Boolean(deal.simulated),
         amount: created.amount,
         currency: created.currency,
         status: created.status,

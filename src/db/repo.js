@@ -13,6 +13,7 @@
 
 const crypto = require("node:crypto");
 const db = require("./index");
+const { vendorText, QUOTED_SENTENCE_MAX } = require("./vendor-text");
 
 class RepoError extends Error {
   constructor(code, message) {
@@ -37,6 +38,7 @@ const SELECT = {
 
 const VENDOR_KIND_BY_SOURCE = { indiamart: "listed", simulated: "simulated", human: "human" };
 const SIMULATED_LABEL = "simulated vendor";
+
 
 const newId = (prefix) => `${prefix}_${crypto.randomBytes(10).toString("hex")}`;
 const now = () => new Date().toISOString();
@@ -301,7 +303,11 @@ function createVendor(businessId, fields) {
     source: fields.source,
     kind,
     ...pick(fields, VENDOR_FIELDS),
-    name: requireText(fields.name, "name"),
+    // Seller-controlled text: cleaned once here, so no prompt, line, PDF or message gets it raw.
+    name: requireText(vendorText(fields.name) ?? "", "name"),
+    city: vendorText(fields.city),
+    item_title: vendorText(fields.item_title),
+    listed_price_text: vendorText(fields.listed_price_text),
     score_breakdown: toJson(fields.score_breakdown),
     created_at: now(),
   });
@@ -393,8 +399,8 @@ function createQuote(businessId, fields) {
     moq: number(fields.moq, "moq"),
     lead_time_days: number(fields.lead_time_days, "lead_time_days", { integer: true }),
     freight: number(fields.freight, "freight"),
-    payment_terms: fields.payment_terms,
-    quoted_sentence: fields.quoted_sentence,
+    payment_terms: vendorText(fields.payment_terms),
+    quoted_sentence: vendorText(fields.quoted_sentence, QUOTED_SENTENCE_MAX),
     confidence: number(fields.confidence, "confidence"),
     simulated: vendor.simulated || negotiation?.simulated === true,
     landed_cost: number(fields.landed_cost, "landed_cost"),
@@ -463,6 +469,28 @@ function withdrawApproval(businessId, approvalId) {
       )
       .run(now(), tenant(businessId), approvalId).changes === 1
   );
+}
+
+/**
+ * Record that the server spoke this approval's read-back into the call of `agent_id`.
+ * Only for a pending approval of this business (DB trigger approval_readbacks_need_pending).
+ */
+function recordApprovalReadback(businessId, approvalId, { agent_id, spoken_text }) {
+  const id = newId("rbk");
+  insertRow("approval_readbacks", {
+    id,
+    business_id: tenant(businessId),
+    approval_id: requireText(approvalId, "approval_id"),
+    agent_id: requireText(agent_id, "agent_id"),
+    spoken_text: requireText(spoken_text, "spoken_text"),
+    spoken_at: now(),
+  });
+  return { ...db.prepare("SELECT * FROM approval_readbacks WHERE id = ?").get(id) };
+}
+
+/** Read-backs the server spoke for this business, oldest first; narrowed by approval or agent. */
+function listApprovalReadbacks(businessId, { approval_id, agent_id } = {}) {
+  return listRows("approval_readbacks", businessId, { approval_id, agent_id }, { orderBy: "t.spoken_at, t.id" });
 }
 
 /* -------------------------------------------------------------- orders --- */
@@ -665,6 +693,7 @@ module.exports = {
   createNegotiation, getNegotiation, listNegotiations, appendNegotiationTurn, updateNegotiation,
   createQuote, getQuote, listQuotes, setQuoteLandedCost,
   createApproval, getApproval, listApprovals, decideApproval, withdrawApproval,
+  recordApprovalReadback, listApprovalReadbacks,
   createOrderFromApproval, getOrder, getOrderDocument, listOrders, updateOrder, transitionOrder,
   createFollowup, getFollowup, listFollowups, settleFollowup,
   appendAudit, listAudit,

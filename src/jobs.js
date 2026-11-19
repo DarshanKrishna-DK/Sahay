@@ -28,16 +28,26 @@ const running = new Map();
  * `runner(ctx)` receives `{ jobId, businessId, input, progress(message, data), signal }`.
  * It should watch `signal` (or call `progress`, which throws once the job is cancelled)
  * and return a JSON-serialisable result.
+ * `onSettled()`, when given, runs exactly once when the job has ended in any way, including
+ * a cancel before the runner began (used to give back a limits.tryAcquire slot).
  */
-function startJob(businessId, kind, input, runner) {
+function startJob(businessId, kind, input, runner, { onSettled } = {}) {
   if (!KINDS.includes(kind)) throw new JobError("INVALID_KIND", `A job is one of: ${KINDS.join(", ")}.`);
   if (typeof runner !== "function") throw new JobError("INVALID_RUNNER", "A job needs a runner function.");
+  if (onSettled !== undefined && typeof onSettled !== "function") throw new JobError("INVALID_RUNNER", "onSettled must be a function.");
 
   const job = repo.createJob(businessId, { kind, requirement_id: input?.requirementId });
   const controller = new AbortController();
   const settled = new Promise((resolve) => setImmediate(() => resolve(run(job, input, runner, controller))));
   running.set(job.id, { controller, settled });
-  settled.finally(() => running.delete(job.id));
+  settled.finally(() => {
+    running.delete(job.id);
+    try {
+      onSettled?.();
+    } catch (err) {
+      console.error(`[jobs] onSettled failed for ${job.id}: ${err.message}`);
+    }
+  });
   return job.id;
 }
 

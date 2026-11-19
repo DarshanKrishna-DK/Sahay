@@ -1,0 +1,147 @@
+"use strict";
+
+// server.js: Content-Security-Policy + Subresource Integrity (security review r1 #11),
+// ending sessions a crashed process left open (#12) and the listen host (#14).
+
+Object.assign(process.env, {
+  DB_FILE: ":memory:",
+  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
+  PUBLIC_URL: "https://sahay.test",
+  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
+  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
+  AGORA_CUSTOMER_ID: "test-customer",
+  AGORA_CUSTOMER_SECRET: "test-customer-secret",
+  TELEGRAM_BOT_TOKEN: "",
+  SAHAY_ACCESS_CODE: "",
+});
+
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const { test } = require("node:test");
+
+const server = require("../server");
+const repo = require("../src/db/repo");
+const { loadConfig } = require("../src/config");
+const { VENDOR_PAGE } = require("../src/routes/api");
+
+const PUBLIC = path.join(__dirname, "..", "public");
+const indexHtml = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
+const voiceJs = fs.readFileSync(path.join(PUBLIC, "js", "voice.js"), "utf8");
+
+async function withApp(run) {
+  const s = await new Promise((resolve) => {
+    const x = server.createApp().listen(0, "127.0.0.1", () => resolve(x));
+  });
+  try {
+    await run(`http://127.0.0.1:${s.address().port}`);
+  } finally {
+    await new Promise((resolve) => s.close(resolve));
+  }
+}
+
+function directives(csp) {
+  return Object.fromEntries(csp.split(";").map((d) => d.trim()).filter(Boolean).map((d) => {
+    const [name, ...values] = d.split(/\s+/);
+    return [name, values];
+  }));
+}
+
+test("every page answer carries a CSP: self, the pinned CDN files, no inline script except hashed ones", async () => {
+  await withApp(async (base) => {
+    for (const p of ["/", "/js/app.js", "/vendor/somecode", "/healthz"]) {
+      const res = await fetch(base + p);
+      const csp = res.headers.get("content-security-policy");
+      assert.ok(csp, `CSP on ${p}`);
+      const d = directives(csp);
+      assert.deepEqual(d["default-src"], ["'self'"]);
+      assert.ok(!d["script-src"].includes("'unsafe-inline'"), "no inline script");
+      assert.ok(!d["script-src"].includes("'unsafe-eval'"), "no eval");
+      assert.ok(!d["script-src"].some((s) => s === "https:" || s.endsWith("*")), "no wildcard script origins");
+      assert.deepEqual(d["object-src"], ["'none'"]);
+      assert.deepEqual(d["frame-ancestors"], ["'none'"]);
+      assert.deepEqual(d["base-uri"], ["'none'"]);
+    }
+  });
+});
+
+test("SRI: every CDN script the console and the vendor page load is pinned, integrity-checked and allowed by script-src", async () => {
+  const csp = directives(server.contentSecurityPolicy());
+  const scriptSrc = csp["script-src"];
+
+  // Dynamically injected UMD bundles in voice.js carry their own integrity.
+  const injected = [...voiceJs.matchAll(/src:\s*"(https:[^"]+)",\s*integrity:\s*"(sha384-[A-Za-z0-9+/=]+)"/g)];
+  assert.equal(injected.length, 2, "RTC and RTM bundles");
+  assert.match(voiceJs, /crossOrigin = "anonymous"/);
+  assert.match(voiceJs, /\.integrity = /);
+
+  // The toolkit ES module is checked through the import map's integrity section.
+  const map = /<script type="importmap">([\s\S]*?)<\/script>/.exec(indexHtml);
+  assert.ok(map, "index.html has an import map");
+  const integrity = JSON.parse(map[1]).integrity;
+  const toolkit = /const TOOLKIT_URL = "([^"]+)"/.exec(voiceJs)[1];
+  assert.match(integrity[toolkit], /^sha384-/);
+
+  // The vendor page loads the same RTC bundle with the same hash.
+  const vendorTag = /<script src="(https:[^"]+)" integrity="(sha384-[^"]+)" crossorigin="anonymous"><\/script>/.exec(VENDOR_PAGE);
+  assert.ok(vendorTag, "vendor page RTC tag has SRI");
+  assert.deepEqual([vendorTag[1], vendorTag[2]], [injected[0][1], injected[0][2]]);
+  assert.doesNotMatch(VENDOR_PAGE, /<script>/, "no inline script on the vendor page");
+
+  for (const url of [...injected.map((m) => m[1]), toolkit, vendorTag[1]]) {
+    assert.match(url, /@\d+\.\d+\.\d+\//, `${url} is an exact version`);
+    assert.ok(scriptSrc.includes(url), `script-src allows exactly ${url}`);
+  }
+  // Every https script URL anywhere in public/ is one of those.
+  const all = new Set([...(indexHtml + voiceJs).matchAll(/https:\/\/[^"'\s)]+\.m?js\b/g)].map((m) => m[0]));
+  for (const url of all) assert.ok(scriptSrc.includes(url), `${url} is allowed by script-src`);
+});
+
+test("the only inline script in index.html is the import map, allowed by its sha256 hash", () => {
+  const inline = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
+  assert.equal(inline.length, 1);
+  assert.match(inline[0][1], /type="importmap"/);
+  const hash = `'sha256-${crypto.createHash("sha256").update(inline[0][2]).digest("base64")}'`;
+  assert.ok(directives(server.contentSecurityPolicy())["script-src"].includes(hash));
+  assert.deepEqual(server.inlineScriptHashes("<script>a\r\nb</script>"), server.inlineScriptHashes("<script>a\nb</script>"), "CRLF hashed as the HTML parser sees it");
+});
+
+test("boot ends every session a previous process left open, and returns their agents to stop", () => {
+  const biz = repo.createBusiness(repo.newId("biz"), { name: "Crash Shop", language: "en-IN" });
+  const active = repo.createSession(biz.id, { kind: "owner", channel: "own-a", status: "connecting" });
+  repo.updateSession(biz.id, active.id, { status: "active", agent_id: "AG-ACTIVE" });
+  const connecting = repo.createSession(biz.id, { kind: "owner", channel: "own-b", status: "connecting" });
+  const negotiating = repo.createSession(biz.id, { kind: "negotiation", channel: "neg-c", status: "starting" });
+  repo.updateSession(biz.id, negotiating.id, { agent_id: "AG-NEG" });
+  const done = repo.createSession(biz.id, { kind: "owner", channel: "own-d", status: "connecting" });
+  repo.updateSession(biz.id, done.id, { status: "ended", ended_at: "2026-01-01T00:00:00.000Z", agent_id: "AG-OLD" });
+
+  const out = server.endStaleSessions("2026-11-19T00:00:00.000Z");
+  assert.equal(out.ended, 3);
+  assert.deepEqual(out.agentIds.sort(), ["AG-ACTIVE", "AG-NEG"]);
+  for (const s of [active, connecting, negotiating]) {
+    const row = repo.getSession(biz.id, s.id);
+    assert.equal(row.status, "ended");
+    assert.equal(row.ended_at, "2026-11-19T00:00:00.000Z");
+  }
+  assert.equal(repo.getSession(biz.id, done.id).ended_at, "2026-01-01T00:00:00.000Z", "already ended rows untouched");
+  assert.deepEqual(server.endStaleSessions(), { ended: 0, agentIds: [] });
+});
+
+test("the MCP bearer of a session ended at boot is refused", () => {
+  const auth = require("../src/auth");
+  const { resolveContext } = require("../src/mcp-server");
+  const biz = repo.createBusiness(repo.newId("biz"), { name: "Bearer Shop", language: "en-IN" });
+  const s = repo.createSession(biz.id, { kind: "owner", channel: "own-x", status: "connecting" });
+  repo.updateSession(biz.id, s.id, { status: "active", agent_id: "AGX" });
+  const bearer = auth.signSession({ businessId: biz.id, sessionId: s.id, scope: "mcp", exp: Math.floor(Date.now() / 1000) + 3600 });
+  assert.ok(resolveContext(`Bearer ${bearer}`));
+  server.endStaleSessions();
+  assert.equal(resolveContext(`Bearer ${bearer}`), null);
+});
+
+test("HOST: loopback by default, configurable for a host that needs 0.0.0.0", () => {
+  assert.equal(loadConfig({}).host, "127.0.0.1");
+  assert.equal(loadConfig({ HOST: "0.0.0.0" }).host, "0.0.0.0");
+});

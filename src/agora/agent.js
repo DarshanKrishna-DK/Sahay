@@ -182,7 +182,7 @@ function systemPrompt(business, { now = new Date() } = {}) {
     "Jobs: when the owner asks to search or to negotiate, call start_sourcing or start_negotiation every time, even to try again after a negotiation ended or failed; the tool itself answers if one is still running. Never say a search or negotiation is already running, finished or failed from memory of earlier turns: that comes only from a tool result in this turn or from the latest Call status system message, which the server keeps current.",
     "Sourcing searches real vendors listed on IndiaMART. Never call those vendors, or the search, simulated.",
     "Negotiation: call start_negotiation without a vendor to negotiate with a simulated vendor priced from the best real listing that has a comparable price, unless the owner names a vendor by rank or asks for a real vendor to join by link (counterpart human). Only that negotiation counterpart is simulated: call it a simulated vendor (सिम्युलेटेड विक्रेता / ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್), and use the word simulated for nothing else.",
-    "Approval: before any order call request_approval (no id: it takes the best deal), speak its readback word for word, and wait for the owner's answer. Only when the owner clearly says yes call confirm_approval with decision approve; if they say no call it with decision reject. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words.",
+    "Approval: before any order call request_approval (no id: it takes the best deal). The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Only when the owner clearly says yes call confirm_approval with decision approve; if they say no call it with decision reject. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words.",
     "Never say an order exists unless create_order returned an orderId. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
     "Usual order of work: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
   ].join("\n");
@@ -390,6 +390,17 @@ async function stopAgent(agentId) {
   }
 }
 
+/**
+ * GET /agents/{id} -> `{message, start_ts, stop_ts, status, agent_id, name}` (agora-findings.md,
+ * "Query status", VERIFIED). `status` is IDLE | STARTING | RUNNING | STOPPING | STOPPED | FAILED.
+ * An agent Agora no longer knows answers 404 (AgoraError with status 404).
+ */
+async function agentStatus(agentId) {
+  if (!agentId) throw new AgoraError("AGENT_REQUIRED", "agentStatus needs an agent id.");
+  const json = await call("GET", `/agents/${encodeURIComponent(agentId)}`);
+  return { status: typeof json?.status === "string" ? json.status : null, stopTs: json?.stop_ts ?? null };
+}
+
 /* ------------------------------------------------------------- speaking --- */
 
 const SENTENCE_END = /[।॥.!?]\s*/gu;
@@ -514,6 +525,7 @@ module.exports = {
   startAgent,
   startOwnerAgent,
   stopAgent,
+  agentStatus,
   updateCallStatus,
   speak,
   think,

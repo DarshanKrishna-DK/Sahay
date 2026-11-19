@@ -86,9 +86,9 @@ const LINES = {
     "en-IN": (v) => `No deal with ${v.vendor}${v.sim ? SIM["en-IN"] : ""}.`,
   },
   order_created: {
-    "hi-IN": (v) => `ऑर्डर बन गया, खरीद आदेश नंबर ${v.po}।`,
-    "kn-IN": (v) => `ಆರ್ಡರ್ ಆಗಿದೆ, ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ${v.po}.`,
-    "en-IN": (v) => `The order is placed, purchase order ${v.po}.`,
+    "hi-IN": (v) => `ऑर्डर बन गया${v.sim ? SIM["hi-IN"] : ""}, खरीद आदेश नंबर ${v.po}।`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ಆಗಿದೆ${v.sim ? SIM["kn-IN"] : ""}, ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ${v.po}.`,
+    "en-IN": (v) => `The order is placed${v.sim ? SIM["en-IN"] : ""}, purchase order ${v.po}.`,
   },
   payment_link: {
     "hi-IN": () => "भुगतान का टेस्ट लिंक बन गया है, स्क्रीन पर है।",
@@ -152,16 +152,21 @@ function pump(state) {
 
 /* ----------------------------------------------------------- call status --- */
 
-/** English for the model, not for speech: what is running and how the last jobs ended. */
+/**
+ * English for the model, not for speech: what is running and how the last jobs ended.
+ * These become a SYSTEM message, so they carry only server-made words and numbers: never a
+ * vendor's name or listing title, which a seller controls (security review r1 #5). The model
+ * gets names from tool results (get_shortlist, get_ranked_deals) when it needs them.
+ */
 const STATUS = {
   sourcingRunning: () => "A vendor search is running now; its result will be announced to the owner automatically.",
   sourcingDone: (v) =>
-    `The vendor search has finished: ${v.count} vendors found${v.name ? `; the best is ${v.name}${v.price ? ` at ${v.price} rupees per ${v.unit}` : ""}` : ""}. No search is running now.`,
+    `The vendor search has finished: ${v.count} vendors found${v.price ? `; the best-ranked vendor with a comparable price lists ${v.price} rupees per ${v.unit} (get_shortlist has the names)` : ""}. No search is running now.`,
   sourcingFailed: () => "The last vendor search failed. No search is running now; if the owner asks to search again, call start_sourcing.",
   negotiationRunning: () =>
     "A negotiation is running now; its result will be announced to the owner automatically. If the owner asks to negotiate before it ends, call start_negotiation anyway: it will say one is running.",
   negotiationEnded: (v) =>
-    `The negotiation with ${v.vendor}${v.sim ? " (simulated vendor)" : ""} has ended ${v.price ? `with a deal, agreed at ${v.price} rupees per ${v.unit}; get_ranked_deals has the quote` : "with no deal"}. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.`,
+    `The negotiation with ${v.sim ? "the simulated vendor" : "the vendor"} has ended ${v.price ? `with a quote of ${v.price} rupees per ${v.unit}, which the owner has not approved; get_ranked_deals has it` : "with no deal"}. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.`,
   negotiationFailed: () => "The last negotiation stopped before a result. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.",
 };
 
@@ -240,7 +245,7 @@ function onEvent(event) {
       state.vendorBatches.set(requirementId, "spoken");
       state.queue = state.queue.filter((item) => item.key !== `vendors:${requirementId}`);
       const price = top.comparablePrice != null ? money(top.comparablePrice) : null;
-      setStatus(state, "sourcing", STATUS.sourcingDone({ count: result.count, name: top.name, price, unit: unitWord(result.unit, "en-IN") }));
+      setStatus(state, "sourcing", STATUS.sourcingDone({ count: result.count, price: top.comparablePrice != null ? price : null, unit: unitWord(result.unit, "en-IN") }));
       const type = `sourcing.done:${requirementId}`;
       later(state, holdLeft(state, d.jobId), () => {
         // get_job_status or get_shortlist already said this result: say it once.
@@ -259,7 +264,6 @@ function onEvent(event) {
       const unit = o.unit ? unitWord(o.unit, lang) : o.unitWord ?? "";
       const vars = { vendor: o.vendorName ?? "", sim: Boolean(d.simulated || o.simulated), price: o.unitPrice != null ? money(o.unitPrice) : null, unit };
       setStatus(state, "negotiation", STATUS.negotiationEnded({
-        vendor: vars.vendor || "the vendor",
         sim: vars.sim,
         price: o.agreed ? vars.price : null,
         unit: o.unit ? unitWord(o.unit, "en-IN") : "unit",
@@ -269,7 +273,7 @@ function onEvent(event) {
     }
     case "order.created":
       if (isSuppressed(event.businessId, "order.created")) return;
-      enqueue(state, `order:${d.orderId}`, line("order_created", lang, { po: d.poNumber ?? d.po_number }));
+      enqueue(state, `order:${d.orderId}`, line("order_created", lang, { po: d.poNumber ?? d.po_number, sim: Boolean(d.simulated) }));
       return;
     case "payment.link":
       if (isSuppressed(event.businessId, "payment.link")) return;

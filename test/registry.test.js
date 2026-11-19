@@ -271,34 +271,71 @@ test("create_order is refused without an approved approval (the gate, negative)"
   assert.equal(repo.listOrders(businessId).length, 0);
 });
 
-test("confirm_approval by voice needs the owner's own clear yes from /history, newer than the question", async (t) => {
+/**
+ * A fake live call at the Agora REST boundary: /speak lines are kept and show up in /history
+ * as server lines (source "command", one item per request, in turn order), and the test says
+ * what the owner answers with `call.owner(words)`.
+ */
+function fakeCall(t, { failSpeak = false } = {}) {
+  const call = { spoken: [], speakBodies: [], historyReads: 0, items: [], turn: 0 };
+  call.owner = (content) => call.items.push({ role: "user", content, metadata: { source: "asr" }, turn_id: ++call.turn });
+  fakeAgora(t, (url, init) => {
+    if (/\/speak$/.test(url)) {
+      if (failSpeak) return { status: 503, json: { reason: "busy" } };
+      const body = JSON.parse(init.body);
+      call.speakBodies.push(body);
+      call.spoken.push(body.text);
+      call.items.push({ role: "assistant", content: body.text, metadata: { source: "command" }, turn_id: ++call.turn });
+      return { json: { agent_id: "AG" } };
+    }
+    if (/\/history$/.test(url)) {
+      call.historyReads += 1;
+      return { json: { contents: call.items.slice() } };
+    }
+    throw new Error(`unexpected Agora call ${url}`);
+  });
+  return call;
+}
+
+test("in a call, request_approval speaks the read-back itself (APPEND, not interruptable) and the model only asks", async (t) => {
   const businessId = seedBusiness("hi-IN");
   const ctx = ownerCtx(businessId, { agentId: "AGV" });
   const { quote } = seedQuote(businessId);
+  const call = fakeCall(t);
+
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
-  assert.equal(asked.say, asked.readback);
-  assert.match(asked.readback, /3250 रुपये/);
+  assert.equal(asked.say, "क्या मैं ऑर्डर कर दूँ?");
+  assert.equal(asked.readbackSpoken, true);
+  assert.equal(asked.readback, undefined, "the model gets no figures to re-read");
+  assert.equal(call.spoken.join(" "), repo.getApproval(businessId, asked.approvalId).readback);
+  assert.match(call.spoken.join(" "), /कुल 3250 रुपये/);
+  for (const body of call.speakBodies) assert.equal(body.interruptable, false);
+  assert.equal(call.speakBodies[0].priority, "APPEND");
+  assert.deepEqual(repo.listApprovalReadbacks(businessId).map((r) => [r.approval_id, r.agent_id]), [[asked.approvalId, "AGV"]]);
 
-  let lastUser = { content: "शायद, सोचता हूँ", ts: Date.now() + 1000 };
-  fakeAgora(t, (url) => {
-    assert.match(url, /\/agents\/AGV\/history$/);
-    return {
-      json: {
-        contents: [
-          { role: "assistant", content: asked.readback, metadata: { source: "llm" }, timestamp: Date.now() },
-          { role: "user", content: lastUser.content, metadata: { source: "asr" }, timestamp: lastUser.ts },
-        ],
-      },
-    };
-  });
+  assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN" })).say, "Shall I place the order?");
+  assert.match(call.spoken.at(-1), /^Order from Lakshmi Traders: .* Total 3250 rupees\./, "spoken again, in the owner's language");
+});
 
+test("confirm_approval by voice approves on a clear yes to the read-back the server spoke, and never on anything else", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGV" });
+  const { quote } = seedQuote(businessId);
+  const call = fakeCall(t);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+
+  call.owner("शायद, सोचता हूँ");
   await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "NOT_AFFIRMATIVE");
-  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending", "a maybe leaves it pending");
+  call.owner("हा हा");
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), "NOT_AFFIRMATIVE");
+  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending", "a maybe or a laugh leaves it pending");
 
   // The model claims "approve" without any agent: refused.
   await expectToolError(registry.callTool({ ...ctx, agentId: null }, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "NO_VOICE_EVIDENCE");
+  // Another call's agent never spoke this read-back.
+  await expectToolError(registry.callTool({ ...ctx, agentId: "AGX" }, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "READBACK_NOT_SPOKEN");
 
-  lastUser = { content: "हाँ जी, कर दो", ts: Date.now() + 1000 };
+  call.owner("हाँ जी, कर दो");
   const ok = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
   assert.equal(ok.status, "approved");
   assert.equal(ok.say, "आपकी मंज़ूरी दर्ज हो गई।");
@@ -308,22 +345,46 @@ test("confirm_approval by voice needs the owner's own clear yes from /history, n
   await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "ALREADY_DECIDED");
 });
 
-test("an old yes (said before the approval was asked) does not count", async (t) => {
+test("review #2: a yes said before the read-back, or with no read-back spoken, does not count", async (t) => {
   const businessId = seedBusiness("en-IN");
   const ctx = ownerCtx(businessId, { agentId: "AGO" });
   const { quote } = seedQuote(businessId);
+  const call = fakeCall(t);
+  call.owner("yes");
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
-  fakeAgora(t, () => ({ json: { contents: [{ role: "user", content: "yes", metadata: { source: "asr" }, timestamp: Date.parse("2020-01-01T00:00:00Z") }] } }));
-  await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "NO_VOICE_EVIDENCE");
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "NO_ANSWER_YET");
+  assert.equal(call.historyReads, 3, "the answer may lag in /history, so it is looked for again before refusing");
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
+
+  // An approval put up without a call (no agent): its read-back was never spoken, so no yes counts.
+  const quiet = seedBusiness("en-IN");
+  const quietQuote = seedQuote(quiet).quote;
+  const offCall = await registry.callTool(ownerCtx(quiet), "request_approval", { quoteId: quietQuote.id });
+  assert.match(offCall.say, /^Order from Lakshmi Traders/, "without a call the read-back is the model's to say");
+  call.owner("yes");
+  await expectToolError(registry.callTool(ownerCtx(quiet, { agentId: "AGO" }), "confirm_approval", { decision: "approve" }), "READBACK_NOT_SPOKEN");
+});
+
+test("when the server cannot speak the read-back the approval waits for the button, and a spoken yes cannot approve it", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGF" });
+  const { quote } = seedQuote(businessId);
+  fakeCall(t, { failSpeak: true });
+  await expectToolError(registry.callTool(ctx, "request_approval", { quoteId: quote.id }), "READBACK_NOT_SPOKEN");
+  const [pending] = repo.listApprovals(businessId, { status: "pending" });
+  assert.ok(pending, "the approval is still on screen for the button");
+  assert.deepEqual(repo.listApprovalReadbacks(businessId), []);
+  approvals.confirmApproval(businessId, pending.id, { decision: "approve", via: "button" });
+  assert.equal(repo.getApproval(businessId, pending.id).status, "approved");
 });
 
 test("approved deal -> create_order -> create_payment_link (Razorpay test, faked at the network)", async (t) => {
   const businessId = seedBusiness("en-IN");
   const ctx = ownerCtx(businessId, { agentId: "AGP" });
   const { quote } = seedQuote(businessId);
+  const call = fakeCall(t);
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
-  fakeAgora(t, () => ({ json: { contents: [{ role: "user", content: "yes, go ahead", metadata: { source: "asr" }, timestamp: Date.now() + 1000 }] } }));
+  call.owner("yes, go ahead");
   await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
 
   const order = await registry.callTool(ctx, "create_order", { approvalId: asked.approvalId });
@@ -530,10 +591,10 @@ test("request_approval's readback follows reply_language; the stored readback st
   assert.match(repo.getApproval(businessId, asked.approvalId).readback, /कुल 3250 रुपये/);
 });
 
-test("money defaults never pick between several: confirm_approval and create_order refuse with the choices", async (t) => {
+test("money defaults never pick between several; one deal waits at a time, so a spoken yes is about the deal just read", async (t) => {
   const businessId = seedBusiness("hi-IN");
   const ctx = ownerCtx(businessId, { agentId: "AGD" });
-  fakeAgora(t, () => ({ json: { contents: [{ role: "user", content: "हाँ", metadata: { source: "asr" }, timestamp: Date.now() + 1000 }] } }));
+  const call = fakeCall(t);
 
   // nothing waiting
   await expectToolError(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), "NO_PENDING_APPROVAL");
@@ -545,21 +606,21 @@ test("money defaults never pick between several: confirm_approval and create_ord
   // one pending: create_order hands it to the gate, which refuses (not approved yet)
   await expectToolError(registry.callTool(ctx, "create_order", {}), "NOT_APPROVED");
   const second = await registry.callTool(ctx, "request_approval", { quoteId: b.quote.id });
+  assert.equal(repo.getApproval(businessId, first.approvalId).status, "rejected", "putting up B withdrew A");
+  assert.deepEqual(repo.listApprovals(businessId, { status: "pending" }).map((x) => x.id), [second.approvalId]);
 
-  await assert.rejects(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), (err) => {
-    assert.equal(err.code, "AMBIGUOUS");
-    assert.equal(err.say, "2 विकल्प हैं: Lakshmi Traders 3250 रुपये, Lakshmi Traders 3250 रुपये; कौन सा?");
-    return true;
-  });
-  assert.equal(repo.listApprovals(businessId, { status: "pending" }).length, 2, "nothing decided on an ambiguous default");
+  call.owner("हाँ");
+  const yes = await registry.callTool(ctx, "confirm_approval", { decision: "approve" });
+  assert.equal(yes.approvalId, second.approvalId, "the yes approves the deal that was read out last");
+  assert.equal(repo.getApproval(businessId, first.approvalId).status, "rejected");
 
-  approvals.confirmApproval(businessId, first.approvalId, { decision: "approve", via: "button" });
-  approvals.confirmApproval(businessId, second.approvalId, { decision: "approve", via: "button" });
+  const third = await registry.callTool(ctx, "request_approval", { quoteId: a.quote.id });
+  approvals.confirmApproval(businessId, third.approvalId, { decision: "approve", via: "button" });
   await expectToolError(registry.callTool(ctx, "create_order", {}), "AMBIGUOUS");
   assert.equal(repo.listOrders(businessId).length, 0, "no order from an ambiguous default");
 
   // with the id it goes through the gate as before
-  const order = await registry.callTool(ctx, "create_order", { approvalId: first.approvalId });
+  const order = await registry.callTool(ctx, "create_order", { approvalId: third.approvalId });
   assert.match(order.poNumber, /^SAHAY\//);
   // now exactly one approved remains: the default takes it, through the same gate
   const next = await registry.callTool(ctx, "create_order", {});
@@ -748,4 +809,53 @@ test("E2E r2 bug 5: English and Kannada say lines never carry the Devanagari ite
   assert.match(shirts.say, /^Noted: 500 .* of the requested item for Bengaluru\.$/);
   const kn = await registry.callTool(ctx, "save_requirement", { quantity: 400, reply_language: "kn-IN" });
   assert.doesNotMatch(kn.say, /\p{Script=Devanagari}/u);
+});
+
+/* --------------------------------------------- security review r1 #1, #10 --- */
+
+test("review #1: vendor searches share a global cap; a full cap is refused politely and the slot comes back when the search ends", async (t) => {
+  const limits = require("../src/limits");
+  limits.reset();
+  t.after(() => limits.reset());
+  stubFetch(t, async () => new Response("not found", { status: 404 }));
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const saved = await registry.callTool(ctx, "save_requirement", { item: "basmati rice", quantity: 100, unit: "kg", city: "Bengaluru" });
+
+  const held = [];
+  for (let release = limits.tryAcquire("sourcing"); release; release = limits.tryAcquire("sourcing")) held.push(release);
+  await assert.rejects(registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId }), (err) => {
+    assert.equal(err.code, "BUSY");
+    assert.equal(err.say, "A lot of people are using Sahay right now; please try again in a little while.");
+    return true;
+  });
+  await assert.rejects(registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId, reply_language: "hi-IN" }), (err) => err.say === "अभी बहुत लोग इस्तेमाल कर रहे हैं, थोड़ी देर बाद कोशिश कीजिए।");
+  assert.deepEqual(repo.listJobs(businessId), [], "no job was started");
+
+  held.pop()();
+  const out = await registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId });
+  await jobs.whenSettled(out.jobId);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(repo.getJob(businessId, out.jobId).status, "failed", "IndiaMART answered 404: the search fails honestly");
+  assert.equal(limits.usage().sourcing.inUse, held.length, "the failed search gave its slot back");
+  for (const release of held) release();
+});
+
+test("review #10: the spoken 'order placed' line names a simulated vendor as such", async () => {
+  for (const [language, expected] of [
+    ["en-IN", /^The order is placed with a simulated vendor, purchase order number SAHAY\//],
+    ["hi-IN", /^ऑर्डर बन गया \(सिम्युलेटेड विक्रेता\), खरीद आदेश नंबर SAHAY\//],
+    ["kn-IN", /^ಆರ್ಡರ್ ಆಗಿದೆ \(ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್\), ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ SAHAY\//],
+  ]) {
+    const businessId = seedBusiness(language);
+    const ctx = ownerCtx(businessId);
+    const { quote } = seedQuote(businessId, { counterpart: "simulated" });
+    const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+    approvals.confirmApproval(businessId, asked.approvalId, { decision: "approve", via: "button" });
+    const order = await registry.callTool(ctx, "create_order", {});
+    assert.match(order.say, expected, language);
+  }
+  // The narrator's line for an order placed outside a tool call carries the label too.
+  assert.equal(narrator.LINES.order_created["en-IN"]({ po: "SAHAY/2026/0001", sim: true }), "The order is placed (simulated vendor), purchase order SAHAY/2026/0001.");
+  assert.equal(narrator.LINES.order_created["hi-IN"]({ po: "SAHAY/2026/0001", sim: false }), "ऑर्डर बन गया, खरीद आदेश नंबर SAHAY/2026/0001।");
 });

@@ -171,7 +171,7 @@ function setCount(id, n) {
 const state = {
   boot: "loading", // loading | onboarding | ready | error
   bootError: null,
-  onboard: { busy: false, error: null, fieldErrors: {} },
+  onboard: { busy: false, error: null, fieldErrors: {}, accessCodeRequired: false },
   business: null,
   stream: "connecting",
   requirement: null,
@@ -609,7 +609,7 @@ function applyEvent(evt, { live = true } = {}) {
         state.voiceServer = type === "session.started" ? { channel: pick(d, "channel"), active: true } : null;
         // Closed from another tab or by the server while this tab still holds the call. A tab that
         // pressed End itself is already "ending" or "idle" here, so endedByServer ignores it.
-        if (live && type === "session.ended") call.endedByServer(pick(d, "channel"));
+        if (live && type === "session.ended") call.endedByServer(pick(d, "channel"), pick(d, "reason"));
         invalidate("call");
       }
       break;
@@ -725,7 +725,8 @@ RENDERERS.onboarding = () => {
   if (!onboarding) return;
 
   const ob = state.onboard;
-  const fields = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-language" };
+  $("ob-access").hidden = !ob.accessCodeRequired;
+  const fields = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-language", accessCode: "ob-code" };
   for (const [key, id] of Object.entries(fields)) {
     const msg = ob.fieldErrors[key] || "";
     const err = $(`${id}-error`);
@@ -1597,6 +1598,11 @@ const listener = new NegotiationListener(({ negotiationId, status, error, speake
 /* ================================================================== onboarding */
 
 const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
+// Same rule as the server (src/routes/api.js nameText): letters and marks of any script,
+// digits, space, . , & ' - ( ), and ZWNJ/ZWJ; at least one letter or digit.
+const NAME_MAX = 80;
+const NAME_RULE = "Use letters, numbers, spaces and . , & ' - ( ) only.";
+const isNameText = (v) => /^[\p{L}\p{M}\p{N} .,&'()\p{Join_Control}-]+$/u.test(v) && /[\p{L}\p{N}]/u.test(v);
 
 function readOnboarding() {
   const form = $("onboard-form");
@@ -1610,11 +1616,18 @@ function readOnboarding() {
   };
   const errors = {};
   if (!details.name) errors.name = "Enter your business name.";
-  else if (details.name.length > 120) errors.name = "Keep the business name under 120 characters.";
-  if (details.ownerName.length > 120) errors.ownerName = "Keep your name under 120 characters.";
+  else if (details.name.length > NAME_MAX) errors.name = `Keep the business name under ${NAME_MAX} characters.`;
+  else if (!isNameText(details.name)) errors.name = NAME_RULE;
+  if (details.ownerName.length > NAME_MAX) errors.ownerName = `Keep your name under ${NAME_MAX} characters.`;
+  else if (details.ownerName && !isNameText(details.ownerName)) errors.ownerName = NAME_RULE;
   if (!details.city) errors.city = "Enter the city your business is in.";
-  else if (details.city.length > 80) errors.city = "Keep the city under 80 characters.";
+  else if (details.city.length > NAME_MAX) errors.city = `Keep the city under ${NAME_MAX} characters.`;
+  else if (!isNameText(details.city)) errors.city = NAME_RULE;
   if (!LANGUAGES.includes(details.language)) errors.language = "Choose the language Sahay should speak on calls.";
+  if (state.onboard.accessCodeRequired) {
+    details.accessCode = $("ob-code").value.trim();
+    if (!details.accessCode) errors.accessCode = "Enter the access code for this Sahay server.";
+  }
   if (!details.ownerName) delete details.ownerName;
   return { details, errors };
 }
@@ -1628,7 +1641,7 @@ $("onboard-form").addEventListener("submit", async (e) => {
   const first = Object.keys(errors)[0];
   if (first) {
     invalidate("onboarding");
-    const focusId = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-lang-hi" }[first];
+    const focusId = { name: "ob-name", ownerName: "ob-owner", city: "ob-city", language: "ob-lang-hi", accessCode: "ob-code" }[first];
     requestAnimationFrame(() => $(focusId).focus());
     return;
   }
@@ -1639,17 +1652,25 @@ $("onboard-form").addEventListener("submit", async (e) => {
     session = await api.openSession(details);
   } catch (err) {
     state.onboard.busy = false;
+    if (err.code === "ACCESS_CODE_REQUIRED") {
+      // The server needs a code even if /api/config could not be read: show the field.
+      state.onboard.accessCodeRequired = true;
+      state.onboard.fieldErrors = { accessCode: err.message || "Enter the access code for this Sahay server." };
+      invalidate("onboarding");
+      requestAnimationFrame(() => $("ob-code").focus());
+      return;
+    }
     state.onboard.error = err.message || "The server did not answer.";
     invalidate("onboarding");
     return;
   }
-  state.onboard = { busy: false, error: null, fieldErrors: {} };
+  state.onboard = { busy: false, error: null, fieldErrors: {}, accessCodeRequired: false };
   await boot({ session });
 });
 
 // Clear a field's error as soon as the owner edits it.
 $("onboard-form").addEventListener("input", (e) => {
-  const key = { "ob-name": "name", "ob-owner": "ownerName", "ob-city": "city" }[e.target.id] || (e.target.name === "language" ? "language" : null);
+  const key = { "ob-name": "name", "ob-owner": "ownerName", "ob-city": "city", "ob-code": "accessCode" }[e.target.id] || (e.target.name === "language" ? "language" : null);
   if (key && state.onboard.fieldErrors[key]) {
     delete state.onboard.fieldErrors[key];
     invalidate("onboarding");
@@ -1679,6 +1700,11 @@ async function boot({ session } = {}) {
           s = await api.openSession();
         } catch (err) {
           if (err.code === "BUSINESS_DETAILS_REQUIRED") {
+            // Ask for the access code only when this server needs one; if this check fails the
+            // form still works and the server's ACCESS_CODE_REQUIRED answer reveals the field.
+            try {
+              state.onboard.accessCodeRequired = Boolean((await api.getConfig()).accessCodeRequired);
+            } catch { /* see above */ }
             state.boot = "onboarding";
             state.stream = "closed";
             invalidateAll();

@@ -220,6 +220,9 @@ test("simulated vendor: an early 'final', a misheard price and a repeated tool c
   said(history, "user", "ठीक है, पचपन रुपये किलो में दे देंगे।");
   const accept = await record({ price_per_unit: 55, vendor_sentence: "ok 55" });
   assert.deepEqual([accept.action, accept.price, accept.round], ["accept", 55, 4]);
+  // review #3: the negotiator never accepts a rate for the owner; it promises to confirm with them.
+  assert.equal(accept.say, "ठीक है, 55 रुपये प्रति किलो पर मैं मालिक से पक्का करके ऑर्डर भेजूँगी, धन्यवाद।");
+  assert.doesNotMatch(accept.say, /बात पक्की|मंज़ूर/);
   said(history, "assistant", accept.say);
   await jobs.whenSettled(started.jobId);
 
@@ -266,11 +269,19 @@ async function humanRun(t, { terms }) {
   assert.match(started.joinUrl, /^https:\/\/sahay\.test\/vendor\/[A-Za-z0-9_-]+$/);
   const code = started.joinUrl.split("/").pop();
 
+  assert.equal(await session.humanJoined(code), false, "no one has taken the link's token yet");
   const info = session.humanJoinInfo(code);
   assert.equal(info.uid, session.UIDS.human);
   assert.match(info.token, /^007/);
   assert.match(info.disclosure, /स्वचालित सहायक/);
   assert.equal(session.humanJoinInfo("wrong-code"), null);
+  // review #9: the token is issued once per code; only the page that took it can renew it.
+  assert.equal(typeof info.renewKey, "string");
+  assert.equal(session.humanJoinInfo(code), null, "a second visitor with the same link gets nothing");
+  assert.equal(session.humanJoinInfo(code, { renewKey: "guess" }), null);
+  const renewed = session.humanJoinInfo(code, { renewKey: info.renewKey });
+  assert.match(renewed.token, /^007/);
+  assert.equal(renewed.renewKey, undefined, "the renew key is handed out once");
 
   await until(() => repo.listSessions(businessId, { kind: "negotiation" })[0]?.agent_id);
   const negSession = repo.listSessions(businessId, { kind: "negotiation" })[0];
@@ -331,4 +342,25 @@ test("human run: a failed terms read does not lose the agreed deal", async (t) =
   assert.equal(quote.unit_price, 55);
   assert.equal(quote.freight, null);
   assert.ok(repo.getJob(businessId, jobId).progress.some((p) => /optional terms could not be read/.test(p.message)));
+});
+
+test("review #9: an expired join link neither issues nor renews a token, and does not start the negotiator", async (t) => {
+  const calls = fakeAgora(t);
+  const { businessId, requirement, vendor } = seed({ language: "en-IN", listedPrice: 65, maxPrice: 70 });
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "human", language: "en-IN" });
+  const code = started.joinUrl.split("/").pop();
+  const info = session.humanJoinInfo(code);
+  assert.ok(info.renewKey);
+
+  const realNow = Date.now;
+  Date.now = () => realNow() + 16 * 60 * 1000; // the link lives 15 minutes
+  try {
+    assert.equal(session.humanJoinInfo(code, { renewKey: info.renewKey }), null);
+    assert.equal(await session.humanJoined(code), false);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.ok(!calls.some((c) => c.url.endsWith("/think")), "the negotiator was not told to begin");
+  jobs.cancelJob(businessId, started.jobId);
+  await jobs.whenSettled(started.jobId);
 });

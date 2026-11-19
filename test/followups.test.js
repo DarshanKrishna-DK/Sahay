@@ -32,12 +32,12 @@ function fakeTelegram(t) {
 }
 
 /** A real order through the approval gate: 50 kg rice at 62/kg + 150 freight, 3 days lead time. */
-async function seedOrder({ language = "hi-IN", leadTime = 3 } = {}) {
+async function seedOrder({ language = "hi-IN", leadTime = 3, simulated = false } = {}) {
   const businessId = repo.newId("biz");
   repo.createBusiness(businessId, { name: "Asha Kirana", city: "Bengaluru", language });
   const need = repo.createRequirement(businessId, { item: "basmati rice", quantity: 50, unit: "kg" });
   const vendor = repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name: "Lakshmi Traders" });
-  const negotiation = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: vendor.id, counterpart: "human" });
+  const negotiation = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: vendor.id, counterpart: simulated ? "simulated" : "human" });
   const quote = repo.createQuote(businessId, {
     requirement_id: need.id, vendor_id: vendor.id, negotiation_id: negotiation.id,
     unit_price: 62, unit: "kg", lead_time_days: leadTime, freight: 150, landed_cost: 3250,
@@ -127,4 +127,26 @@ test("a failing Telegram send becomes an error event, never a crash", async (t) 
   stop();
   assert.equal(errors.length, 1);
   assert.equal(errors[0].scope, "telegram");
+});
+
+test("review #10: every follow-up and Telegram message about a simulated vendor's order says so", async (t) => {
+  const sent = fakeTelegram(t);
+  for (const [language, label] of [["en-IN", "(simulated vendor)"], ["hi-IN", "(सिम्युलेटेड विक्रेता)"], ["kn-IN", "(ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್)"]]) {
+    const { businessId, order } = await seedOrder({ language, simulated: true });
+    assert.equal(order.simulated, true);
+    repo.setTelegramLink(businessId, `chat-${language}`);
+    const rows = followups.scheduleForOrder(businessId, order.id);
+    assert.deepEqual(rows.map((r) => r.kind), ["payment_due", "delivery_check"]);
+    for (const row of rows) assert.ok(row.message.includes(label), `${language} ${row.kind}: ${row.message}`);
+
+    // The label comes from the order itself, not from what the event claims.
+    await followups.onEvent({ businessId, type: "order.created", data: { orderId: order.id, poNumber: order.po_number, vendor: "Lakshmi Traders", amount: 3100, simulated: false } });
+    await followups.onEvent({ businessId, type: "payment.link", data: { orderId: order.id, poNumber: order.po_number, url: "https://rzp.io/i/sim" } });
+    const texts = sent.filter((s) => s.body.chat_id === `chat-${language}` && s.method === "sendMessage").map((s) => s.body.text);
+    assert.equal(texts.length, 2);
+    for (const text of texts) assert.ok(text.includes(label), `${language}: ${text}`);
+  }
+  // A real vendor's order carries no such label.
+  const real = await seedOrder({ language: "en-IN" });
+  assert.ok(followups.scheduleForOrder(real.businessId, real.order.id).every((row) => !/simulated/.test(row.message)));
 });

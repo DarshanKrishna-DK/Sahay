@@ -31,6 +31,8 @@ const SIMULATED_NOTICE =
   "The prices and terms on this purchase order came from a simulated vendor (an automated stand-in used for " +
   "demonstration), not from a real supplier. It is not an offer or commitment by any business named here.";
 
+const UNVERIFIED_HEADING = "UNVERIFIED VENDOR STATEMENTS (NOT READ BACK TO OR APPROVED BY THE BUYER)";
+
 const QUOTE_SOURCE = {
   human: "Quote given by a person who joined the negotiation by invite link.",
   phone: "Quote given on a phone call.",
@@ -114,13 +116,15 @@ function poModel({ order, business, vendor, quote, requirement, negotiation, app
     freight: quote.freight == null ? "Not quoted - not included" : money(quote.freight),
     total: money(order.amount),
     terms: present([
-      quote.payment_terms && `Payment: ${quote.payment_terms}`,
       quote.lead_time_days != null && `Lead time: ${quote.lead_time_days} ${quote.lead_time_days === 1 ? "day" : "days"}`,
       requirement.delivery_by && `Needed by: ${requirement.delivery_by}`,
       requirement.city && `Deliver to: ${requirement.city}`,
       quote.moq != null && `Vendor minimum order: ${plain(quote.moq)} ${quote.unit}`,
       quote.quoted_sentence && `As quoted: "${quote.quoted_sentence}"`,
     ]),
+    // Free text from the vendor that was never read back to the owner, so it is not an agreed
+    // term: printed apart and labelled as such (security review r1 #6).
+    unverified: present([quote.payment_terms && `Payment terms: "${quote.payment_terms}"`]),
     approval:
       `Approved by the buyer on ${dateInIndia(approval.decided_at)} by ${approval.decided_via === "voice" ? "spoken confirmation" : "button"} ` +
       `(approval ${approval.id}). Prepared by Sahay, an automated procurement assistant.`,
@@ -212,6 +216,12 @@ function draw(doc, model) {
   put("AGREED TERMS", { size: 8.5, color: MUTED, x: MARGIN, y: doc.y, width });
   if (model.terms.length) for (const term of model.terms) put(`\u2022 ${term}`, { size: 10, width });
   else put("No further terms were recorded.", { size: 10, color: MUTED, width });
+
+  if (model.unverified.length) {
+    doc.moveDown(1);
+    put(UNVERIFIED_HEADING, { size: 8.5, color: MUTED, width });
+    for (const statement of model.unverified) put(`• ${statement}`, { size: 9.5, color: MUTED, width });
+  }
 
   doc.moveDown(2);
   put(model.approval, { size: 8, color: MUTED, width });

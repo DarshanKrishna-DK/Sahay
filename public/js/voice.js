@@ -4,22 +4,34 @@
 // API names checked against the pinned bundles: AgoraRTC_N-4.24.3.js, agora-rtm@2.2.3,
 // agora-agent-client-toolkit@2.10.0 dist/index.mjs.
 //
-// Script order in index.html: RTC UMD, then RTM UMD (its wrapper reads globalThis.AgoraRTC),
-// then the app module. The toolkit is an ES module imported lazily from the CDN below; it has
-// no static imports, and enableAgoraMetrics stays off so no bare-specifier import is triggered.
+// Load order: RTC UMD, then RTM UMD (its wrapper reads globalThis.AgoraRTC), both injected
+// below with Subresource Integrity. The toolkit is an ES module imported lazily from the CDN
+// below; its hash is pinned in the import map in index.html. It has no static imports, and
+// enableAgoraMetrics stays off so no bare-specifier import is triggered. Every URL here must
+// also be listed in the server's Content-Security-Policy (server.js CDN_SCRIPTS).
 
 import * as api from "./api.js";
 
 const TOOLKIT_URL = "https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs";
 const AGENT_JOIN_TIMEOUT_MS = 20000;
 
-const RTC_URL = "https://download.agora.io/sdk/release/AgoraRTC_N-4.24.3.js";
-const RTM_URL = "https://cdn.jsdelivr.net/npm/agora-rtm@2.2.3/agora-rtm.js";
+// RTC from jsDelivr: byte-identical to download.agora.io/sdk/release/AgoraRTC_N-4.24.3.js, which
+// sends no CORS header and so cannot be integrity-checked. Hashes: sha384 of the exact files.
+const RTC_SDK = {
+  src: "https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.3/AgoraRTC_N-production.js",
+  integrity: "sha384-nw2NeZrSeNHx9ARgmXyDt/wyJfls4Wyt8YHR+4Rts9Fpqjucz+B+Qf5kxkxfXCJm",
+};
+const RTM_SDK = {
+  src: "https://cdn.jsdelivr.net/npm/agora-rtm@2.2.3/agora-rtm.js",
+  integrity: "sha384-XRsjslUkF99Q7yPB3/0D6CkP9sm+fb53Zbkb/Qmn2FRKBzANHJygt1okh1/MK63i",
+};
 
-function injectScript(src) {
+function injectScript({ src, integrity }) {
   return new Promise((resolve, reject) => {
     const el = document.createElement("script");
     el.src = src;
+    el.integrity = integrity;
+    el.crossOrigin = "anonymous";
     el.async = false;
     el.onload = () => resolve();
     el.onerror = () => { el.remove(); reject(new Error(`failed to load ${src}`)); };
@@ -32,8 +44,8 @@ let sdkPromise = null;
 export function preloadSdks() {
   if (!sdkPromise) {
     sdkPromise = (async () => {
-      if (!window.AgoraRTC) await injectScript(RTC_URL);
-      if (!window.AgoraRTM) await injectScript(RTM_URL);
+      if (!window.AgoraRTC) await injectScript(RTC_SDK);
+      if (!window.AgoraRTM) await injectScript(RTM_SDK);
       loadToolkit().catch(() => {}); // warm the module cache; start() reports failures
     })().catch((err) => { sdkPromise = null; throw err; });
   }
@@ -503,10 +515,14 @@ export class VoiceCall {
    * from another tab, or the server stopped it). Only a connected call reacts; a call still
    * starting reports its own error from start().
    */
-  endedByServer(channel) {
+  endedByServer(channel, reason) {
     if (!this.session || channel !== this.session.channel) return;
     if (!["live", "waiting", "reconnecting"].includes(this.status) || this.serverStarting) return;
-    this.end({ note: "The call was closed on the server.", unexpected: true });
+    const note = {
+      max_duration: "The call reached its time limit. Start a new call to continue.",
+      agent_left: "Sahay left the call.",
+    }[reason] || "The call was closed on the server.";
+    this.end({ note, unexpected: true });
   }
 
   // Order from TK App.tsx:1085-1133: release the mic first so it frees even if the

@@ -73,6 +73,11 @@ export function openSession(details) {
   return request("POST", "/api/session", details || {});
 }
 
+/** GET /api/config -> { accessCodeRequired }: whether creating a business needs an access code. */
+export function getConfig() {
+  return request("GET", "/api/config");
+}
+
 /** GET /api/state: business, requirement(s), jobs, vendors, negotiations, quotes, deals, approvals, orders, followups, audit, voice, telegramLinked. */
 export function getState() {
   return request("GET", "/api/state");

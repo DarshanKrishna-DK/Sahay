@@ -10,15 +10,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Sans+Kannada:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/css/console.css">
-  <!-- agora-agent-client-toolkit 2.10.0 dist/index.mjs reads process.env.NODE_ENV unguarded;
-       this classic script must run before any module (verified in spike S0). -->
-  <script>window.process = window.process || { env: { NODE_ENV: "production" } };</script>
-  <script>
-    // Apply a saved theme before first paint. Storage may be blocked; the page works without it.
-    try { var t = localStorage.getItem("sahay-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
-  </script>
-  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins) are injected in order by
-       js/voice.js right after first paint, so the console renders without waiting for 3 MB. -->
+  <!-- process shim for the Agora toolkit and the saved theme, before first paint. -->
+  <script src="/js/boot.js"></script>
+  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins with SRI) are injected in order by
+       js/voice.js right after first paint, so the console renders without waiting for 3 MB.
+       The toolkit ES module is imported lazily; this import map pins its hash (Subresource
+       Integrity for import()). The server's CSP allows this one inline script by its sha256. -->
+  <script type="importmap">{"integrity":{"https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs":"sha384-gKgVIScrXAEj86/qjyYoJrj3lHYPHGhY8vgYBXrlaVhRO95WE68kC6xQW4YN3U+f"}}</script>
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -62,12 +60,13 @@
     <form id="onboard-form" novalidate>
       <div class="field">
         <label for="ob-name">Business name</label>
-        <input id="ob-name" name="name" type="text" autocomplete="organization" maxlength="120" required aria-describedby="ob-name-error">
+        <input id="ob-name" name="name" type="text" autocomplete="organization" maxlength="80" required aria-describedby="ob-name-hint ob-name-error">
+        <p class="field-hint" id="ob-name-hint">Letters, numbers, spaces and . , &amp; ' - ( ) only.</p>
         <p class="field-error" id="ob-name-error" hidden></p>
       </div>
       <div class="field">
         <label for="ob-owner">Your name <span class="optional">(optional)</span></label>
-        <input id="ob-owner" name="ownerName" type="text" autocomplete="name" maxlength="120" aria-describedby="ob-owner-error">
+        <input id="ob-owner" name="ownerName" type="text" autocomplete="name" maxlength="80" aria-describedby="ob-owner-error">
         <p class="field-error" id="ob-owner-error" hidden></p>
       </div>
       <div class="field">
@@ -85,6 +84,13 @@
         </div>
         <p class="field-error" id="ob-language-error" hidden></p>
       </fieldset>
+      <!-- Shown only when GET /api/config says this server needs an access code. -->
+      <div class="field" id="ob-access" hidden>
+        <label for="ob-code">Access code</label>
+        <p class="field-hint" id="ob-code-hint">This Sahay server is invite only. Enter the code you were given.</p>
+        <input id="ob-code" name="accessCode" type="password" autocomplete="off" maxlength="256" aria-describedby="ob-code-hint ob-code-error">
+        <p class="field-error" id="ob-code-error" hidden></p>
+      </div>
       <div class="notice error" id="ob-form-error" role="alert" hidden></div>
       <button class="btn btn-primary btn-wide" id="ob-submit" type="submit">Continue</button>
     </form>

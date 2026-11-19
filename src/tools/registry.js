@@ -21,6 +21,7 @@
  */
 
 const repo = require("../db/repo");
+const { vendorText } = require("../db/vendor-text");
 const events = require("../events");
 const jobs = require("../jobs");
 const approvals = require("../approvals");
@@ -39,6 +40,20 @@ const SHORTLIST_SIZE = 5;
 const DISCOVERY_LIMIT = 10;
 const HISTORY_ATTEMPTS = 3;
 const HISTORY_RETRY_MS = 600;
+/** Voice evidence that may simply not be in /history yet: looked for again. */
+const VOICE_RETRY = new Set(["NO_ANSWER_YET", "READBACK_NOT_HEARD"]);
+/** Gate refusals of a spoken decision -> what the owner hears (src/tools/errors.js SAY keys). */
+const VOICE_EVIDENCE_SAY = {
+  READBACK_NOT_SPOKEN: "no_voice_evidence",
+  READBACK_NOT_HEARD: "no_voice_evidence",
+  NO_ANSWER_YET: "not_affirmative",
+  EVIDENCE_UNORDERED: "no_voice_evidence",
+  ANSWER_DURING_READBACK: "not_affirmative",
+  READBACK_SUPERSEDED: "not_affirmative",
+  EVIDENCE_REQUIRED: "no_voice_evidence",
+  NOT_AFFIRMATIVE: "not_affirmative",
+  NOT_NEGATIVE: "not_affirmative",
+};
 
 /* -------------------------------------------------------------- speech --- */
 
@@ -241,6 +256,21 @@ const PHRASES = {
     "kn-IN": () => "ಕೊಟೇಶನ್‌ಗಳು ಬಂದಿವೆ, ಆದರೆ ಹೋಲಿಸಲು ಆಗುವುದಿಲ್ಲ; ಕಾರಣಗಳು ಪರದೆಯ ಮೇಲಿವೆ.",
     "en-IN": () => "There are quotes, but they cannot be compared; the reasons are on the screen.",
   },
+  busy: {
+    "hi-IN": () => "अभी बहुत लोग इस्तेमाल कर रहे हैं, थोड़ी देर बाद कोशिश कीजिए।",
+    "kn-IN": () => "ಈಗ ತುಂಬಾ ಜನ ಬಳಸುತ್ತಿದ್ದಾರೆ, ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.",
+    "en-IN": () => "A lot of people are using Sahay right now; please try again in a little while.",
+  },
+  approval_question: {
+    "hi-IN": () => "क्या मैं ऑर्डर कर दूँ?",
+    "kn-IN": () => "ಆರ್ಡರ್ ಮಾಡಲೇ?",
+    "en-IN": () => "Shall I place the order?",
+  },
+  readback_not_spoken: {
+    "hi-IN": () => "मैं सौदे का ब्योरा पढ़कर नहीं सुना पाई; ब्योरा स्क्रीन पर है, वहीं मंज़ूरी का बटन दबाइए।",
+    "kn-IN": () => "ವ್ಯವಹಾರದ ವಿವರ ಓದಿ ಹೇಳಲು ಆಗಲಿಲ್ಲ; ವಿವರ ಪರದೆಯ ಮೇಲಿದೆ, ಅಲ್ಲಿ ಒಪ್ಪಿಗೆ ಬಟನ್ ಒತ್ತಿ.",
+    "en-IN": () => "I could not read the deal out to you; it is on the screen, please use the approve button there.",
+  },
   approval_approved: {
     "hi-IN": () => "आपकी मंज़ूरी दर्ज हो गई।",
     "kn-IN": () => "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ದಾಖಲಾಯಿತು.",
@@ -252,9 +282,9 @@ const PHRASES = {
     "en-IN": () => "All right, this deal is not approved.",
   },
   order_created: {
-    "hi-IN": (v) => `ऑर्डर बन गया, खरीद आदेश नंबर ${v.po}।`,
-    "kn-IN": (v) => `ಆರ್ಡರ್ ಆಗಿದೆ, ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ${v.po}.`,
-    "en-IN": (v) => `The order is placed, purchase order number ${v.po}.`,
+    "hi-IN": (v) => `ऑर्डर बन गया${v.sim ? ` (${SIM_LABEL["hi-IN"]})` : ""}, खरीद आदेश नंबर ${v.po}।`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ಆಗಿದೆ${v.sim ? ` (${SIM_LABEL["kn-IN"]})` : ""}, ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ${v.po}.`,
+    "en-IN": (v) => `The order is placed${v.sim ? ` with a ${SIM_LABEL["en-IN"]}` : ""}, purchase order number ${v.po}.`,
   },
   payment_link: {
     "hi-IN": () => "भुगतान का टेस्ट लिंक बन गया है, स्क्रीन पर दिख रहा है।",
@@ -510,7 +540,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /* ----------------------------------------------------- sourcing runner --- */
 
 /** Identity of a listing, so a re-run does not store the same seller twice. */
-const listingKey = (v) => (v.glusr_id ? `g:${v.glusr_id}` : `n:${String(v.name).toLowerCase()}|${v.phone ?? ""}`);
+/** Stored rows have the cleaned name (db/vendor-text.js), so a fresh listing is keyed the same way. */
+const listingKey = (v) => (v.glusr_id ? `g:${v.glusr_id}` : `n:${String(vendorText(v.name)).toLowerCase()}|${v.phone ?? ""}`);
 
 /**
  * The sourcing job: IndiaMART listings (findVendors resolves the category slug
@@ -709,9 +740,18 @@ const TOOLS = [
       }
       const active = repo.listJobs(ctx.businessId, { requirement_id: requirement.id, kind: "sourcing" }).find((j) => j.status === "queued" || j.status === "running");
       if (active) return { jobId: active.id, already: true, say: phrase("sourcing_already", language) };
-      repo.updateRequirement(ctx.businessId, requirement.id, { status: "sourcing" });
-      require("../agora/narrator").suppress(ctx.businessId, "job.started");
-      const jobId = jobs.startJob(ctx.businessId, "sourcing", { requirementId: requirement.id }, runSourcing);
+      // Global cap on searches running at once, across all businesses (security review r1 #1).
+      const release = require("../limits").tryAcquire("sourcing");
+      if (!release) throw new ToolError("BUSY", phrase("busy", language), { status: 503, message: "Too many vendor searches are running." });
+      let jobId;
+      try {
+        repo.updateRequirement(ctx.businessId, requirement.id, { status: "sourcing" });
+        require("../agora/narrator").suppress(ctx.businessId, "job.started");
+        jobId = jobs.startJob(ctx.businessId, "sourcing", { requirementId: requirement.id }, runSourcing, { onSettled: release });
+      } catch (err) {
+        release();
+        throw err;
+      }
       return { jobId, requirementId: requirement.id, say: phrase("sourcing_started", language, { item }) };
     },
   },
@@ -869,7 +909,7 @@ const TOOLS = [
     name: "request_approval",
     scopes: OWNER,
     description:
-      "Asks the owner to approve one deal; without quoteId, the best-ranked deal of the current requirement. Returns readback: speak it word for word, then wait for a yes or no.",
+      "Asks the owner to approve one deal; without quoteId, the best-ranked deal of the current requirement. In a call the server reads the deal out to the owner itself; you then say only `say` (a short question) and wait for a yes or no. Never repeat or paraphrase the figures.",
     inputSchema: ownerObj({ quoteId: idArg("quote", "the best-ranked deal"), requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
       const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
@@ -879,51 +919,68 @@ const TOOLS = [
       const requirement = repo.getRequirement(ctx.businessId, repo.getQuote(ctx.businessId, quoteId)?.requirement_id);
       const item = requirement ? spokenItem(ctx.businessId, requirement, language) : deal.item;
       const readback = approvals.buildReadback({ ...deal, item }, READBACK_LANGUAGE[language]);
-      return { approvalId: approval.id, quoteId, status: approval.status, readback, totalAmount: approval.total_amount, say: readback };
+      const result = { approvalId: approval.id, quoteId, status: approval.status, totalAmount: approval.total_amount };
+      // No call (or the deal is already approved): nothing can be answered by voice, so the model may read it out.
+      if (!ctx.agentId || approval.status !== "pending") return { ...result, readback, say: readback };
+
+      // In a call the server speaks the read-back itself, so the yes it later accepts answers exactly
+      // these words (security review r1 #2). The model only asks the question.
+      const agent = require("../agora/agent");
+      try {
+        await agent.speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
+      } catch (err) {
+        throw new ToolError("READBACK_NOT_SPOKEN", phrase("readback_not_spoken", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
+      }
+      approvals.recordReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
+      return { ...result, readbackSpoken: true, say: phrase("approval_question", language) };
     },
   },
   {
     name: "confirm_approval",
     scopes: OWNER,
     description:
-      "Records the owner's spoken decision on the approval that is waiting (approvalId only if several are). The server reads the owner's own last words from the call and approves only on a clear yes.",
+      "Records the owner's spoken decision on the deal that is waiting (only one waits at a time). The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out.",
     inputSchema: ownerObj({ approvalId: idArg("approval", "the one approval waiting"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
     async handler(ctx, args, language) {
       let approval;
       if (args.approvalId) approval = requireRow(repo.getApproval(ctx.businessId, args.approvalId), language);
       else {
-        const pending = repo.listApprovals(ctx.businessId, { status: "pending" });
-        if (!pending.length) throw new ToolError("NO_PENDING_APPROVAL", phrase("no_pending_approval", language), { status: 409 });
-        if (pending.length > 1) throw ambiguous(language, pending.map((a) => approvalChoice(ctx.businessId, a, language)));
-        approval = pending[0];
+        // At most one pending approval per business (approvals.requestApproval + DB trigger).
+        approval = repo.listApprovals(ctx.businessId, { status: "pending" })[0];
+        if (!approval) throw new ToolError("NO_PENDING_APPROVAL", phrase("no_pending_approval", language), { status: 409 });
       }
       if (approval.status !== "pending") throw new ToolError("ALREADY_DECIDED", sayFor("already_decided", language), { details: { status: approval.status } });
       if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", sayFor("no_voice_evidence", language), { status: 409 });
 
+      // The gate reads the owner's answer from this call's /history itself and ties it to the
+      // read-back the server spoke (approvals.answerToReadback). /history can lag the transcript
+      // by about 0.5 s, so an answer not there yet is looked for again.
       const agent = require("../agora/agent");
-      let heard = null;
-      for (let attempt = 1; attempt <= HISTORY_ATTEMPTS; attempt++) {
-        heard = agent.lastUserUtterance(await agent.history(ctx.agentId));
-        // The answer must be newer than the question; /history can lag the transcript by about 0.5 s.
-        if (heard && (!heard.at || heard.at >= approval.requested_at)) break;
-        heard = null;
-        if (attempt < HISTORY_ATTEMPTS) await sleep(HISTORY_RETRY_MS);
+      let decided;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          decided = approvals.confirmApproval(ctx.businessId, approval.id, {
+            decision: args.decision,
+            via: "voice",
+            agentId: ctx.agentId,
+            history: await agent.history(ctx.agentId),
+            sessionId: ctx.sessionId ?? null,
+          });
+          break;
+        } catch (err) {
+          if (VOICE_RETRY.has(err?.code) && attempt < HISTORY_ATTEMPTS) {
+            await sleep(HISTORY_RETRY_MS);
+            continue;
+          }
+          const say = VOICE_EVIDENCE_SAY[err?.code];
+          if (say) throw new ToolError(err.code, sayFor(say, language), { status: 409, message: err.message, cause: err });
+          throw err;
+        }
       }
-      if (!heard) throw new ToolError("NO_VOICE_EVIDENCE", sayFor("not_affirmative", language), { status: 409 });
-      if (args.decision === "approve" && !approvals.isAffirmative(heard.text)) {
-        throw new ToolError("NOT_AFFIRMATIVE", sayFor("not_affirmative", language), { details: { heard: heard.text } });
-      }
-      const decided = approvals.confirmApproval(ctx.businessId, approval.id, {
-        decision: args.decision,
-        via: "voice",
-        evidenceUtterance: heard.text,
-        evidenceAt: heard.at,
-        sessionId: ctx.sessionId ?? null,
-      });
       return {
         approvalId: decided.id,
         status: decided.status,
-        evidenceUtterance: heard.text,
+        evidenceUtterance: decided.evidence_utterance,
         say: phrase(decided.status === "approved" ? "approval_approved" : "approval_rejected", language),
       };
     },
@@ -952,7 +1009,7 @@ const TOOLS = [
         amount: order.amount,
         pdfUrl: `/api/orders/${encodeURIComponent(order.id)}/po.pdf`,
         poIssued: true,
-        say: phrase("order_created", language, { po: order.po_number }),
+        say: phrase("order_created", language, { po: order.po_number, sim: Boolean(order.simulated) }),
       };
     },
   },
