@@ -5,8 +5,10 @@
  *
  * ASR sometimes delivers a fragment ("मुझे पांच") and the model fills in the rest from earlier
  * context ("5 kg basmati rice"). save_requirement checks the figures the model passes against
- * the owner's own last turns: Agora /history ASR turns in a call (approvals.isOwnerAsr), else
- * the `owner_words` the model copied. The check is deliberately simple and lenient on wording:
+ * the owner's own last turns: Agora /history owner turns in a call (spoken: source "asr", or typed
+ * in the console: source "message"), else the `owner_words` the model copied. A typed turn is good
+ * evidence of WHAT the owner wants; it is never consent (approvals, rules and the usual quantity
+ * read only ASR turns, approvals.isOwnerAsr). The check is deliberately simple and lenient on wording:
  * - a quantity needs a number in those turns: its exact digits (any script), or number words;
  * - a unit the model sets needs one of its spellings in the same turn as that number;
  * - an item needs one of its words in the turns, in its own script or via the trade-word table.
@@ -123,10 +125,16 @@ function notHeard(turns, { item, quantity, unit } = {}) {
   return missing;
 }
 
-/** The owner's last `n` ASR turns from an Agora /history `contents` array, oldest first. */
+/** Owner turns that can say what to buy: spoken (asr) or typed (message), per agora-findings "Typed owner message". */
+const OWNER_SOURCES = new Set(["asr", "message"]);
+const isOwnerTurn = (item) => item?.role === "user" && OWNER_SOURCES.has(item?.metadata?.source) && typeof item.content === "string" && item.content.trim() !== "";
+
+/**
+ * The owner's last `n` turns (spoken or typed) from an Agora /history `contents` array, oldest
+ * first. Type mode could not save a need while this read ASR turns only (final-2 E).
+ */
 function ownerTurns(contents, n = TURNS) {
-  const { isOwnerAsr } = require("../approvals");
-  return Array.isArray(contents) ? contents.filter(isOwnerAsr).slice(-n).map((item) => item.content.trim()) : [];
+  return Array.isArray(contents) ? contents.filter(isOwnerTurn).slice(-n).map((item) => item.content.trim()) : [];
 }
 
-module.exports = { notHeard, ownerTurns, numberHeard, unitHeard, itemHeard, TURNS };
+module.exports = { notHeard, ownerTurns, isOwnerTurn, numberHeard, unitHeard, itemHeard, TURNS };

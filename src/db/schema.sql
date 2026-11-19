@@ -11,6 +11,40 @@ CREATE TABLE IF NOT EXISTS businesses (
   created_at  TEXT NOT NULL
 );
 
+-- ACC: owner accounts (src/accounts/*). Not tenant-owned: an account owns businesses through
+-- account_businesses. The phone is normalised to +91 and ten digits and is not verified
+-- (no SMS); the PIN is stored only as scrypt$N$r$p$salt$hash.
+CREATE TABLE IF NOT EXISTS accounts (
+  id              TEXT PRIMARY KEY,
+  phone           TEXT NOT NULL UNIQUE CHECK (phone GLOB '+91[6-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
+  pin_hash        TEXT NOT NULL CHECK (pin_hash LIKE 'scrypt$%'),
+  phone_verified  INTEGER NOT NULL DEFAULT 0 CHECK (phone_verified IN (0, 1)),
+  created_at      TEXT NOT NULL
+);
+
+-- One owner account per business; an account may own several businesses.
+CREATE TABLE IF NOT EXISTS account_businesses (
+  account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  business_id  TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner')),
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (account_id, business_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS account_businesses_one_owner ON account_businesses(business_id) WHERE role = 'owner';
+
+-- WebAuthn credentials (@simplewebauthn/server). credential_id is base64url; public_key is the COSE key.
+-- counter only moves forward (src/accounts/store.js); a response whose counter did not grow is refused.
+CREATE TABLE IF NOT EXISTS passkeys (
+  id             TEXT PRIMARY KEY,
+  account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  credential_id  TEXT NOT NULL UNIQUE,
+  public_key     BLOB NOT NULL,
+  counter        INTEGER NOT NULL DEFAULT 0 CHECK (counter >= 0),
+  transports     TEXT,
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS passkeys_account ON passkeys(account_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          TEXT PRIMARY KEY,
   business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
@@ -427,3 +461,400 @@ CREATE TABLE IF NOT EXISTS agent_memories (
   updated_at  TEXT NOT NULL,
   UNIQUE (business_id, kind, key)
 );
+
+-- ============================================================================================
+-- STK: stock (src/stock/*). Items, an append-only stock ledger and low-stock reorder proposals.
+-- ============================================================================================
+
+-- What the business buys or sells. `name_key` is the item's words folded the same way across
+-- scripts (src/stock/items.js nameKey: "rice", "चावल" and "ಅಕ್ಕಿ" share one key), so one item is
+-- never stored twice under two spellings. Quantities of an item are in its `unit` (a units.js code).
+CREATE TABLE IF NOT EXISTS items (
+  id            TEXT PRIMARY KEY,
+  business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  name_native   TEXT,
+  name_key      TEXT NOT NULL,
+  unit          TEXT NOT NULL,
+  hsn           TEXT CHECK (hsn IS NULL OR (length(hsn) BETWEEN 4 AND 8 AND hsn NOT GLOB '*[^0-9]*')),
+  gst_rate      REAL CHECK (gst_rate IS NULL OR (gst_rate >= 0 AND gst_rate <= 40)),
+  sale_price    REAL CHECK (sale_price IS NULL OR sale_price >= 0),
+  reorder_level REAL CHECK (reorder_level IS NULL OR reorder_level >= 0),
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  UNIQUE (business_id, name),
+  UNIQUE (business_id, name_key)
+);
+
+-- The stock ledger. Append-only: on hand = SUM(qty), in the item's unit (+ in, - out).
+CREATE TABLE IF NOT EXISTS stock_moves (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  item_id     TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  qty         REAL NOT NULL CHECK (qty <> 0),
+  reason      TEXT NOT NULL CHECK (reason IN ('opening', 'purchase', 'sale', 'adjust')),
+  ref_id      TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS stock_moves_by_item ON stock_moves (business_id, item_id, created_at);
+-- A delivered purchase order comes into stock once per item.
+CREATE UNIQUE INDEX IF NOT EXISTS stock_moves_purchase_once ON stock_moves (business_id, item_id, ref_id) WHERE reason = 'purchase';
+
+CREATE TRIGGER IF NOT EXISTS stock_moves_same_business
+BEFORE INSERT ON stock_moves
+WHEN NOT EXISTS (SELECT 1 FROM items i WHERE i.id = NEW.item_id AND i.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a stock move needs an item of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS stock_moves_are_fixed
+BEFORE UPDATE ON stock_moves
+BEGIN
+  SELECT RAISE(ABORT, 'a stock move cannot be changed; record an adjustment');
+END;
+
+-- Sahay noticed an item at or below its reorder level and asks the owner whether to buy more.
+-- Nothing is bought here: on the owner's yes a requirement is saved and a vendor search starts
+-- (the usual buying flow, with its own approval gate before any order). One open proposal per item.
+-- `last_move_rowid` is the item's newest stock_moves rowid when it was proposed: the item is
+-- proposed again only after its stock has been back above the level since then.
+CREATE TABLE IF NOT EXISTS reorder_proposals (
+  id                 TEXT PRIMARY KEY,
+  business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  item_id            TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  on_hand            REAL NOT NULL,
+  level              REAL NOT NULL,
+  quantity           REAL CHECK (quantity IS NULL OR quantity > 0),
+  unit               TEXT NOT NULL,
+  status             TEXT NOT NULL CHECK (status IN ('open', 'accepted', 'declined', 'closed')),
+  requirement_id     TEXT REFERENCES requirements(id) ON DELETE SET NULL,
+  decided_via        TEXT CHECK (decided_via IN ('voice', 'button') OR decided_via IS NULL),
+  evidence_utterance TEXT,
+  last_move_rowid    INTEGER NOT NULL DEFAULT 0,
+  created_at         TEXT NOT NULL,
+  decided_at         TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS reorder_proposals_one_open ON reorder_proposals (business_id, item_id) WHERE status = 'open';
+
+CREATE TRIGGER IF NOT EXISTS reorder_proposals_same_business
+BEFORE INSERT ON reorder_proposals
+WHEN NEW.status <> 'open' OR NOT EXISTS (SELECT 1 FROM items i WHERE i.id = NEW.item_id AND i.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a reorder proposal starts open, for an item of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS reorder_proposals_status_flow
+BEFORE UPDATE OF status ON reorder_proposals
+WHEN NOT (OLD.status = 'open' AND NEW.status IN ('accepted', 'declined', 'closed'))
+BEGIN
+  SELECT RAISE(ABORT, 'a reorder proposal is decided once');
+END;
+
+-- Every time the server itself spoke a proposal's question into a live call. A spoken yes is
+-- evidence only for a question recorded here (approvals.answerAfterSpoken).
+CREATE TABLE IF NOT EXISTS reorder_readbacks (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  proposal_id TEXT NOT NULL REFERENCES reorder_proposals(id) ON DELETE CASCADE,
+  agent_id    TEXT NOT NULL,
+  spoken_text TEXT NOT NULL,
+  spoken_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reorder_readbacks_by_proposal ON reorder_readbacks (business_id, proposal_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS reorder_readbacks_are_fixed
+BEFORE UPDATE ON reorder_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded reorder question cannot be changed');
+END;
+-- ===================================== end STK ==============================================
+
+-- ============================================================================================
+-- SELL: customers and GST invoices (src/sell/*). Receipts and the khata are KHATA's section.
+-- Money is integer paise. An invoice is issued only on a consumed invoice approval for that exact
+-- invoice, business and total (the same gate as purchases, on its own tables, so the purchase gate
+-- and its one-pending-approval trigger stay untouched).
+-- ============================================================================================
+
+-- How this business bills. No row means the defaults: regular scheme, prefix INV.
+CREATE TABLE IF NOT EXISTS sell_settings (
+  business_id    TEXT PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
+  gst_scheme     TEXT NOT NULL CHECK (gst_scheme IN ('regular', 'composition', 'unregistered')),
+  gstin          TEXT CHECK (gstin IS NULL OR length(gstin) = 15),
+  state_code     TEXT CHECK (state_code IS NULL OR (length(state_code) = 2 AND state_code NOT GLOB '*[^0-9]*')),
+  address        TEXT,
+  invoice_prefix TEXT NOT NULL DEFAULT 'INV' CHECK (length(invoice_prefix) BETWEEN 1 AND 3),
+  updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  name_key    TEXT NOT NULL,
+  phone       TEXT CHECK (phone IS NULL OR (length(phone) = 10 AND phone NOT GLOB '*[^0-9]*')),
+  gstin       TEXT CHECK (gstin IS NULL OR length(gstin) = 15),
+  state_code  TEXT CHECK (state_code IS NULL OR (length(state_code) = 2 AND state_code NOT GLOB '*[^0-9]*')),
+  address     TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE (business_id, name_key)
+);
+
+-- status: draft (lines editable) -> pending (an approval is asked) -> issued -> part_paid | paid,
+-- or cancelled after issue. A rejected or withdrawn approval sends a pending invoice back to draft.
+-- number/fy/seq, supplier/recipient snapshots and approval_id are set once, when it is issued.
+CREATE TABLE IF NOT EXISTS invoices (
+  id                TEXT PRIMARY KEY,
+  business_id       TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_id       TEXT NOT NULL REFERENCES customers(id),
+  session_id        TEXT,
+  kind              TEXT NOT NULL CHECK (kind IN ('tax_invoice', 'bill_of_supply', 'bill')),
+  status            TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'issued', 'part_paid', 'paid', 'cancelled')),
+  supplier_state    TEXT NOT NULL,
+  place_of_supply   TEXT NOT NULL,
+  intra_state       INTEGER NOT NULL CHECK (intra_state IN (0, 1)),
+  taxable_paise     INTEGER NOT NULL CHECK (taxable_paise >= 0),
+  cgst_paise        INTEGER NOT NULL CHECK (cgst_paise >= 0),
+  sgst_paise        INTEGER NOT NULL CHECK (sgst_paise >= 0),
+  igst_paise        INTEGER NOT NULL CHECK (igst_paise >= 0),
+  total_paise       INTEGER NOT NULL CHECK (total_paise > 0),
+  fy                TEXT,
+  seq               INTEGER,
+  number            TEXT CHECK (number IS NULL OR length(number) <= 16),
+  supplier          TEXT,
+  recipient         TEXT,
+  approval_id       TEXT UNIQUE,
+  pdf_path          TEXT,
+  razorpay_order_id TEXT,
+  pay_token_hash    TEXT UNIQUE,
+  pay_url           TEXT,
+  pay_expires_at    TEXT,
+  created_at        TEXT NOT NULL,
+  issued_at         TEXT,
+  paid_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS invoices_by_business ON invoices (business_id, created_at);
+CREATE INDEX IF NOT EXISTS invoices_by_customer ON invoices (business_id, customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_number_once ON invoices (business_id, number) WHERE number IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_seq_once ON invoices (business_id, fy, seq) WHERE seq IS NOT NULL;
+
+-- item_id is an items row of the same business (src/stock/items.js; checked in code). Name, unit
+-- and HSN are copied from the item when the line is written, so a later rename does not change it.
+CREATE TABLE IF NOT EXISTS invoice_lines (
+  id            TEXT PRIMARY KEY,
+  business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  invoice_id    TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  position      INTEGER NOT NULL,
+  item_id       TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  unit          TEXT NOT NULL,
+  hsn           TEXT,
+  qty           REAL NOT NULL CHECK (qty > 0),
+  rate_paise    INTEGER NOT NULL CHECK (rate_paise >= 0),
+  gst_rate      REAL,
+  taxable_paise INTEGER NOT NULL CHECK (taxable_paise >= 0),
+  cgst_paise    INTEGER NOT NULL CHECK (cgst_paise >= 0),
+  sgst_paise    INTEGER NOT NULL CHECK (sgst_paise >= 0),
+  igst_paise    INTEGER NOT NULL CHECK (igst_paise >= 0),
+  total_paise   INTEGER NOT NULL CHECK (total_paise >= 0),
+  UNIQUE (invoice_id, position)
+);
+
+CREATE TRIGGER IF NOT EXISTS invoices_start_draft
+BEFORE INSERT ON invoices
+WHEN NEW.status <> 'draft' OR NEW.number IS NOT NULL OR NEW.approval_id IS NOT NULL
+  OR NOT EXISTS (SELECT 1 FROM customers c WHERE c.id = NEW.customer_id AND c.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'an invoice starts as an unnumbered draft for a customer of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoices_status_flow
+BEFORE UPDATE OF status ON invoices
+WHEN NEW.status IS NOT OLD.status AND NOT (
+  (OLD.status = 'draft' AND NEW.status = 'pending')
+  OR (OLD.status = 'pending' AND NEW.status IN ('draft', 'issued'))
+  OR (OLD.status = 'issued' AND NEW.status IN ('part_paid', 'paid', 'cancelled'))
+  OR (OLD.status = 'part_paid' AND NEW.status IN ('paid', 'cancelled'))
+)
+BEGIN
+  SELECT RAISE(ABORT, 'illegal invoice status change');
+END;
+
+-- The gate below the application code: issued only on a consumed approval for this invoice and total.
+CREATE TRIGGER IF NOT EXISTS invoices_issue_needs_consumed_approval
+BEFORE UPDATE OF status ON invoices
+WHEN NEW.status = 'issued' AND OLD.status IS NOT 'issued' AND (
+  NEW.number IS NULL OR NEW.fy IS NULL OR NEW.seq IS NULL OR NEW.issued_at IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM invoice_approvals a
+    WHERE a.id = NEW.approval_id AND a.business_id = NEW.business_id AND a.invoice_id = NEW.id
+      AND a.status = 'consumed' AND a.total_paise = NEW.total_paise
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'an invoice is issued only on a consumed approval for the same business, invoice and total');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoices_amounts_fixed
+BEFORE UPDATE OF business_id, customer_id, kind, supplier_state, place_of_supply, intra_state,
+  taxable_paise, cgst_paise, sgst_paise, igst_paise, total_paise ON invoices
+WHEN OLD.status <> 'draft'
+BEGIN
+  SELECT RAISE(ABORT, 'the amounts of an invoice are fixed once its approval is asked');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoices_issue_fields_fixed
+BEFORE UPDATE OF fy, seq, number, supplier, recipient, approval_id, issued_at ON invoices
+WHEN OLD.status NOT IN ('draft', 'pending')
+BEGIN
+  SELECT RAISE(ABORT, 'an issued invoice cannot be renumbered or changed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoices_issued_never_deleted
+BEFORE DELETE ON invoices
+WHEN OLD.status NOT IN ('draft', 'pending')
+BEGIN
+  SELECT RAISE(ABORT, 'an issued invoice cannot be deleted; cancel it');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_lines_insert_draft_only
+BEFORE INSERT ON invoice_lines
+WHEN NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = NEW.invoice_id AND i.business_id = NEW.business_id AND i.status = 'draft')
+BEGIN
+  SELECT RAISE(ABORT, 'lines are added only to a draft invoice of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_lines_update_draft_only
+BEFORE UPDATE ON invoice_lines
+WHEN NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = OLD.invoice_id AND i.status = 'draft')
+BEGIN
+  SELECT RAISE(ABORT, 'the lines of an invoice are fixed once its approval is asked');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_lines_delete_draft_only
+BEFORE DELETE ON invoice_lines
+WHEN EXISTS (SELECT 1 FROM invoices i WHERE i.id = OLD.invoice_id AND i.status <> 'draft')
+BEGIN
+  SELECT RAISE(ABORT, 'the lines of an invoice are fixed once its approval is asked');
+END;
+
+-- The owner's yes to one invoice, mirroring approvals.
+CREATE TABLE IF NOT EXISTS invoice_approvals (
+  id                 TEXT PRIMARY KEY,
+  business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  invoice_id         TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  status             TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'consumed')),
+  readback           TEXT NOT NULL,
+  total_paise        INTEGER NOT NULL CHECK (total_paise > 0),
+  requested_at       TEXT NOT NULL,
+  decided_at         TEXT,
+  decided_via        TEXT CHECK (decided_via IN ('voice', 'button') OR decided_via IS NULL),
+  evidence_utterance TEXT
+);
+CREATE INDEX IF NOT EXISTS invoice_approvals_by_business ON invoice_approvals (business_id, requested_at);
+
+CREATE TRIGGER IF NOT EXISTS invoice_approvals_start_pending
+BEFORE INSERT ON invoice_approvals
+WHEN NEW.status <> 'pending'
+  OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = NEW.invoice_id AND i.business_id = NEW.business_id AND i.status = 'pending' AND i.total_paise = NEW.total_paise)
+BEGIN
+  SELECT RAISE(ABORT, 'an invoice approval starts pending, for a pending invoice of the same business and total');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_approvals_one_pending_per_business
+BEFORE INSERT ON invoice_approvals
+WHEN EXISTS (SELECT 1 FROM invoice_approvals a WHERE a.business_id = NEW.business_id AND a.status = 'pending')
+BEGIN
+  SELECT RAISE(ABORT, 'another invoice approval of this business is still pending');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_approvals_status_flow
+BEFORE UPDATE OF status ON invoice_approvals
+WHEN NOT (
+  (OLD.status = 'pending' AND NEW.status IN ('approved', 'rejected'))
+  OR (OLD.status = 'approved' AND NEW.status IN ('consumed', 'rejected'))
+)
+BEGIN
+  SELECT RAISE(ABORT, 'illegal invoice approval status change');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_approvals_deal_is_fixed
+BEFORE UPDATE OF business_id, invoice_id, readback, total_paise ON invoice_approvals
+BEGIN
+  SELECT RAISE(ABORT, 'the invoice on an approval cannot be changed');
+END;
+
+-- Every time the server itself spoke an invoice's read-back into a live call. Append-only.
+CREATE TABLE IF NOT EXISTS invoice_readbacks (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  approval_id TEXT NOT NULL REFERENCES invoice_approvals(id) ON DELETE CASCADE,
+  agent_id    TEXT NOT NULL,
+  spoken_text TEXT NOT NULL,
+  spoken_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS invoice_readbacks_by_approval ON invoice_readbacks (business_id, approval_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS invoice_readbacks_need_pending
+BEFORE INSERT ON invoice_readbacks
+WHEN NOT EXISTS (SELECT 1 FROM invoice_approvals a WHERE a.id = NEW.approval_id AND a.business_id = NEW.business_id AND a.status = 'pending')
+BEGIN
+  SELECT RAISE(ABORT, 'an invoice read-back is recorded only for a pending approval of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_readbacks_are_fixed
+BEFORE UPDATE ON invoice_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded invoice read-back cannot be changed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS invoice_approvals_voice_needs_spoken_readback
+BEFORE UPDATE OF status ON invoice_approvals
+WHEN NEW.status = 'approved' AND NEW.decided_via = 'voice'
+  AND NOT EXISTS (SELECT 1 FROM invoice_readbacks r WHERE r.approval_id = NEW.id AND r.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a voice invoice approval needs a read-back spoken by the server');
+END;
+
+-- An item's HSN and GST rate as the server read them back to the owner (set_item). The owner's
+-- spoken yes to exactly this sentence confirms them; only a confirmed row lets an invoice use them.
+CREATE TABLE IF NOT EXISTS item_tax_readbacks (
+  id                 TEXT PRIMARY KEY,
+  business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  item_name          TEXT NOT NULL,
+  unit               TEXT,
+  sale_price         REAL,
+  hsn                TEXT NOT NULL CHECK (length(hsn) IN (4, 6, 8) AND hsn NOT GLOB '*[^0-9]*'),
+  gst_rate           REAL NOT NULL CHECK (gst_rate IN (0, 0.25, 1.5, 3, 5, 18, 28, 40)),
+  agent_id           TEXT NOT NULL,
+  spoken_text        TEXT NOT NULL,
+  status             TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'superseded')),
+  item_id            TEXT,
+  evidence_utterance TEXT,
+  spoken_at          TEXT NOT NULL,
+  decided_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS item_tax_readbacks_by_business ON item_tax_readbacks (business_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS item_tax_readbacks_start_pending
+BEFORE INSERT ON item_tax_readbacks
+WHEN NEW.status <> 'pending' OR NEW.item_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an item tax read-back starts pending');
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_tax_readbacks_status_flow
+BEFORE UPDATE OF status ON item_tax_readbacks
+WHEN NOT (OLD.status = 'pending' AND NEW.status IN ('confirmed', 'superseded'))
+  OR (NEW.status = 'confirmed' AND (NEW.item_id IS NULL OR NEW.evidence_utterance IS NULL))
+BEGIN
+  SELECT RAISE(ABORT, 'an item tax read-back is decided once; a confirmation names the item and the owner words');
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_tax_readbacks_are_fixed
+BEFORE UPDATE OF business_id, item_name, unit, sale_price, hsn, gst_rate, agent_id, spoken_text, spoken_at ON item_tax_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded item tax read-back cannot be changed');
+END;
+-- ===================================== end SELL =============================================

@@ -1086,6 +1086,47 @@ test("E2E r4 bug 4: a fragment 'मुझे पांच' does not become '5 kg
   assert.equal(ok.saved, true);
 });
 
+test("final-2 E: in type mode a typed need (history source message) is saved; a typed yes still cannot approve", async (t) => {
+  stubIndiaMart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGT" });
+  const call = fakeCall(t);
+  call.typed = (content) => call.items.push({ role: "user", content, metadata: { source: "message" }, turn_id: ++call.turn });
+  call.typed("मुझे 50 किलो चीनी चाहिए, बेंगलुरु में");
+  const out = await registry.callTool(ctx, "save_requirement", { item: "चीनी", quantity: 50, unit: "किलो", city: "बेंगलुरु", owner_words: "मुझे 50 किलो चीनी चाहिए, बेंगलुरु में" });
+  assert.equal(out.saved, true);
+  assert.deepEqual(out.missing, []);
+  assert.equal(repo.getRequirement(businessId, out.requirementId).quantity, 50);
+  await jobs.whenSettled(out.jobId);
+
+  const { quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  call.typed("हाँ");
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "TYPED_ANSWER");
+  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
+});
+
+test("final-2 D: the same need said again within minutes is the same need, not a duplicate; a different or ordered need is new", async (t) => {
+  stubIndiaMart(t);
+  const businessId = seedBusiness("hi-IN");
+  const call = fakeCall(t);
+  call.owner("मुझे दो सौ किलो बासमती चावल चाहिए, बेंगलुरु में, नब्बे रुपये तक");
+  const args = { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", max_price_per_unit: 90 };
+  const first = await registry.callTool(ownerCtx(businessId, { agentId: "AGD1" }), "save_requirement", args);
+  await jobs.whenSettled(first.jobId);
+  // A new call, the same request: no second need and no second search.
+  const again = await registry.callTool(ownerCtx(businessId, { agentId: "AGD2" }), "save_requirement", { ...args, item: " बासमती  चावल " });
+  assert.equal(again.requirementId, first.requirementId);
+  assert.equal(again.sourcingStarted, false);
+  assert.equal(repo.listRequirements(businessId).length, 1);
+  assert.equal(repo.listJobs(businessId, { kind: "sourcing" }).length, 1);
+
+  call.owner("मुझे तीन सौ किलो बासमती चावल चाहिए, बेंगलुरु में");
+  const more = await registry.callTool(ownerCtx(businessId, { agentId: "AGD3" }), "save_requirement", { ...args, quantity: 300 });
+  assert.notEqual(more.requirementId, first.requirementId, "a different quantity is a new need");
+  await jobs.whenSettled(more.jobId);
+});
+
 test("E2E r4 bug 5: every hi/kn say template of the registry is in its own script (names, PO numbers, digits and Razorpay aside)", () => {
   const { PHRASES, SAY_WORDS } = registry;
   const { SAY } = require("../src/tools/errors");

@@ -206,13 +206,21 @@ test("state is scoped to the cookie's business; a button decision on another bus
     assert.equal(bad.status, 400);
 
     const ok = await call(base, "POST", `/api/approvals/${approval.id}/decision`, { cookie: a.cookie, body: { decision: "approve" } });
-    assert.deepEqual(ok.json, { approvalId: approval.id, status: "approved" });
+    // final-2 E: the tick places the order itself through the same gate; nobody has to nudge the agent.
+    const [order] = repo.listOrders(a.business.id);
+    assert.ok(order, "the button approval placed the order");
+    assert.deepEqual(ok.json, { approvalId: approval.id, status: "approved", orderId: order.id, poNumber: order.po_number });
     assert.equal(repo.getApproval(a.business.id, approval.id).decided_via, "button");
+    assert.equal(repo.getApproval(a.business.id, approval.id).status, "consumed");
+    const again = await call(base, "POST", `/api/approvals/${approval.id}/decision`, { cookie: a.cookie, body: { decision: "approve" } });
+    assert.equal(again.status, 409, "a second tap neither approves again nor orders twice");
+    assert.equal(repo.listOrders(a.business.id).length, 1);
 
     const stateA = await call(base, "GET", "/api/state", { cookie: a.cookie });
     assert.equal(stateA.json.requirement.id, need.id);
     assert.equal(stateA.json.deals[0].quoteId, quote.id);
     assert.ok(stateA.json.audit.some((row) => row.type === "approval.decided"));
+    assert.ok(stateA.json.audit.some((row) => row.type === "order.created"));
 
     const pdf = await call(base, "GET", "/api/orders/ord_nope/po.pdf", { cookie: a.cookie });
     assert.equal(pdf.status, 404);

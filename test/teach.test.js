@@ -131,6 +131,29 @@ test("a max_price rule of 80 under an owner max of 90: the stricter 80 is the ce
   assert.ok(call.joins >= 2);
 });
 
+test("final-2 D: the rule ceiling is on record (job input, negotiation outcome, audit) and every offer and the quote stay under it", async (t) => {
+  fakeCall(t);
+  const businessId = seedBusiness("hi-IN");
+  const rule = keep(businessId, "max_price", { item: "rice", unit: "kg", price: 80 });
+  const need = seedNeed(businessId, { item: "चावल", maxPrice: 90 });
+  // Listed 95: the simulated vendor asks above 80 in every early round.
+  const vendor = seedVendor(businessId, need, { listedPrice: 95 });
+  const { started, neg, job } = await negotiate(businessId, need, vendor);
+  const ceiling = { price: 80, unit: "kg", byRule: true, ownerMax: 90, ruleId: rule.id };
+  const begun = repo.listAudit(businessId, { type: "job.started" }).find((row) => row.detail.jobId === job.id);
+  assert.deepEqual(begun.detail.input.ceiling, ceiling, "the job.started audit row (in /api/state) says which ceiling applied");
+  assert.deepEqual(neg.outcome.ceiling, ceiling, "so does the negotiation's outcome");
+  assert.deepEqual(started.ceiling, { price: 80, unit: "kg", byRule: true, ownerMax: 90 });
+  const ended = repo.listAudit(businessId, { type: "negotiation.ended" }).at(-1);
+  assert.deepEqual(ended.detail.outcome.ceiling, ceiling);
+  const asks = neg.transcript.filter((turn) => turn.speaker === "vendor" && turn.offer != null).map((turn) => turn.offer);
+  assert.ok(asks.some((ask) => ask > 80), `the vendor asked above the rule (${asks})`);
+  const offers = neg.transcript.filter((turn) => turn.speaker === "agent" && turn.offer != null).map((turn) => turn.offer);
+  assert.ok(offers.length > 0);
+  for (const offer of offers) assert.ok(offer <= 80, `offer ${offer} is above the rule's 80`);
+  for (const quote of repo.listQuotes(businessId)) assert.ok(quote.unit_price <= 80);
+});
+
 test("a max_price rule of 80 with no owner max: 80 is the ceiling; an owner max under the rule stays", async (t) => {
   fakeCall(t);
   const businessId = seedBusiness("en-IN");

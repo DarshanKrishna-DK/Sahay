@@ -218,3 +218,21 @@ test("a line that would carry stray Latin is logged with the offending words, no
   await until(() => spoken.length >= 1);
   assert.ok(warned.some((w) => w.includes("negotiation_agreed") && w.includes("bundles") && !w.includes("BS Foods")), warned.join("\n"));
 });
+
+test("final-2 B: while a read-back waits, the call status tells the model the next yes or no goes to confirm_approval; an order made by the tick is told too", async (t) => {
+  const { businessId, state } = liveNarrator(t);
+  const statuses = [];
+  narrator.configure({ status: async (_agentId, text) => statuses.push(text) });
+  narrator.onEvent({ businessId, type: "approval.spoken", data: { approvalId: "apr_s", quoteId: "quo_s" } });
+  await state.statusChain;
+  assert.match(statuses.at(-1), /waiting for the owner's answer/);
+  assert.match(statuses.at(-1), /confirm_approval/);
+  assert.doesNotMatch(statuses.at(-1), /request_approval with no/);
+
+  narrator.onEvent({ businessId, type: "approval.decided", data: { approvalId: "apr_s", status: "approved", via: "button" } });
+  narrator.onEvent({ businessId, type: "order.created", data: { orderId: "ord_s", poNumber: "SAHAY/2026/AB12-0001", simulated: true } });
+  await state.statusChain;
+  assert.doesNotMatch(statuses.at(-1), /waiting for the owner's answer/);
+  assert.match(statuses.at(-1), /SAHAY\/2026\/AB12-0001/);
+  assert.match(statuses.at(-1), /Do not call create_order/);
+});

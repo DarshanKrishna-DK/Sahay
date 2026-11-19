@@ -482,6 +482,25 @@ function requireRow(row, language) {
 
 const missingFields = (r) => ["item", "quantity", "unit", "city"].filter((field) => r[field] == null || r[field] === "");
 
+/** A need said again within this long is the same need (final-2 D: a repeated request made a duplicate). */
+const TWIN_WINDOW_MS = 10 * 60 * 1000;
+const foldText = (text) => String(text ?? "").normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * The business's latest need when it is exactly this one (item, quantity, unit, city), was saved in
+ * the last few minutes and has no order yet; null otherwise. Only the latest is considered, so the
+ * tools' "current requirement" stays the one the owner is talking about.
+ */
+function recentTwin(businessId, fields, now = Date.now()) {
+  if (!fields.item || fields.quantity == null || !fields.unit) return null;
+  const latest = repo.listRequirements(businessId).at(-1);
+  if (!latest || now - Date.parse(latest.created_at) > TWIN_WINDOW_MS) return null;
+  const same = foldText(latest.item) === foldText(fields.item) && latest.quantity === fields.quantity && latest.unit === fields.unit && (fields.city === undefined || latest.city === fields.city);
+  if (!same) return null;
+  const ordered = repo.listQuotes(businessId, { requirement_id: latest.id }).some((q) => repo.listOrders(businessId, { quote_id: q.id }).length > 0);
+  return ordered ? null : latest;
+}
+
 /**
  * The requirement a tool works on: the one named, else the latest one saved in this call,
  * else the business's latest. Tenant comes from ctx only.
@@ -887,6 +906,7 @@ function paymentClause(order, payment, language) {
 const RULE_REFUSALS = {
   NOT_AFFIRMATIVE: "rule_unclear",
   NO_ANSWER_YET: "rule_unclear",
+  TYPED_ANSWER: "rule_tap",
   ANSWER_DURING_READBACK: "rule_unclear",
   READBACK_SUPERSEDED: "rule_unclear",
   NOT_NEGATIVE: "rule_forget_unclear",
@@ -1029,6 +1049,8 @@ const TOOLS = [
           : ctx.sessionId && repo.listRequirements(ctx.businessId).filter((r) => r.session_id === ctx.sessionId).at(-1);
         if (!target) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
         if (!Object.keys(fields).length) throw new ToolError("INVALID", sayFor("invalid", language), { message: "Nothing to update." });
+      } else {
+        target = recentTwin(ctx.businessId, fields);
       }
 
       // Only what this call changes has to be in the owner's words; a value sent again unchanged does not.
@@ -1048,7 +1070,7 @@ const TOOLS = [
         };
       }
 
-      const requirement = update
+      const requirement = target
         ? repo.updateRequirement(ctx.businessId, target.id, fields)
         : repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
       events.emit(ctx.businessId, "requirement.saved", requirement, { sessionId: ctx.sessionId, actor: "agent" });

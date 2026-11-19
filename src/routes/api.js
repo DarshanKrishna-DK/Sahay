@@ -465,12 +465,14 @@ function createApiRouter() {
       const { businessId } = req.auth;
       const decision = req.body?.decision;
       if (decision !== "approve" && decision !== "reject") throw new HttpError(400, "INVALID_DECISION", 'decision is "approve" or "reject".');
-      const decided = approvals.confirmApproval(businessId, req.params.id, {
-        decision,
-        via: "button",
-        sessionId: voice.get(businessId)?.sessionId ?? null,
-      });
-      res.json({ approvalId: decided.id, status: decided.status });
+      const sessionId = voice.get(businessId)?.sessionId ?? null;
+      const decided = approvals.confirmApproval(businessId, req.params.id, { decision, via: "button", sessionId });
+      if (decided.status !== "approved") return res.json({ approvalId: decided.id, status: decided.status });
+      // The tick IS the owner's yes: the server places the order itself, through the same gate
+      // (orders.createOrder -> approvals.assertApproved), instead of waiting for the agent to be
+      // nudged (final-2 E). order.created is narrated into a live call by the narrator.
+      const order = await orders.placeApproved(businessId, decided.id, { sessionId });
+      res.json({ approvalId: decided.id, status: decided.status, orderId: order.id, poNumber: order.po_number });
     }),
   );
 

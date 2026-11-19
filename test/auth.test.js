@@ -175,3 +175,16 @@ test("requireBearer accepts only a bearer token signed for the mcp scope", async
   assert.deepEqual((await call({ authorization: `Bearer ${auth.signSession(claims())}` }))[1].code, "WRONG_SCOPE");
   assert.deepEqual((await call({ authorization: `Bearer ${forge(claims({ scope: "mcp", exp: 1 }))}` }))[1].code, "EXPIRED");
 });
+
+test("a session may carry the signed-in account; it round-trips and is absent when not given", () => {
+  const withAccount = claims({ accountId: "acc_1" });
+  assert.deepEqual(auth.verifySession(auth.signSession(withAccount)), withAccount);
+  assert.equal("accountId" in auth.verifySession(auth.signSession(claims())), false, "a device session has no account");
+});
+
+test("an accountId that is not a non-empty string is refused when signing and when verifying", () => {
+  for (const accountId of ["", 42, null, ["acc_1"]]) {
+    assert.throws(() => auth.signSession(claims({ accountId })), hasCode("INVALID_CLAIMS"), String(accountId));
+    assert.throws(() => auth.verifySession(forge(claims({ accountId }))), hasCode("MALFORMED"), String(accountId));
+  }
+});
