@@ -26,6 +26,7 @@ const events = require("../events");
 const jobs = require("../jobs");
 const approvals = require("../approvals");
 const orders = require("../orders");
+const { findByPo } = require("../orders/po-ref");
 const payments = require("../orders/payments");
 const { findVendors } = require("../discovery/indiamart");
 const { candidateSlugs, cityName, cityIn, itemIn } = require("../discovery/slug");
@@ -330,6 +331,16 @@ const PHRASES = {
     "hi-IN": (v) => `ऑर्डर ${v.po} का भुगतान पहले ही हो चुका है।`,
     "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ಪಾವತಿ ಈಗಾಗಲೇ ಆಗಿದೆ.`,
     "en-IN": (v) => `Order ${v.po} is already paid.`,
+  },
+  po_not_found: {
+    "hi-IN": (v) => `यह खरीद आदेश नंबर इस व्यापार में नहीं मिला।${v.po ? ` भुगतान के लिए बाकी ऑर्डर ${v.po} है।` : ""}`,
+    "kn-IN": (v) => `ಈ ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ಈ ವ್ಯಾಪಾರದಲ್ಲಿ ಸಿಗಲಿಲ್ಲ.${v.po ? ` ಪಾವತಿಗೆ ಬಾಕಿ ಇರುವ ಆರ್ಡರ್ ${v.po}.` : ""}`,
+    "en-IN": (v) => `That purchase order number is not one of this business's.${v.po ? ` The order awaiting payment is ${v.po}.` : ""}`,
+  },
+  po_ambiguous: {
+    "hi-IN": (v) => `कौन सा ऑर्डर: ${v.po}?`,
+    "kn-IN": (v) => `ಯಾವ ಆರ್ಡರ್: ${v.po}?`,
+    "en-IN": (v) => `Which order: ${v.po}?`,
   },
   no_payable_order: {
     "hi-IN": (v) => `भुगतान के लिए कोई पक्का ऑर्डर बाकी नहीं है; आख़िरी ऑर्डर ${v.po} ${v.status} है।`,
@@ -928,6 +939,25 @@ function defaultOrderForPayment(ctx, language) {
   throw new ToolError("NO_PAYABLE_ORDER", phrase("no_payable_order", language, { po: last.po_number, status: ORDER_STATUS_WORDS[last.status]?.[language] ?? last.status }), { status: 409 });
 }
 
+/**
+ * The order a create_payment_link reference names: an order id as a tool returned it, else a
+ * purchase order number in any script or spacing (src/orders/po-ref.js). E2E regress bug 5: the
+ * model passed "SAHAY/2026/6799-0001" as orderId and the owner heard "order not found".
+ */
+function orderForReference(ctx, ref, language) {
+  const text = String(ref).trim();
+  if (repo.getOrder(ctx.businessId, text)) return text;
+  const all = repo.listOrders(ctx.businessId);
+  const found = findByPo(all, text);
+  if (found?.order) return found.order.id;
+  if (found?.ambiguous) {
+    const choices = found.ambiguous.map((o) => o.po_number);
+    throw new ToolError("AMBIGUOUS", phrase("po_ambiguous", language, { po: choices.join(", ") }), { status: 409, details: { choices } });
+  }
+  const open = all.filter((o) => o.status === orders.INITIAL_STATUS).at(-1);
+  throw new ToolError("ORDER_NOT_FOUND", phrase("po_not_found", language, { po: open?.po_number ?? null }), { status: 404 });
+}
+
 /** Payment state of an order: "paid" once a verified payment is recorded, else "pending". */
 function paymentOf(businessId, order) {
   const checkout = repo.getCheckoutForOrder(businessId, order.id);
@@ -1521,10 +1551,14 @@ const TOOLS = [
     name: "create_payment_link",
     scopes: OWNER,
     description:
-      "Makes the Razorpay test-mode payment link (a Sahay pay page) for an order that was approved and placed. Call it whenever the owner asks for a payment link or to pay, with no arguments: it finds the business's most recent confirmed, unpaid order by itself, whatever requirement or call is current. Asking again returns the same link.",
-    inputSchema: ownerObj({ orderId: idArg("order", "the most recent confirmed, unpaid order") }),
+      "Makes the Razorpay test-mode payment link (a Sahay pay page) for an order that was approved and placed. Call it whenever the owner asks for a payment link or to pay, with no arguments: it finds the business's most recent confirmed, unpaid order by itself, whatever requirement or call is current. Never ask which order. Only when the owner names a purchase order number, pass it as po_number exactly as said or typed (any script or spacing). Asking again returns the same link.",
+    inputSchema: ownerObj({
+      orderId: idArg("order", "the most recent confirmed, unpaid order"),
+      po_number: { type: "string", minLength: 1, maxLength: 80, description: "Optional. A purchase order number the owner said or typed, as it was said (e.g. SAHAY/2026/6799-0001, or only 0001)." },
+    }),
     async handler(ctx, args, language) {
-      const orderId = args.orderId ?? defaultOrderForPayment(ctx, language);
+      const ref = args.po_number ?? args.orderId;
+      const orderId = ref ? orderForReference(ctx, ref, language) : defaultOrderForPayment(ctx, language);
       require("../agora/narrator").suppress(ctx.businessId, "payment.link");
       // The gate: payments.createPaymentLink -> approvals.assertOrderApproved.
       const link = await payments.createPaymentLink(ctx.businessId, orderId);

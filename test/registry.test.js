@@ -1177,3 +1177,33 @@ test("E2E r4 bug 5: a Latin or Kannada item is said in Devanagari inside Hindi, 
   const unknown = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "premium widgets", quantity: 5, unit: "pieces", city: "Bengaluru" });
   assert.deepEqual(scriptProblems(unknown.say, "hi-IN"), { latin: [], foreign: false }, unknown.say);
 });
+
+test("E2E regress bug 5: create_payment_link takes the purchase order number as said or typed, in orderId or po_number, and never asks which order", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const { quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  approvals.confirmApproval(businessId, asked.approvalId, { decision: "approve", via: "button" });
+  const order = await registry.callTool(ctx, "create_order", {});
+  const po = order.poNumber;
+  stubRazorpayOrders(t);
+
+  // The model passed the PO number where the id goes (the E2E failure), with odd spacing.
+  const byOrderId = await registry.callTool(ctx, "create_payment_link", { orderId: po.replace(/\//g, " / ") });
+  assert.equal(byOrderId.orderId, order.orderId);
+  // In Devanagari digits, through po_number.
+  const deva = po.replace(/[0-9]/g, (d) => "०१२३४५६७८९"[d]);
+  assert.equal((await registry.callTool(ctx, "create_payment_link", { po_number: deva })).orderId, order.orderId);
+  // Only the tail the owner read off the screen.
+  assert.equal((await registry.callTool(ctx, "create_payment_link", { po_number: po.split("/").at(-1) })).orderId, order.orderId);
+
+  // A number that is not this business's: said plainly, naming the order that waits for payment.
+  await assert.rejects(registry.callTool(ctx, "create_payment_link", { po_number: "SAHAY/2026/0000-0999" }), (err) => {
+    assert.equal(err.code, "ORDER_NOT_FOUND");
+    assert.match(err.say, new RegExp(`भुगतान के लिए बाकी ऑर्डर ${po.replace(/[/]/g, "\/")} है`));
+    return true;
+  });
+  const tool = registry.toolsFor("owner").find((x) => x.name === "create_payment_link");
+  assert.match(tool.description, /Never ask which order/);
+  assert.ok(tool.inputSchema.properties.po_number);
+});
