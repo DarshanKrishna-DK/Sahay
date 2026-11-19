@@ -445,10 +445,20 @@ function confirmDraft(businessId, draftId, { decision, agentId, history, session
 
 /* ------------------------------------------------------------ reminders --- */
 
+/**
+ * One open bill: what is owed is that bill's open amount, so the pay link pays exactly it. Several
+ * open bills: the total owed and the number of bills, and the link is named as the OLDEST bill's,
+ * with that bill's own open amount (the pay page charges that), never as the total.
+ */
 const REMINDER = {
-  "hi-IN": (v) => `नमस्ते ${v.name} जी, ${v.shop} की ओर से याद दिला रहे हैं: आपके ${v.amount} बाकी हैं${v.bill ? ` (बिल ${v.bill}, ${v.date})` : ""}।${v.payUrl ? ` ऑनलाइन भुगतान: ${v.payUrl}` : ""} धन्यवाद।`,
-  "kn-IN": (v) => `ನಮಸ್ಕಾರ ${v.name} ಅವರೇ, ${v.shop} ಕಡೆಯಿಂದ ನೆನಪು: ನಿಮ್ಮ ${v.amount} ಬಾಕಿ ಇದೆ${v.bill ? ` (ಬಿಲ್ ${v.bill}, ${v.date})` : ""}.${v.payUrl ? ` ಆನ್‌ಲೈನ್ ಪಾವತಿ: ${v.payUrl}` : ""} ಧನ್ಯವಾದಗಳು.`,
-  "en-IN": (v) => `Hello ${v.name}, a gentle reminder from ${v.shop}: ${v.amount} is due${v.bill ? ` (bill ${v.bill}, ${v.date})` : ""}.${v.payUrl ? ` Pay online: ${v.payUrl}` : ""} Thank you.`,
+  "hi-IN": (v) => `नमस्ते ${v.name} जी, ${v.shop} की ओर से याद दिला रहे हैं: आपके ${v.amount} बाकी हैं${v.bill ? ` (बिल ${v.bill}${v.date ? `, ${v.date}` : ""})` : ""}।${v.payUrl ? ` ऑनलाइन भुगतान: ${v.payUrl}` : ""} धन्यवाद।`,
+  "kn-IN": (v) => `ನಮಸ್ಕಾರ ${v.name} ಅವರೇ, ${v.shop} ಕಡೆಯಿಂದ ನೆನಪು: ನಿಮ್ಮ ${v.amount} ಬಾಕಿ ಇದೆ${v.bill ? ` (ಬಿಲ್ ${v.bill}${v.date ? `, ${v.date}` : ""})` : ""}.${v.payUrl ? ` ಆನ್‌ಲೈನ್ ಪಾವತಿ: ${v.payUrl}` : ""} ಧನ್ಯವಾದಗಳು.`,
+  "en-IN": (v) => `Hello ${v.name}, a gentle reminder from ${v.shop}: ${v.amount} is due${v.bill ? ` (bill ${v.bill}${v.date ? `, ${v.date}` : ""})` : ""}.${v.payUrl ? ` Pay online: ${v.payUrl}` : ""} Thank you.`,
+};
+const REMINDER_BILLS = {
+  "hi-IN": (v) => `नमस्ते ${v.name} जी, ${v.shop} की ओर से याद दिला रहे हैं: आपके कुल ${v.amount} बाकी हैं (${v.count} बिल)।${v.payUrl ? ` सबसे पुराने बिल ${v.bill}${v.date ? ` (${v.date})` : ""} के ${v.billAmount} का ऑनलाइन भुगतान: ${v.payUrl}` : ""} धन्यवाद।`,
+  "kn-IN": (v) => `ನಮಸ್ಕಾರ ${v.name} ಅವರೇ, ${v.shop} ಕಡೆಯಿಂದ ನೆನಪು: ನಿಮ್ಮ ಒಟ್ಟು ${v.amount} ಬಾಕಿ ಇದೆ (${v.count} ಬಿಲ್).${v.payUrl ? ` ಹಳೆಯ ಬಿಲ್ ${v.bill}${v.date ? ` (${v.date})` : ""} ರ ${v.billAmount} ಆನ್‌ಲೈನ್ ಪಾವತಿ: ${v.payUrl}` : ""} ಧನ್ಯವಾದಗಳು.`,
+  "en-IN": (v) => `Hello ${v.name}, a gentle reminder from ${v.shop}: ${v.amount} is due in all (${v.count} bills).${v.payUrl ? ` Pay the oldest bill, ${v.bill}${v.date ? ` (${v.date})` : ""}, ${v.billAmount} open, online: ${v.payUrl}` : ""} Thank you.`,
 };
 
 /** The copy the owner gets on Telegram, so they know what was prepared. */
@@ -468,7 +478,8 @@ function whatsappUrl(phone, text) {
 
 /**
  * The reminder for one customer: the text (in `language`), the WhatsApp share link and what is
- * owed. A live pay link of the oldest open invoice is included. Nothing is sent to the customer:
+ * owed. A live pay link of the oldest open invoice is included, named as that bill's with its own
+ * open amount when more than one bill is open (REMINDER_BILLS). Nothing is sent to the customer:
  * the owner sends it from their own WhatsApp. NOTHING_OWED when the customer owes nothing.
  */
 function reminderFor(businessId, customerId, { language, at = Date.now() } = {}) {
@@ -479,11 +490,13 @@ function reminderFor(businessId, customerId, { language, at = Date.now() } = {})
   const oldest = due.invoices[0] ?? null;
   const payUrl = oldest?.pay_url && (!oldest.pay_expires_at || Date.parse(oldest.pay_expires_at) > at) ? oldest.pay_url : null;
   const shop = repo.getBusiness(businessId)?.name ?? "";
-  const text = REMINDER[lang]({
+  const text = (due.invoices.length > 1 ? REMINDER_BILLS : REMINDER)[lang]({
     name: customer.name,
     shop,
     amount: formatRupees(due.amount_paise),
+    count: due.invoices.length,
     bill: oldest?.number ?? null,
+    billAmount: oldest ? formatRupees(Math.round(oldest.open * 100)) : null, // owed() gives rupees
     date: oldest?.issued_at ? dateText(oldest.issued_at) : null,
     payUrl,
   });

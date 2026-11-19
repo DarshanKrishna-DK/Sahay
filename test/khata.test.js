@@ -367,3 +367,25 @@ test("src/sell/spoken.js is gone: the khata uses only approvals.answerAfterSpoke
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src", "sell", "spoken.js")), false);
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", "src", "sell", "khata.js"), "utf8"), /require\("\.\/spoken"\)/);
 });
+
+test("a reminder for several open bills says the total owed and names which bill its pay link pays, with that bill's open amount", async () => {
+  const telegram = { sendToOwner: async () => ({ sent: false, reason: "not_configured" }) };
+  // E2E 2026-11-19: "आपके ₹20,500 बाकी हैं (बिल INV/2026-27/0001 ...)" linked a bill with only ₹5,400 open.
+  for (const [language, expected] of [
+    ["hi-IN", /^नमस्ते रमेश जी, आशा किराना की ओर से याद दिला रहे हैं: आपके कुल ₹20,500 बाकी हैं \(2 बिल\)। सबसे पुराने बिल (INV\/\S+) \(19\/11\/2026\) के ₹3,400 का ऑनलाइन भुगतान: https:\/\/sahay\.test\/pay\/inv_old धन्यवाद।$/],
+    ["kn-IN", /^ನಮಸ್ಕಾರ ರಮೇಶ ಅವರೇ, ಆಶಾ ಕಿರಾಣ ಕಡೆಯಿಂದ ನೆನಪು: ನಿಮ್ಮ ಒಟ್ಟು ₹20,500 ಬಾಕಿ ಇದೆ \(2 ಬಿಲ್\)\. ಹಳೆಯ ಬಿಲ್ (INV\/\S+) \(19\/11\/2026\) ರ ₹3,400 ಆನ್‌ಲೈನ್ ಪಾವತಿ: https:\/\/sahay\.test\/pay\/inv_old ಧನ್ಯವಾದಗಳು\.$/],
+    ["en-IN", /^Hello रमेश, a gentle reminder from \S+ \S+: ₹20,500 is due in all \(2 bills\)\. Pay the oldest bill, (INV\/\S+) \(19\/11\/2026\), ₹3,400 open, online: https:\/\/sahay\.test\/pay\/inv_old Thank you\.$/],
+  ]) {
+    const businessId = seedBusiness({ language, name: language === "kn-IN" ? "ಆಶಾ ಕಿರಾಣ" : "आशा किराना" });
+    const ramesh = customers.save(businessId, { name: language === "kn-IN" ? "ರಮೇಶ" : "रमेश", phone: "9845012345" }).customer;
+    const oldest = issueInvoice(businessId, ramesh.id, 540000, new Date(Date.UTC(2026, 10, 19, 6)).toISOString(), { payUrl: "https://sahay.test/pay/inv_old" });
+    issueInvoice(businessId, ramesh.id, 1710000, new Date(Date.UTC(2026, 10, 19, 9)).toISOString(), { payUrl: "https://sahay.test/pay/inv_new" });
+    khata.recordReceipt(businessId, { customerId: ramesh.id, amount: 2000, mode: "cash", invoiceId: oldest.id });
+
+    const out = await khata.remind(businessId, ramesh.id, { language, telegram });
+    const m = expected.exec(out.text);
+    assert.ok(m, `${language}: ${out.text}`);
+    assert.equal(m[1], oldest.number, "the link is the oldest open bill's");
+    assert.equal(out.amount, 20500);
+  }
+});
