@@ -341,3 +341,73 @@ test("review #1: negotiations share a global cap; a full cap is refused politely
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(limits.usage().negotiation.inUse, 0);
 });
+
+/* ------------------------------------ transient Agora failures (regress #3) --- */
+
+/** Fake Agora whose /join and /speak fail with `failure` the first `times` calls of each kind. */
+function flakyAgora(t, { failJoins = 0, failSpeaks = 0, failure = () => { throw new TypeError("fetch failed"); } } = {}) {
+  const calls = [];
+  let n = 0;
+  let joinFails = failJoins;
+  let speakFails = failSpeaks;
+  agent.setFetch(async (url, init) => {
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    calls.push({ url, body });
+    if (url.endsWith("/join")) {
+      if (joinFails-- > 0) return failure();
+      n += 1;
+      return new Response(JSON.stringify({ agent_id: `${body.properties.labels.role}-${n}`, status: "RUNNING" }), { status: 200 });
+    }
+    if (/\/speak$/.test(url) && speakFails-- > 0) return failure();
+    return new Response("{}", { status: 200 });
+  });
+  t.after(() => agent.setFetch(null));
+  return calls;
+}
+
+test("E2E regress bug 3: one transient /join and one transient /speak failure are retried once, and the negotiation completes", async (t) => {
+  session.configureTiming({ retryMs: 1 });
+  const calls = flakyAgora(t, { failJoins: 1, failSpeaks: 1 });
+  noModel(t);
+  const warned = [];
+  t.mock.method(console, "warn", (msg) => warned.push(String(msg)));
+  const { businessId, requirement, vendor } = seed();
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(started.jobId);
+  const job = repo.getJob(businessId, started.jobId);
+  assert.equal(job.status, "done", job.error);
+  assert.equal(repo.getNegotiation(businessId, started.negotiationId).status, "agreed");
+  const joins = calls.filter((c) => c.url.endsWith("/join"));
+  assert.equal(joins.length, 3, "negotiator twice (one retry), vendor once");
+  assert.equal(joins[0].body.name, joins[1].body.name, "the retry sends the same name, so a /join that did start an agent is refused, not doubled");
+  assert.equal(warned.filter((w) => /trying once more/.test(w)).length, 2, warned.join(" | "));
+});
+
+test("E2E regress bug 3: a failure that persists after the one retry is the honest error; a 4xx is not retried", async (t) => {
+  session.configureTiming({ retryMs: 1 });
+  const calls = flakyAgora(t, { failSpeaks: 2 });
+  noModel(t);
+  t.mock.method(console, "warn", () => {});
+  const { businessId, requirement, vendor } = seed();
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(started.jobId);
+  const job = repo.getJob(businessId, started.jobId);
+  assert.equal(job.status, "failed");
+  assert.match(job.error, /Agora did not answer: fetch failed/);
+  assert.equal(calls.filter((c) => /\/speak$/.test(c.url)).length, 2, "one retry, no more");
+
+  const refused = flakyAgora(t, { failJoins: 5, failure: () => new Response(JSON.stringify({ reason: "invalid token" }), { status: 401 }) });
+  const second = seed();
+  const s2 = await session.startNegotiation({ businessId: second.businessId, requirementId: second.requirement.id, vendorId: second.vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(s2.jobId);
+  assert.equal(repo.getJob(second.businessId, s2.jobId).status, "failed");
+  assert.equal(refused.filter((c) => c.url.endsWith("/join")).length, 1, "a 401 fails the same way again: no retry");
+});
+
+test("the voice-start route and the negotiation share one transient-failure rule", () => {
+  const { AgoraError } = agent;
+  assert.equal(agent.isTransient(new AgoraError("AGORA_UNREACHABLE", "x")), true);
+  for (const status of [429, 500, 502, 503, 504]) assert.equal(agent.isTransient(new AgoraError("AGORA_REQUEST_FAILED", "x", { status })), true);
+  for (const status of [400, 401, 404, 409]) assert.equal(agent.isTransient(new AgoraError("AGORA_REQUEST_FAILED", "x", { status })), false);
+  assert.equal(agent.isTransient(new Error("other")), false);
+});

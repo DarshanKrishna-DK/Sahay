@@ -61,6 +61,13 @@ class AgoraError extends Error {
   }
 }
 
+/**
+ * A failure worth one more try: Agora not answering, rate limited or a 5xx. A 4xx (bad body, bad
+ * credentials, conflict) would fail the same way again, so it is reported at once. One rule for the
+ * owner's /join (src/routes/api.js) and the negotiation agents' /join and /speak.
+ */
+const isTransient = (err) => err?.name === "AgoraError" && (err.code === "AGORA_UNREACHABLE" || [429, 500, 502, 503, 504].includes(err.status));
+
 /* ------------------------------------------------------------ transport --- */
 
 let fetchImpl = (...args) => fetch(...args);
@@ -722,6 +729,7 @@ function lastUserUtterance(contents) {
 
 module.exports = {
   AgoraError,
+  isTransient,
   OWNER_MAX_HISTORY,
   TOOL_HISTORY_TIMEOUT_MS,
   setFetch,

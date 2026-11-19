@@ -61,6 +61,7 @@ const timing = {
   closingGraceMs: 4000,
   msPerChar: 75, // loop mode: wait for a line to be spoken before the next one
   minLineMs: 1500,
+  retryMs: 700, // one retry of a transient /join or /speak failure, as for the owner's /join
 };
 
 /** negotiation sessionId -> runtime of a running negotiation in this process */
@@ -78,6 +79,22 @@ const sleep = (ms, signal) =>
   });
 const round2 = (n) => Math.round(n * 100) / 100;
 const money = (n) => String(round2(n));
+
+/**
+ * Run an Agora call; on a transient failure (agent.isTransient: no answer, 429, 5xx) try once more
+ * after timing.retryMs (E2E regress bug 3: one "fetch failed" ended a negotiation that a retry
+ * completed). A second failure, or any other error, is thrown as it is: the honest error.
+ */
+async function retryOnce(what, fn, signal) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!agent.isTransient(err)) throw err;
+    console.warn(`[negotiation] ${what} failed (${err.message}); trying once more in ${timing.retryMs} ms.`);
+    await sleep(timing.retryMs, signal);
+    return fn();
+  }
+}
 
 function registry() {
   return require("../tools/registry");
@@ -416,7 +433,8 @@ async function startNegotiatorAgent(rt, { remoteUid, withTools, idleTimeout = 60
         }
       : {}),
   });
-  const { agentId } = await agent.startAgent(body);
+  // The same body (and name) on the retry: a /join that did start an agent is refused (409), not doubled.
+  const { agentId } = await retryOnce("negotiator /join", () => agent.startAgent(body));
   rt.agents.negotiator = agentId;
   repo.updateSession(rt.businessId, rt.sessionId, { agent_id: agentId, status: "active" });
   return agentId;
@@ -444,7 +462,7 @@ async function startVendorAgent(rt, { remoteUid, idleTimeout = 60 }) {
     idleTimeout,
     labels: { session: rt.sessionId, role: "simulated-vendor" },
   });
-  const { agentId } = await agent.startAgent(body);
+  const { agentId } = await retryOnce("simulated vendor /join", () => agent.startAgent(body));
   rt.agents.vendor = agentId;
   return agentId;
 }
@@ -471,14 +489,14 @@ async function runAgents(rt, job) {
   const counterpartUid = rt.counterpart === "human" ? UIDS.human : UIDS.vendor;
   const negotiatorId = await startNegotiatorAgent(rt, { remoteUid: counterpartUid, withTools: true });
   const disclosure = buyerLine("disclosure", rt.language, { business: rt.business.name });
-  await agent.speak(negotiatorId, disclosure, { priority: "INTERRUPT", interruptable: false });
+  await retryOnce("negotiator /speak", () => agent.speak(negotiatorId, disclosure, { priority: "INTERRUPT", interruptable: false }), job.signal);
   serverSaid(rt, "agent", disclosure);
 
   if (rt.counterpart === "simulated") {
     const vendorId = await startVendorAgent(rt, { remoteUid: UIDS.negotiator });
     await sleep(lineMs(disclosure), job.signal);
     const intro = vendorAgent.introText(rt.language);
-    await agent.speak(vendorId, intro, { priority: "INTERRUPT", interruptable: false });
+    await retryOnce("simulated vendor /speak", () => agent.speak(vendorId, intro, { priority: "INTERRUPT", interruptable: false }), job.signal);
     serverSaid(rt, "vendor", intro);
     await sleep(lineMs(intro), job.signal);
     rt.introduced = true;
@@ -535,7 +553,7 @@ async function runLoop(rt, job) {
   const buyer = rt.agents.negotiator ?? (await startNegotiatorAgent(rt, { remoteUid: UIDS.nobody, withTools: false, idleTimeout: 0 }));
   const seller = rt.agents.vendor ?? (await startVendorAgent(rt, { remoteUid: UIDS.nobody, idleTimeout: 0 }));
   const say = async (speaker, agentId, text, offer = null) => {
-    await agent.speak(agentId, text, { priority: "APPEND", interruptable: false });
+    await retryOnce(`${speaker} /speak`, () => agent.speak(agentId, text, { priority: "APPEND", interruptable: false }), job.signal);
     recordTurn(rt, { speaker, text, offer });
     await sleep(lineMs(text), job.signal);
   };

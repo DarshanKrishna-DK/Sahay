@@ -60,11 +60,6 @@ const AGENT_WATCH_MS = 30 * 1000;
 /** Wait before the one server-side retry of a transient /join failure (E2E 2026-11-19: one 502, the owner's retry worked). */
 const JOIN_RETRY_MS = 700;
 
-/**
- * A /join failure worth one more try: Agora not answering, rate limited or a 5xx. A 4xx (bad
- * body, bad credentials, conflict) would fail the same way again, so it is reported at once.
- */
-const transientJoinFailure = (err) => err?.name === "AgoraError" && (err.code === "AGORA_UNREACHABLE" || [429, 500, 502, 503, 504].includes(err.status));
 
 /** Business, owner and place names: letters and marks of any script, digits, space, . , & ' - ( ), and ZWNJ/ZWJ (Kannada, Devanagari). */
 const NAME_CHARS = /^[\p{L}\p{M}\p{N} .,&'()\p{Join_Control}-]+$/u;
@@ -423,7 +418,7 @@ function createApiRouter() {
         try {
           started = await join();
         } catch (err) {
-          if (!transientJoinFailure(err)) throw err;
+          if (!agent.isTransient(err)) throw err;
           console.warn(`[voice] /join failed (${err.message}); trying once more in ${JOIN_RETRY_MS} ms.`);
           await new Promise((resolve) => setTimeout(resolve, JOIN_RETRY_MS));
           if (voice.get(businessId) !== v) throw new HttpError(409, "CALL_ENDED", "The call was ended while the assistant was joining.");
