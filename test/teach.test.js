@@ -249,7 +249,8 @@ test("teach_rule: the server speaks the rule sentence itself (APPEND, not interr
   const rule = rules.get(businessId, out.ruleId);
   assert.equal(rule.status, "suggested");
   assert.equal(rule.source, "owner_said");
-  assert.deepEqual(call.spoken, [rule.sentence["hi-IN"]]);
+  // E2E full run bug 4a: the read-back is itself the question the yes answers.
+  assert.deepEqual(call.spoken, [`${rule.sentence["hi-IN"]} यह नियम रख लूँ?`]);
   assert.equal(call.speakBodies[0].priority, "APPEND");
   assert.equal(call.speakBodies[0].interruptable, false);
   assert.equal(out.say, "यह नियम रख लूँ?");
@@ -281,7 +282,8 @@ test("confirm_rule keeps the rule on a spoken yes after the read-back; a yes bef
   const kept = await registry.callTool(ctx, "confirm_rule", { decision: "keep" });
   assert.equal(kept.status, "active");
   assert.equal(kept.ruleId, out.ruleId);
-  assert.equal(kept.say, "ठीक है, यह नियम याद रखूँगी।");
+  assert.equal(kept.outcome, "ठीक है, यह नियम याद रखूँगी।");
+  assert.equal(call.spoken.at(-1), kept.outcome, "the server says the rule is kept");
   assert.equal(rules.get(businessId, out.ruleId).status, "active");
 });
 
@@ -442,4 +444,16 @@ test("a reply_language rule fixes the language of every tool's say, whatever rep
   keep(businessId, "reply_language", { language: "kn-IN" });
   const out = await registry.callTool(ctx, "get_my_agent", { reply_language: "en-IN" });
   assert.ok(out.say.includes(rules.active(businessId)[0].sentence["kn-IN"]), out.say);
+});
+
+test("E2E full run: a rule's Kannada sentence names a known item in Kannada script, its Hindi sentence in Devanagari; an unknown item stays as said", () => {
+  const { scriptProblems } = require("../src/agora/script");
+  const level = rules.buildRule("reorder_level", { item: "बासमती चावल", level: 50, unit: "kg" });
+  assert.match(level.sentence["kn-IN"], /^ಬಾಸ್ಮತಿ ಅಕ್ಕಿ 50 ಕೆಜಿ/);
+  assert.equal(scriptProblems(level.sentence["kn-IN"], "kn-IN").foreign, false, "no Devanagari in the Kannada sentence");
+  const fromKannada = rules.buildRule("usual_quantity", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "kg" });
+  assert.match(fromKannada.sentence["hi-IN"], /^आप बासमती चावल की मात्रा/);
+  assert.equal(fromKannada.params.item, "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", "the stored rule keeps the owner's words");
+  const unknown = rules.buildRule("max_price", { item: "गुड़ की भेली", unit: "kg", price: 60 });
+  assert.match(unknown.sentence["kn-IN"], /^गुड़ की भेली:/, "never transliterated by guess");
 });

@@ -31,6 +31,10 @@ const { findVendors } = require("../discovery/indiamart");
 const { candidateSlugs, cityName, cityIn, itemIn } = require("../discovery/slug");
 const { isNativeScript } = require("../agora/script");
 const evidence = require("./evidence");
+const toolCalls = require("./calls");
+const outcome = require("../agora/outcome");
+/** One /history read inside a tool is bounded, so the tool answers within the MCP timeout_ms. */
+const { TOOL_HISTORY_TIMEOUT_MS } = require("../agora/agent");
 const { scoreVendor, rankDeals, comparableListedPrice } = require("../procurement/scoring");
 const { canonicalUnit, sameUnit, unitWord, UNIT_CODES } = require("../procurement/units");
 const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
@@ -50,6 +54,10 @@ const HISTORY_RETRY_MS = 600;
 const VOICE_RETRY = new Set(["NO_ANSWER_YET", "READBACK_NOT_HEARD"]);
 /** get_order_status without an id speaks the latest and lists at most this many recent orders. */
 const RECENT_ORDERS = 10;
+/** A confirm tool's refusals that mean "nothing is waiting for an answer" (see callTool). */
+const NOTHING_WAITING = new Set(["NO_PENDING_INVOICE", "NO_PENDING_PAYMENT", "NO_PENDING_APPROVAL", "ALREADY_DECIDED", "NO_SPOKEN_RULE", "NO_PROPOSAL", "PROPOSAL_DECIDED"]);
+/** A purchase need saved this soon after draft_invoice started belongs to that sale turn and is refused. */
+const SALE_TURN_MS = 6000;
 
 /* -------------------------------------------------------------- speech --- */
 
@@ -674,7 +682,7 @@ async function withHistory(ctx, decide) {
   const agent = require("../agora/agent");
   for (let attempt = 1; ; attempt++) {
     try {
-      return decide(await agent.history(ctx.agentId));
+      return decide(await agent.history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS }));
     } catch (err) {
       if (VOICE_RETRY.has(err?.code) && attempt < HISTORY_ATTEMPTS) {
         await sleep(HISTORY_RETRY_MS);
@@ -781,7 +789,7 @@ function beginSourcing(ctx, requirement, language) {
 async function ownerWords(ctx, args) {
   if (ctx.agentId) {
     try {
-      return { turns: evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId)), source: "history" };
+      return { turns: evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS })), source: "history" };
     } catch {
       // the call history is unavailable: fall back to the model's copy below
     }
@@ -815,7 +823,7 @@ async function unheardFields(ctx, args, claim) {
 async function awaitingAnswer(ctx, approval, result, language) {
   let ownerReply;
   try {
-    const history = await require("../agora/agent").history(ctx.agentId);
+    const history = await require("../agora/agent").history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS });
     ownerReply = approvals.classifyUtterance(approvals.answerToReadback(ctx.businessId, approval, history, { agentId: ctx.agentId }).text);
   } catch {
     ownerReply = undefined; // no answer since the read-back, or the history is unavailable
@@ -870,6 +878,19 @@ function defaultApprovalForOrder(ctx, language) {
   const pending = all.filter((a) => a.status === "pending");
   if (pending.length === 1) return pending[0].id;
   throw new ToolError("NOT_APPROVED", sayFor("not_approved", language), { status: 409, message: "No approved deal to order." });
+}
+
+/** How long after confirm_approval placed an order a create_order call still means that order. */
+const JUST_PLACED_MS = 10 * 60 * 1000;
+
+/**
+ * The order confirm_approval placed a moment ago, when no other deal is approved or waiting: a
+ * create_order call after the owner's spoken yes then names it instead of refusing NOT_APPROVED.
+ */
+function justPlacedOrder(businessId, now = Date.now()) {
+  if (repo.listApprovals(businessId).some((a) => a.status === "approved" || a.status === "pending")) return null;
+  const last = repo.listOrders(businessId).at(-1);
+  return last && now - Date.parse(last.created_at) <= JUST_PLACED_MS ? last : null;
 }
 
 /**
@@ -945,6 +966,56 @@ function rulesNamed(businessId, args) {
 }
 
 /**
+ * Propose a rule and, in a call, read it out as a question ("<sentence> यह नियम रख लूँ?"), so the
+ * owner's yes plainly answers it (E2E full run: the read-back was a bare statement). The same rule
+ * proposed again after it was read out in this call is not replaced: the owner's answer since the
+ * read-back goes to confirm_rule (the first हाँ used to "replace" the rule and need a second one).
+ * `question` and `tap` are the tool's own lines for the yes/no question and the screen fallback.
+ */
+async function askRule(ctx, { kind, params }, language, { question, tap }) {
+  const twin = agentRules.spokenTwin(ctx.businessId, ctx.agentId, { kind, params });
+  if (twin) return ruleAwaitingAnswer(ctx, twin, language, question);
+  const rule = agentRules.propose(ctx.businessId, { kind, params, source: "owner_said" }, { sessionId: ctx.sessionId ?? null });
+  const sentence = rule.sentence[language];
+  const result = { ruleId: rule.id, status: rule.status, sentence };
+  if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${tap}` };
+  const text = `${sentence} ${question}`;
+  // The server says the rule itself, so a spoken yes can only answer exactly these words.
+  require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
+  try {
+    await require("../agora/agent").speak(ctx.agentId, text, { priority: "APPEND", interruptable: false });
+  } catch (err) {
+    return { ...result, readbackSpoken: false, say: `${sentence} ${tap}`, message: `The rule could not be read out: ${err.message}` };
+  }
+  agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text, sessionId: ctx.sessionId ?? null });
+  return { ...result, readbackSpoken: true, next: "confirm_rule", hint: "The server read the rule out and asked the question. Wait for the owner; their yes or no goes to confirm_rule.", say: question };
+}
+
+/** A rule already read out in this call: nothing is spoken again; the owner's answer so far tells the model which confirm_rule to make. */
+async function ruleAwaitingAnswer(ctx, rule, language, question) {
+  let reply;
+  try {
+    reply = approvals.classifyUtterance(agentRules.spokenAnswer(ctx.businessId, rule.id, { agentId: ctx.agentId, history: await require("../agora/agent").history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS }) }));
+  } catch {
+    reply = undefined; // no answer since the read-back, or the history is unavailable
+  }
+  const decision = { affirmative: "keep", negative: "forget" }[reply] ?? null;
+  return {
+    ruleId: rule.id,
+    status: rule.status,
+    sentence: rule.sentence[language],
+    readbackSpoken: true,
+    alreadyAsked: true,
+    ...(reply ? { ownerReply: reply } : {}),
+    next: "confirm_rule",
+    hint: decision
+      ? `The owner has already answered this rule (${reply}). Call confirm_rule with decision ${decision} now, with no id; do not propose the rule again.`
+      : "This rule was already read out and the owner was asked. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no); do not propose it again.",
+    say: decision ? phrase("approval_recording", language) : question,
+  };
+}
+
+/**
  * Offer the active usual_quantity rule for a need saved without a quantity: the server says the
  * usual quantity itself (so the owner's yes answers exactly those words) and the model asks.
  * Returns the offer, or null when there is no rule, no call or the line could not be spoken.
@@ -989,7 +1060,7 @@ const TOOLS = [
     name: "save_requirement",
     scopes: OWNER,
     description:
-      "Saves what the owner wants to buy. Call as soon as the item is known. To add details later, call it again without item and without any id: it updates the requirement saved in this call. An item with no id starts a new requirement. Returns missing[] (fields still needed). In a call, once nothing is missing it also starts the vendor search itself (sourcingStarted true, jobId): just speak `say`, do not call start_sourcing. The server checks the item, quantity and unit against the owner's own words; when saved is false, nothing was saved: speak `say` and wait for the owner to repeat.",
+      "Saves what the owner wants to BUY from a vendor (a purchase). Never for a sale: when the owner sold something to a customer, that is draft_invoice only, never this tool. Call as soon as the item is known. To add details later, call it again without item and without any id: it updates the requirement saved in this call. An item with no id starts a new requirement. Returns missing[] (fields still needed). In a call, once nothing is missing it also starts the vendor search itself (sourcingStarted true, jobId): just speak `say`, do not call start_sourcing. The server checks the item, quantity and unit against the owner's own words; when saved is false, nothing was saved: speak `say` and wait for the owner to repeat.",
     inputSchema: ownerObj(
       {
         requirementId: idArg("requirement", "the requirement saved in this call"),
@@ -1070,6 +1141,17 @@ const TOOLS = [
         };
       }
 
+      // A sale is never a purchase: a new need in the same turn as draft_invoice is the sale misread (E2E full run).
+      if (!target && toolCalls.startedSince(ctx.businessId, ["draft_invoice"], Date.now() - SALE_TURN_MS)) {
+        return {
+          requirementId: null,
+          saved: false,
+          sale: true,
+          sourcingStarted: false,
+          hint: "This turn is a sale to a customer (draft_invoice): nothing was saved as a purchase. Say nothing about buying, vendors or a delivery city; speak only the say of draft_invoice.",
+          say: "",
+        };
+      }
       const requirement = target
         ? repo.updateRequirement(ctx.businessId, target.id, fields)
         : repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
@@ -1334,7 +1416,7 @@ const TOOLS = [
     name: "confirm_approval",
     scopes: OWNER,
     description:
-      "Records the owner's spoken yes or no to the deal request_approval put up: call it, with no id, as soon as the owner answers that question (decision approve on a clear yes, reject on a no). Only one deal waits at a time. The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out.",
+      "Records the owner's spoken yes or no to the deal request_approval put up: call it, with no id, as soon as the owner answers that question (decision approve on a clear yes, reject on a no). Only one deal waits at a time. The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out. On approve the server places the order and issues the purchase order itself and says the result aloud: do not call create_order after it; say only `say`.",
     inputSchema: ownerObj({ approvalId: idArg("approval", "the one approval waiting"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
     async handler(ctx, args, language) {
       let approval;
@@ -1360,12 +1442,25 @@ const TOOLS = [
           sessionId: ctx.sessionId ?? null,
         }),
       );
-      return {
-        approvalId: decided.id,
-        status: decided.status,
-        evidenceUtterance: decided.evidence_utterance,
-        say: phrase(decided.status === "approved" ? "approval_approved" : "approval_rejected", language),
-      };
+      const result = { approvalId: decided.id, status: decided.status, evidenceUtterance: decided.evidence_utterance };
+      if (decided.status !== "approved") return outcome.settle(ctx, phrase("approval_rejected", language), language, result);
+      // The spoken yes IS the owner's approval: the server places the order now, exactly as the
+      // Yes card's tick does (orders.placeApproved, same gate), instead of waiting for another
+      // utterance and a create_order call (E2E full run, bug 3a). The PO number is said by the server.
+      require("../agora/narrator").suppress(ctx.businessId, "order.created");
+      let order;
+      try {
+        order = await orders.placeApproved(ctx.businessId, decided.id, { sessionId: ctx.sessionId ?? null });
+      } catch (err) {
+        const why = toToolError(err, language);
+        return outcome.settle(ctx, `${phrase("approval_approved", language)} ${why.say}`, language, { ...result, orderId: null, orderError: why.code });
+      }
+      return outcome.settle(
+        ctx,
+        `${phrase("approval_approved", language)} ${phrase("order_created", language, { po: order.po_number, sim: Boolean(order.simulated) })}`,
+        language,
+        { ...result, orderId: order.id, poNumber: order.po_number, amount: order.amount, pdfUrl: `/api/orders/${encodeURIComponent(order.id)}/po.pdf`, next: "create_payment_link only if the owner asks to pay" },
+      );
     },
   },
   {
@@ -1375,6 +1470,11 @@ const TOOLS = [
       "Places the order for the approved deal and issues the purchase order (approvalId only if several are approved). Refused unless the owner approved this exact deal.",
     inputSchema: ownerObj({ approvalId: idArg("approval", "the one approved deal") }),
     async handler(ctx, args, language) {
+      // confirm_approval already placed the order for the owner's spoken yes: asking again names it.
+      const placed = args.approvalId ? null : justPlacedOrder(ctx.businessId);
+      if (placed) {
+        return { orderId: placed.id, poNumber: placed.po_number, amount: placed.amount, alreadyPlaced: true, say: phrase("order_created", language, { po: placed.po_number, sim: Boolean(placed.simulated) }) };
+      }
       const approvalId = args.approvalId ?? defaultApprovalForOrder(ctx, language);
       require("../agora/narrator").suppress(ctx.businessId, "order.created");
       let order;
@@ -1472,19 +1572,7 @@ const TOOLS = [
       ["kind"],
     ),
     async handler(ctx, args, language) {
-      const rule = agentRules.propose(ctx.businessId, { kind: args.kind, params: ruleParams(args), source: "owner_said" }, { sessionId: ctx.sessionId ?? null });
-      const sentence = rule.sentence[language];
-      const result = { ruleId: rule.id, status: rule.status, sentence };
-      if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${phrase("rule_tap", language)}` };
-      // The server says the rule itself, so a spoken yes can only answer exactly these words.
-      require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
-      try {
-        await require("../agora/agent").speak(ctx.agentId, sentence, { priority: "APPEND", interruptable: false });
-      } catch (err) {
-        return { ...result, readbackSpoken: false, say: `${sentence} ${phrase("rule_tap", language)}`, message: `The rule could not be read out: ${err.message}` };
-      }
-      agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text: sentence, sessionId: ctx.sessionId ?? null });
-      return { ...result, readbackSpoken: true, next: "confirm_rule", say: phrase("rule_question", language) };
+      return askRule(ctx, { kind: args.kind, params: ruleParams(args) }, language, { question: phrase("rule_question", language), tap: phrase("rule_tap", language) });
     },
   },
   {
@@ -1505,7 +1593,7 @@ const TOOLS = [
       } catch (err) {
         throw ruleRefusal(err, language);
       }
-      return { ruleId: decided.id, status: decided.status, say: phrase(decided.status === "active" ? "rule_kept" : "rule_forgotten", language) };
+      return outcome.settle(ctx, phrase(decided.status === "active" ? "rule_kept" : "rule_forgotten", language), language, { ruleId: decided.id, status: decided.status });
     },
   },
   {
@@ -1581,7 +1669,7 @@ const TOOLS = [
     },
   },
 ];
-TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields })); // STK: stock tools
+TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields, askRule })); // STK: stock tools
 TOOLS.push(...require("./sell")({ ownerObj, idArg, withHistory })); // SELL: add_customer, set_item, draft_invoice, request_invoice_approval, confirm_invoice
 TOOLS.push(...require("./khata").TOOLS); // KHATA: record_payment, who_owes_me, send_payment_reminder
 
@@ -1614,6 +1702,7 @@ async function callTool(ctx, name, args = {}) {
   const problem = validateArgs(tool.inputSchema, args);
   if (problem) throw new ToolError("INVALID_ARGUMENTS", sayFor("invalid", language), { status: 400, message: problem });
   if (replyLanguage) require("../agora/narrator").useLanguage(ctx.businessId, replyLanguage);
+  const end = toolCalls.begin(ctx.businessId, name, { answer: Boolean(args?.decision || args?.confirm) });
   try {
     return await tool.handler(ctx, args ?? {}, language, { businessLanguage });
   } catch (err) {
@@ -1621,7 +1710,14 @@ async function callTool(ctx, name, args = {}) {
     if (toolError.code === "INTERNAL" || toolError.status >= 500) {
       events.emit(ctx.businessId, "error", { code: toolError.code, message: toolError.message, say: toolError.say ?? null, tool: name }, { sessionId: ctx.sessionId ?? null, actor: "system" });
     }
+    // The server already acted on this answer (src/agora/confirm-watch.js) and said the result:
+    // the model's late call finds nothing waiting, and is told so instead of "there is nothing".
+    if (NOTHING_WAITING.has(toolError.code) && require("../agora/confirm-watch").doneRecently(ctx.businessId, name)) {
+      return { alreadyDone: true, by: "server", hint: outcome.SPOKEN_HINT, say: outcome.HAND_BACK[langKey(language)] };
+    }
     throw toolError;
+  } finally {
+    end();
   }
 }
 

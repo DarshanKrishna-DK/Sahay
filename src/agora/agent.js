@@ -37,6 +37,17 @@ const SPEAK_MAX_BYTES = 500; // docs limit 512 bytes; kept under it on purpose
 const OWNER_SESSION_SECONDS = 2 * 60 * 60;
 const OWNER_IDLE_TIMEOUT_SECONDS = 120;
 const REQUEST_TIMEOUT_MS = 15000;
+const SLOW_GET_MS = 2000;
+/**
+ * Owner-call LLM history (properties.llm.max_history: "the number of conversation history messages
+ * cached in the LLM"; user and agent messages and tool call information count; default 32; docs:
+ * join.md, checked 2026-11-19). Kept short so a long call's context stays bounded: what is waiting
+ * for the owner (a read-back, a bill, a payment) lives in the "Call status" system message, which
+ * is re-sent whole and is not part of this history (E2E full run, bug 1).
+ */
+const OWNER_MAX_HISTORY = 16;
+/** Budget for one /history read inside a tool call: the MCP server's timeout_ms (10 s) covers the whole tool. */
+const TOOL_HISTORY_TIMEOUT_MS = 4000;
 const RETRYABLE = new Set([429, 503, 504]);
 const OWNER_MCP_SERVER_NAME = "sahay";
 
@@ -87,7 +98,7 @@ function projectPath(path) {
  * Error bodies are `{detail, reason}`; only `reason` and the status reach the
  * error message, never a header or a credential.
  */
-async function call(method, path, body, { retry = false } = {}) {
+async function call(method, path, body, { retry = false, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   const attempts = retry ? 2 : 1;
   for (let attempt = 1; ; attempt++) {
     let res;
@@ -97,7 +108,7 @@ async function call(method, path, body, { retry = false } = {}) {
         method,
         headers: { Authorization: basicAuth(), "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       if (err instanceof AgoraError) throw err;
@@ -105,7 +116,9 @@ async function call(method, path, body, { retry = false } = {}) {
       throw new AgoraError("AGORA_UNREACHABLE", `Agora did not answer: ${err.name === "TimeoutError" ? "timed out" : err.message}`);
     }
     const text = await res.text();
-    if (method !== "GET") timingLog(`[agora] ${method} ${maskPath(path)} ${res.status} in ${Date.now() - sentAt} ms`);
+    const took = Date.now() - sentAt;
+    // A slow GET is logged too: a tool that reads /history must answer before the MCP timeout_ms (E2E full run: 11.3 s).
+    if (method !== "GET" || took >= SLOW_GET_MS) timingLog(`[agora] ${method} ${maskPath(path)} ${res.status} in ${took} ms`);
     let json = null;
     if (text) {
       try {
@@ -170,6 +183,7 @@ const FILLER_PROMPT = [
   'Two to five words: a short acknowledgement or thinking sound, nothing else. Examples: Hindi "हाँ जी, एक सेकंड", "अच्छा, देखती हूँ", "हम्म, ज़रा देखूँ"; Kannada "ಸರಿ, ಒಂದು ನಿಮಿಷ", "ಹೂಂ, ನೋಡ್ತೀನಿ"; English "Okay, one sec", "Hmm, let me see".',
   "Use exactly the language of the owner's message: Hindi in Devanagari script with feminine forms, Kannada in Kannada script, English in English. Never write Hindi or Kannada in Latin letters.",
   "Never answer the message, never a number, price, name, promise or question.",
+  'Never apologise, console or react to a problem (no "कोई बात नहीं", "दिक्कत", "माफ़", "ಪರವಾಗಿಲ್ಲ", "sorry", "no problem"), and never say that anything is done, saved or made: you do not know the result yet.',
 ].join(" ");
 
 /** Wait before a filler plays: gpt-4.1-mini starts a plain reply well within this; a tool call does not. */
@@ -257,7 +271,7 @@ const SPOKEN_STYLE = [
   "How you talk: like a warm, quick Indian shop assistant on the phone with the owner, never like a form, a letter or a document. One or two short spoken sentences per turn, then stop: the owner can interrupt any time. Ask one question at a time.",
   "Start most replies with a short natural reaction to what the owner just said, and vary it: never start two replies in a row with the same word. Hindi: हाँ जी, अच्छा, ठीक है, जी बिल्कुल, बढ़िया!, अरे वाह. Kannada: ಸರಿ, ಹೌದು, ಆಯ್ತು, ಓಹ್ ಒಳ್ಳೇದು, ಹೂಂ. English: Sure, Okay, Got it, Oh nice, Right.",
   "Now and then, when you are thinking or about to explain, use one light filler, the way people do: Hindi देखिए, हम्म, अच्छा तो; Kannada ನೋಡಿ, ಹೂಂ; English um, so, hmm. At most one per reply, never inside a price or a figure, and not in every reply.",
-  "React like a person: good news gets a little warmth (बढ़िया!, ಒಳ್ಳೇದು!, Nice!), a problem gets a kind word (अरे, कोई बात नहीं; ಅಯ್ಯೋ, ಪರವಾಗಿಲ್ಲ; Ah, no problem), a maybe gets patience (कोई जल्दी नहीं; ಆರಾಮಾಗಿ ಹೇಳಿ; No rush). Never laugh, never write sounds like हाहा or haha.",
+  "React like a person: good news gets a little warmth (बढ़िया!, ಒಳ್ಳೇದು!, Nice!), a maybe gets patience (कोई जल्दी नहीं; ಆರಾಮಾಗಿ ಹೇಳಿ; No rush). A kind word (अरे, कोई बात नहीं; ಅಯ್ಯೋ, ಪರವಾಗಿಲ್ಲ; Ah, no problem) only when a tool result in this turn reports a failure or the owner tells you of a problem; never before a result that succeeded, never before figures, and never as an opener to a question like who owes money. Never laugh, never write sounds like हाहा or haha.",
   "Never sound like you are reading: no 'please note', 'as follows', 'kindly', 'your request has been processed'. No lists, markdown, emoji, URLs, ids or tables, and never read out several vendors or options in a row: name the best one and say the rest are on the screen.",
   "Numbers: say every figure exactly as a tool gave it, in digits (the voice reads them aloud); units in full (किलो, ಕಿಲೋ, kilograms, pieces, days); large amounts in lakh and crore.",
   "Examples of the feel (the figures in real replies come only from tools):",
@@ -272,15 +286,24 @@ const SPOKEN_STYLE = [
  * (approvals.answerAfterSpoken); this only keeps the model from calling the wrong tool.
  */
 const SHOP_WORK = [
-  "Selling: a sale to a customer is a bill. Call draft_invoice with the customer and each line (item, quantity, unit, and price per unit if said), then request_invoice_approval in the same turn. A sale is never save_requirement: save_requirement is only for something the shop buys. If draft_invoice says an item is not saved yet, call set_item with its name, unit and selling price; pass hsn and gst_rate only when the owner said both, never fill them yourself; the server reads them back, and on the owner's clear yes call set_item again with only confirm true. Call add_customer only to save a customer's phone, GSTIN or state. The owner's yes or no to a bill goes to confirm_invoice.",
+  "Selling: a sale to a customer is a bill. Call draft_invoice with the customer and each line (item, quantity, unit, and price per unit if said), then request_invoice_approval in the same turn. A sale is never save_requirement: save_requirement is only for something the shop buys. If draft_invoice says an item is not saved yet, call set_item with its name, unit and selling price; pass hsn and gst_rate only when the owner said both, never fill them yourself; the server reads them back, and on the owner's clear yes call set_item again with only confirm true. When the owner asks to add a customer, call add_customer at once with the name; phone, GSTIN, state and address are optional, so never ask for them before saving. A sale never calls save_requirement and never asks about vendors or a delivery city. The owner's yes or no to a bill goes to confirm_invoice; a yes to 'shall I read it out?' also goes to confirm_invoice, which reads the bill out first.",
   "GST: bills are plain bills without GST until the shop's GSTIN is saved. Never ask for the shop's GSTIN unless the owner says the shop is GST-registered; then ask them to add the GST number in the Sell settings on the screen.",
   "Khata: when the owner says a customer paid, call record_payment with customer, amount, mode (cash or upi) and owner_words. The server reads the payment back; say only its `say` and wait. When the owner answers, call record_payment again with only decision (confirm on a clear yes, cancel on a no). who_owes_me tells who owes how much (pass customer for one person). send_payment_reminder prepares a reminder the owner sends from the WhatsApp button on the screen; nothing is sent by itself.",
-  "Stock: set_opening_stock when the owner says how much of an item they have; get_stock for what is left or low; mark_order_delivered when a purchase order's goods have arrived; set_reorder_level when the owner says at what level to buy more (their answer to its read-back goes to confirm_rule). When the server has asked whether to buy more of a low item, the owner's yes or no goes to confirm_reorder with no item: a yes starts a vendor search only, never an order.",
+  "Stock: set_opening_stock when the owner says how much of an item they have; get_stock for what is left or low; mark_order_delivered when a purchase order's goods have arrived; set_reorder_level when the owner says at what level to buy more (the server reads the rule out as a question; the owner's answer goes to confirm_rule, never to set_reorder_level again). When the server has asked whether to buy more of a low item (\"... कम है ... और मँगाऊँ?\"), the owner's yes or no goes to confirm_reorder with no item: a yes starts a vendor search only, never an order.",
   "Confirmations: for every deal, bill, payment received, item tax, rule or reorder, the server reads it out first; you say only the tool's `say` question, never repeat its figures, then wait. Only the owner's spoken yes after that read-back counts: a typed yes never counts (ask the owner to say it aloud or press the yes button on the card on the screen), and silence, maybe or a question is not a yes. The answer goes to the tool for that kind: confirm_approval for a deal, confirm_invoice for a bill, record_payment with decision for a payment, set_item with confirm for an item's tax, confirm_rule for a rule or a reorder level, confirm_reorder for buying more. If more than one thing is waiting, the owner's answer goes to the one read out last.",
-  'Hindi sale and payment. Owner: "Ramesh Traders को 50 किलो बासमती, 90 रुपये किलो।" You (after draft_invoice and request_invoice_approval; the server reads the bill out): "बिल बना दूँ?" Owner: "हाँ, बना दो।" You (after confirm_invoice): "बढ़िया! बिल बन गया, व्हाट्सऐप वाला बटन स्क्रीन पर है।" Owner: "रमेश ने दो हज़ार रुपये नकद दिए।" You (after record_payment; the server reads it back): "खाते में लिख दूँ?" Owner: "हाँ।" You (after record_payment with decision confirm): "लिख लिया!"',
-  'Kannada sale and payment. Owner: "Ramesh Traders ಅವರಿಗೆ 50 ಕಿಲೋ ಬಾಸ್ಮತಿ, ಕಿಲೋಗೆ 90 ರೂಪಾಯಿ." You (after draft_invoice and request_invoice_approval; the server reads the bill out): "ಬಿಲ್ ಮಾಡಲೇ?" Owner: "ಹೌದು, ಮಾಡಿ." You (after confirm_invoice): "ಆಯ್ತು! ಬಿಲ್ ಆಯ್ತು, ವಾಟ್ಸಾಪ್ ಬಟನ್ ಪರದೆಯ ಮೇಲಿದೆ." Owner: "ರಮೇಶ್ ಎರಡು ಸಾವಿರ ರೂಪಾಯಿ ನಗದು ಕೊಟ್ರು." You (after record_payment; the server reads it back): "ಖಾತೆಯಲ್ಲಿ ಬರೆಯಲೇ?" Owner: "ಹೌದು." You (after record_payment with decision confirm): "ಬರೆದುಕೊಂಡೆ!"',
-  'English sale and payment. Owner: "Ramesh Traders, 50 kilos of basmati at 90 rupees a kilo." You (after draft_invoice and request_invoice_approval; the server reads the bill out): "Shall I make this bill?" Owner: "Yes, go ahead." You (after confirm_invoice): "Done! The bill is made; the WhatsApp button is on your screen." Owner: "Ramesh paid two thousand rupees in cash." You (after record_payment; the server reads it back): "Shall I write this in the khata?" Owner: "Yes." You (after record_payment with decision confirm): "Written down!"',
+  'Hindi sale and payment. Owner: "Ramesh Traders को 50 किलो बासमती, 90 रुपये किलो।" You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say: "बिल बनाऊँ, हाँ या ना?" Owner: "हाँ, बना दो।" You call confirm_invoice with approve; the server says the result aloud itself, and you say only that tool\'s say. Owner: "रमेश ने दो हज़ार रुपये नकद दिए।" You call record_payment; the server reads it back; you say its say. Owner: "हाँ।" You call record_payment with decision confirm and say only its say.',
+  'Kannada sale and payment. Owner: "Ramesh Traders ಅವರಿಗೆ 50 ಕಿಲೋ ಬಾಸ್ಮತಿ, ಕಿಲೋಗೆ 90 ರೂಪಾಯಿ." You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say: "ಬಿಲ್ ಮಾಡಲೇ, ಹೌದು ಅಥವಾ ಇಲ್ಲ?" Owner: "ಹೌದು, ಮಾಡಿ." You call confirm_invoice with approve and say only its say. Owner: "ರಮೇಶ್ ಎರಡು ಸಾವಿರ ರೂಪಾಯಿ ನಗದು ಕೊಟ್ರು." You call record_payment; the server reads it back. Owner: "ಹೌದು." You call record_payment with decision confirm and say only its say.',
+  'English sale and payment. Owner: "Ramesh Traders, 50 kilos of basmati at 90 rupees a kilo." You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say. Owner: "Yes, go ahead." You call confirm_invoice with approve and say only its say. Owner: "Ramesh paid two thousand rupees in cash." You call record_payment; the server reads it back. Owner: "Yes." You call record_payment with decision confirm and say only its say.',
 ];
+
+/**
+ * The one rule against false confirmations (E2E full run, bug 1: "बिल बन गया" / "लिख लिया" with
+ * nothing issued or recorded). The server also says every result aloud itself and acts on a yes the
+ * model left alone (src/agora/outcome.js, src/agora/confirm-watch.js); this keeps the model from
+ * claiming one first.
+ */
+const DONE_ONLY_FROM_TOOLS =
+  "Results: never say that something was done (a bill made, a payment written down, an order placed, a deal approved, a rule kept, a search started, a customer saved) unless a tool you called in THIS turn returned it; then say that tool's `say` and nothing more about it. When the owner says yes or no to something the server read out, always call its confirm tool in that same turn, even if you think it is already done: never answer a yes from memory or from earlier turns. If a tool returned an error, say only its `say`: nothing was done.";
 
 /** What happens while a tool runs: Agora plays a filler itself, or (without it) the model says one. */
 function waitingLine(fillerWords) {
@@ -320,9 +343,10 @@ function systemPrompt(business, { now = new Date(), rules = [], fillerWords = tr
     "Negotiation: call start_negotiation without a vendor to negotiate with a simulated vendor priced from the best real listing that has a comparable price, unless the owner names a vendor by rank or asks for a real vendor to join by link (counterpart human). Only that negotiation counterpart is simulated: call it a simulated vendor (सिम्युलेटेड विक्रेता / ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್), and use the word simulated for nothing else.",
     "Approval: before any order call request_approval once (no id: it takes the best deal). The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer, and never ask whether to ask for approval about a deal already read out; call request_approval again only if the owner asks to hear the deal again, with repeat true. If the owner says maybe or later, say there is no hurry: the deal keeps waiting and their next yes or no still goes to confirm_approval. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words. A typed yes never approves: the owner presses the yes card on the screen or says it aloud.",
     "Never say an order exists unless create_order returned an orderId or the latest Call status says the order was placed. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
-    "Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
+    "Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval (on approve it places the order itself: no create_order after it), create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
     TEACHING,
     ...SHOP_WORK,
+    DONE_ONLY_FROM_TOOLS,
     rulesSection(rules),
   ].join("\n");
 }
@@ -351,6 +375,7 @@ function murfBaseUrl() {
  * @param {number} [o.idleTimeout]
  * @param {object} [o.labels]
  * @param {boolean} [o.tuning]           add filler words, turn detection and interruption (owner calls)
+ * @param {number} [o.maxHistory]        llm.max_history (default 32, the docs default)
  */
 function buildJoinBody(o) {
   for (const field of ["name", "channel", "token", "voiceId", "prompt"]) {
@@ -371,7 +396,7 @@ function buildJoinBody(o) {
     params: { model: LLM_MODEL },
     system_messages: [{ role: "system", content: o.prompt }],
     failure_message: FAILURE_MESSAGE[language],
-    max_history: 32,
+    max_history: o.maxHistory ?? 32,
   };
   const advanced = { enable_rtm: true };
   if (o.mcp) {
@@ -403,7 +428,10 @@ function buildJoinBody(o) {
       enable_string_uid: false,
       idle_timeout: o.idleTimeout ?? OWNER_IDLE_TIMEOUT_SECONDS,
       advanced_features: advanced,
-      asr: { vendor: "sarvam", language, params: { api_key: config.sarvam.key, language: "unknown" } },
+      // Sarvam auto-detects with params.language "unknown" (docs: models/asr/sarvam.md). The optional
+      // top-level asr.language is left out: a Kannada clip in a Hindi call gave no turn at all with it
+      // set to hi-IN (E2E full run; cause not proven live, see agora-findings.md).
+      asr: { vendor: "sarvam", params: { api_key: config.sarvam.key, language: "unknown" } },
       llm,
       tts: {
         vendor: "murf",
@@ -488,6 +516,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     },
     labels: { session: sessionId },
     tuning,
+    maxHistory: OWNER_MAX_HISTORY,
   });
   let tuning = true;
   let started;
@@ -667,9 +696,10 @@ async function think(agentId, text, { onListening = "append", onThinking = "appe
 }
 
 /** GET /history (running agents only). Returns the `contents` array. */
-async function history(agentId) {
+async function history(agentId, { timeoutMs } = {}) {
   if (!agentId) throw new AgoraError("AGENT_REQUIRED", "history needs an agent id.");
-  const json = await call("GET", `/agents/${encodeURIComponent(agentId)}/history`, undefined, { retry: true });
+  // A bounded read (tools, the confirmation watchdog) is tried once; the default keeps one retry.
+  const json = await call("GET", `/agents/${encodeURIComponent(agentId)}/history`, undefined, timeoutMs ? { timeoutMs } : { retry: true });
   if (!Array.isArray(json?.contents)) throw new AgoraError("HISTORY_BAD_RESPONSE", "Agora answered /history without contents.");
   return json.contents;
 }
@@ -692,6 +722,8 @@ function lastUserUtterance(contents) {
 
 module.exports = {
   AgoraError,
+  OWNER_MAX_HISTORY,
+  TOOL_HISTORY_TIMEOUT_MS,
   setFetch,
   setTimingLog,
   buildJoinBody,

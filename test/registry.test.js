@@ -379,7 +379,15 @@ test("confirm_approval by voice approves on a clear yes to the read-back the ser
   call.owner("हाँ जी, कर दो");
   const ok = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
   assert.equal(ok.status, "approved");
-  assert.equal(ok.say, "आपकी मंज़ूरी दर्ज हो गई।");
+  // E2E full run bug 3a: the spoken yes places the order at once, like the Yes card, and the
+  // server itself says the approval and the PO number; the model only hands back.
+  assert.match(ok.orderId, /^ord_/);
+  assert.equal(ok.outcome, `आपकी मंज़ूरी दर्ज हो गई। ऑर्डर बन गया, खरीद आदेश नंबर ${ok.poNumber}।`);
+  assert.equal(ok.outcomeSpoken, true);
+  assert.equal(call.spoken.at(-1), ok.outcome);
+  assert.equal(call.speakBodies.at(-1).interruptable, false);
+  assert.equal(ok.say, "और कुछ बताइए?");
+  assert.equal(repo.listOrders(businessId).length, 1);
   const row = repo.getApproval(businessId, asked.approvalId);
   assert.equal(row.decided_via, "voice");
   assert.equal(row.evidence_utterance, "हाँ जी, कर दो");
@@ -426,13 +434,16 @@ test("approved deal -> create_order -> create_payment_link (Razorpay test, faked
   const call = fakeCall(t);
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
   call.owner("yes, go ahead");
-  await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
-
-  const order = await registry.callTool(ctx, "create_order", { approvalId: asked.approvalId });
+  const order = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
   assert.match(order.orderId, /^ord_/);
   assert.match(order.poNumber, /^SAHAY\/\d{4}\/[0-9A-F]{4,}-0001$/, "per-business code and sequence (E2E r4)");
-  assert.equal(order.say, `The order is placed, purchase order number ${order.poNumber}.`);
+  assert.equal(order.outcome, `Your approval is recorded. The order is placed, purchase order number ${order.poNumber}.`);
+  // A create_order after the spoken yes names the order already placed; the same approval never orders twice.
+  const again = await registry.callTool(ctx, "create_order", {});
+  assert.deepEqual([again.orderId, again.alreadyPlaced], [order.orderId, true]);
+  assert.equal(again.say, `The order is placed, purchase order number ${order.poNumber}.`);
   await expectToolError(registry.callTool(ctx, "create_order", { approvalId: asked.approvalId }), "APPROVAL_CONSUMED");
+  assert.equal(repo.listOrders(businessId).length, 1);
 
   const before = await registry.callTool(ctx, "get_order_status", {});
   assert.equal(before.say, `Order ${order.poNumber} is confirmed; payment is pending and no payment link has been made yet.`);
@@ -670,11 +681,16 @@ test("money defaults never pick between several; one deal waits at a time, so a 
   const yes = await registry.callTool(ctx, "confirm_approval", { decision: "approve" });
   assert.equal(yes.approvalId, second.approvalId, "the yes approves the deal that was read out last");
   assert.equal(repo.getApproval(businessId, first.approvalId).status, "rejected");
+  assert.equal(repo.getApproval(businessId, second.approvalId).status, "consumed", "the spoken yes placed its order");
 
+  // Two deals approved on the cards and not ordered yet: the default never picks between them.
   const third = await registry.callTool(ctx, "request_approval", { quoteId: a.quote.id });
   approvals.confirmApproval(businessId, third.approvalId, { decision: "approve", via: "button" });
+  const c = seedQuote(businessId);
+  const fourth = await registry.callTool(ctx, "request_approval", { quoteId: c.quote.id });
+  approvals.confirmApproval(businessId, fourth.approvalId, { decision: "approve", via: "button" });
   await expectToolError(registry.callTool(ctx, "create_order", {}), "AMBIGUOUS");
-  assert.equal(repo.listOrders(businessId).length, 0, "no order from an ambiguous default");
+  assert.equal(repo.listOrders(businessId).length, 1, "no order from an ambiguous default");
 
   // with the id it goes through the gate as before
   const order = await registry.callTool(ctx, "create_order", { approvalId: third.approvalId });
@@ -682,7 +698,7 @@ test("money defaults never pick between several; one deal waits at a time, so a 
   // now exactly one approved remains: the default takes it, through the same gate
   const next = await registry.callTool(ctx, "create_order", {});
   assert.notEqual(next.orderId, order.orderId);
-  assert.equal(repo.getApproval(businessId, second.approvalId).status, "consumed");
+  assert.equal(repo.getApproval(businessId, fourth.approvalId).status, "consumed");
 
   // two confirmed orders: the payment default is the most recent one (e2e r3 bug 2)
   stubRazorpayOrders(t);

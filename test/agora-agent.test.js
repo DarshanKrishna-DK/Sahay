@@ -73,7 +73,8 @@ test("buildJoinBody matches the S0-verified shape: managed gpt-4.1-mini, Sarvam 
   assert.equal(p.agent_rtc_uid, "1001");
   assert.deepEqual(p.remote_rtc_uids, ["1002"]);
   assert.deepEqual(p.advanced_features, { enable_rtm: true, enable_tools: true });
-  assert.deepEqual(p.asr, { vendor: "sarvam", language: "hi-IN", params: { api_key: FAKE.SARVAM_API_KEY, language: "unknown" } });
+  // Sarvam auto-detects (params.language "unknown"); no top-level asr.language steers it to the call's language (E2E full run).
+  assert.deepEqual(p.asr, { vendor: "sarvam", params: { api_key: FAKE.SARVAM_API_KEY, language: "unknown" } });
   assert.equal(p.llm.credential_mode, "managed");
   assert.equal(p.llm.vendor, "openai");
   assert.equal(p.llm.style, "openai");
@@ -680,7 +681,7 @@ test("whole shop: the prompt routes buy, sell, khata and stock to their tools", 
     const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language });
     assert.match(prompt, /^You are Sahay, an automated assistant that runs the shop/);
     // Buy stays as it was.
-    assert.match(prompt, /Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link/);
+    assert.match(prompt, /Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval \(on approve it places the order itself: no create_order after it\), create_payment_link/);
     // Sell: a sale is a bill, never a purchase requirement; HSN + GST only as said, read back by the server.
     assert.match(prompt, /A sale is never save_requirement/);
     assert.match(prompt, /draft_invoice[^\n]*then request_invoice_approval in the same turn/);
@@ -725,7 +726,11 @@ test("whole shop: a sale and a payment example per language, each Hindi and Kann
     assert.match(line, /confirm_invoice/);
     assert.match(line, /record_payment/);
     const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    assert.ok(quoted.length >= 6, `${label}has a full exchange`);
+    assert.ok(quoted.length >= 4, `${label}has a full exchange`);
+    // E2E full run bug 1: the model copied "बिल बन गया" / "लिख लिया" from these examples without
+    // calling the tool. The examples carry no result sentence: the result is the tool's own say.
+    assert.doesNotMatch(line, /बिल बन गया|लिख लिया|ಬಿಲ್ ಆಯ್ತು|ಬರೆದುಕೊಂಡೆ|Done!|Written down/);
+    assert.match(line, /confirm_invoice with approve and say only its say|confirm_invoice with approve; the server says the result aloud itself/);
     for (const sentence of quoted) assert.ok(isNativeScript(sentence, language, { allow: ["Ramesh Traders"] }), `${language}: ${sentence}`);
   }
 });
@@ -735,4 +740,82 @@ test("whole shop: the owner agent's tools stay within Agora's 32-tool MCP cap", 
   const owner = registry.toolNames(registry.SCOPES.owner);
   assert.ok(owner.length <= 32, `owner tools: ${owner.length}`);
   for (const tool of ["save_requirement", "draft_invoice", "record_payment", "set_opening_stock", "confirm_reorder"]) assert.ok(owner.includes(tool), tool);
+});
+
+/* ------------------------------------------- E2E full run (voice fixes) --- */
+
+test("E2E full run bug 1: an owner call keeps a bounded LLM history (llm.max_history), other agents keep the docs default", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const session = repo.createSession(businessId, { kind: "owner", channel: "own-hist", status: "connecting" });
+  const calls = fakeAgora(t, () => ({ json: { agent_id: "AGH", create_ts: 1, status: "RUNNING" } }));
+  await agent.startOwnerAgent({ businessId, sessionId: session.id, channel: "own-hist", agentUid: 1001, userUid: 1002 });
+  assert.equal(calls[0].body.properties.llm.max_history, agent.OWNER_MAX_HISTORY);
+  assert.ok(agent.OWNER_MAX_HISTORY < 32 && agent.OWNER_MAX_HISTORY >= 8, "shorter than the default, long enough for a read-back and its answer");
+  const plain = agent.buildJoinBody({ name: "n", channel: "c", token: "t", agentUid: 1, remoteUids: [2], language: "hi-IN", voiceId: "v", prompt: "p" });
+  assert.equal(plain.properties.llm.max_history, 32);
+});
+
+test("E2E full run bug 1: the prompt forbids claiming a result no tool returned in this turn, and sends every answer to its confirm tool", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const prompt = agent.systemPrompt({ name: "Annapurna Kirana", language });
+    assert.match(prompt, /never say that something was done \(a bill made, a payment written down, an order placed[^)]*\) unless a tool you called in THIS turn returned it/);
+    assert.match(prompt, /always call its confirm tool in that same turn, even if you think it is already done: never answer a yes from memory/);
+    assert.match(prompt, /If a tool returned an error, say only its `say`: nothing was done/);
+  }
+});
+
+test("E2E full run bug 5: no consoling or apologetic opener before a result, from the model or from Agora's filler generator", () => {
+  const prompt = agent.systemPrompt({ name: "Annapurna Kirana", language: "hi-IN" });
+  assert.match(prompt, /A kind word \(अरे, कोई बात नहीं[^)]*\) only when a tool result in this turn reports a failure/);
+  assert.match(prompt, /never before a result that succeeded/);
+  assert.match(agent.FILLER_PROMPT, /Never apologise, console or react to a problem/);
+  assert.match(agent.FILLER_PROMPT, /कोई बात नहीं/);
+  for (const phrases of Object.values(agent.FILLER_PHRASES)) {
+    for (const p of phrases) assert.doesNotMatch(p, /कोई बात नहीं|दिक्कत|माफ़|ಪರವಾಗಿಲ್ಲ|sorry|no problem/i, p);
+  }
+});
+
+test("E2E full run bug 5: a customer is added by name alone, and a sale never becomes a purchase", () => {
+  const prompt = agent.systemPrompt({ name: "Annapurna Kirana", language: "hi-IN" });
+  assert.match(prompt, /When the owner asks to add a customer, call add_customer at once with the name; phone, GSTIN, state and address are optional, so never ask for them/);
+  assert.match(prompt, /A sale never calls save_requirement and never asks about vendors or a delivery city/);
+  const tools = Object.fromEntries(registry.toolsFor("owner").map((tool) => [tool.name, tool]));
+  assert.deepEqual(tools.add_customer.inputSchema.required, ["name"], "phone is optional");
+  assert.match(tools.add_customer.description, /never ask for them before saving/);
+  assert.match(tools.save_requirement.description, /Never for a sale/);
+});
+
+test("E2E full run bug 5: Sarvam auto-detects the language in every call language, with no top-level hint", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const body = agent.buildJoinBody({ name: "n", channel: "c", token: "t", agentUid: 1, remoteUids: [2], language, voiceId: "v", prompt: "p" });
+    assert.deepEqual(body.properties.asr, { vendor: "sarvam", params: { api_key: FAKE.SARVAM_API_KEY, language: "unknown" } });
+    assert.equal(body.properties.tts.params.locale, language, "only the voice follows the call language");
+  }
+});
+
+test("a bounded /history read (tools, watchdog) is tried once with its own timeout; a slow GET is logged without the agent id", async (t) => {
+  let fetches = 0;
+  agent.setFetch(async (url, init) => {
+    fetches += 1;
+    assert.ok(init.signal, "every request has a timeout signal");
+    return new Response(JSON.stringify({ reason: "busy" }), { status: 503 });
+  });
+  t.after(() => agent.setFetch(null));
+  await assert.rejects(agent.history("AG1", { timeoutMs: 50 }), (err) => err.status === 503);
+  assert.equal(fetches, 1, "no retry inside a tool's budget");
+  fetches = 0;
+  await assert.rejects(agent.history("AG1"), (err) => err.status === 503);
+  assert.equal(fetches, 2, "the default read keeps its one retry");
+
+  const lines = [];
+  agent.setTimingLog((line) => lines.push(line));
+  t.after(() => agent.setTimingLog(null));
+  const realNow = Date.now;
+  let tick = 0;
+  t.mock.method(Date, "now", () => realNow() + (tick++ % 2 === 0 ? 0 : 2500));
+  agent.setFetch(async () => new Response(JSON.stringify({ contents: [] }), { status: 200 }));
+  await agent.history("AGSECRET", { timeoutMs: 4000 });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^\[agora\] GET \/agents\/<id>\/history 200 in \d+ ms$/);
+  assert.doesNotMatch(lines[0], /AGSECRET/);
 });

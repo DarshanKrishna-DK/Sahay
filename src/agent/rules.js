@@ -19,6 +19,7 @@ const approvals = require("../approvals");
 const { vendorText, VENDOR_TEXT_MAX } = require("../db/vendor-text");
 const { canonicalUnit, unitWord } = require("../procurement/units");
 const { AgentError } = require("./errors");
+const { itemIn } = require("../discovery/slug");
 
 const LANGS = ["hi-IN", "kn-IN", "en-IN"];
 const SOURCES = ["owner_said", "learned"];
@@ -32,6 +33,13 @@ const invalid = (message) => new AgentError("INVALID_RULE", message);
 const round2 = (n) => Math.round(n * 100) / 100;
 const money = (n) => String(round2(n));
 const HAS_LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+/**
+ * An item as said in a sentence of `language`: in the sentence's own script when the trade-word
+ * table knows it ("बासमती चावल" in a Kannada sentence is "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ"), else as the owner said it
+ * (E2E full run: a Kannada rule sentence carried the Devanagari item name). Never transliterated.
+ */
+const itemFor = (item, language) => (language === "en-IN" ? item : itemIn(item, language) ?? item);
 
 /* --------------------------------------------------------------- params --- */
 
@@ -88,8 +96,8 @@ const KINDS = {
     clean: (p) => ({ item: cleanName(p.item, "item"), unit: cleanUnit(p.unit), price: cleanAmount(p.price, "price", PRICE_MAX) }),
     scope: (p) => `max_price:${fold(p.item)}`,
     sentence: (p) => ({
-      "hi-IN": `मैं ${p.item} के लिए प्रति ${unitWord(p.unit, "hi-IN")} ${money(p.price)} रुपये से ज़्यादा कभी नहीं दूँगी।`,
-      "kn-IN": `${p.item}: ಪ್ರತಿ ${unitWord(p.unit, "kn-IN")} ${money(p.price)} ರೂಪಾಯಿಗಿಂತ ಹೆಚ್ಚು ನಾನು ಎಂದಿಗೂ ಕೊಡುವುದಿಲ್ಲ.`,
+      "hi-IN": `मैं ${itemFor(p.item, "hi-IN")} के लिए प्रति ${unitWord(p.unit, "hi-IN")} ${money(p.price)} रुपये से ज़्यादा कभी नहीं दूँगी।`,
+      "kn-IN": `${itemFor(p.item, "kn-IN")}: ಪ್ರತಿ ${unitWord(p.unit, "kn-IN")} ${money(p.price)} ರೂಪಾಯಿಗಿಂತ ಹೆಚ್ಚು ನಾನು ಎಂದಿಗೂ ಕೊಡುವುದಿಲ್ಲ.`,
       "en-IN": `I will never pay more than ${money(p.price)} rupees per ${unitWord(p.unit, "en-IN")} for ${p.item}.`,
     }),
   },
@@ -120,8 +128,8 @@ const KINDS = {
     sentence: (p) => {
       const many = p.quantity !== 1;
       return {
-        "hi-IN": `आप ${p.item} की मात्रा न बताएँ, तो मैं आपसे पूछूँगी कि क्या ${money(p.quantity)} ${unitWord(p.unit, "hi-IN", many)} चाहिए।`,
-        "kn-IN": `${p.item} ಎಷ್ಟು ಎಂದು ನೀವು ಹೇಳದಿದ್ದರೆ, ${money(p.quantity)} ${unitWord(p.unit, "kn-IN", many)} ಬೇಕೇ ಎಂದು ನಾನು ಕೇಳುತ್ತೇನೆ.`,
+        "hi-IN": `आप ${itemFor(p.item, "hi-IN")} की मात्रा न बताएँ, तो मैं आपसे पूछूँगी कि क्या ${money(p.quantity)} ${unitWord(p.unit, "hi-IN", many)} चाहिए।`,
+        "kn-IN": `${itemFor(p.item, "kn-IN")} ಎಷ್ಟು ಎಂದು ನೀವು ಹೇಳದಿದ್ದರೆ, ${money(p.quantity)} ${unitWord(p.unit, "kn-IN", many)} ಬೇಕೇ ಎಂದು ನಾನು ಕೇಳುತ್ತೇನೆ.`,
         "en-IN": `When you do not say how much ${p.item}, I will ask if you want ${money(p.quantity)} ${unitWord(p.unit, "en-IN", many)}.`,
       };
     },
@@ -151,8 +159,8 @@ const KINDS = {
     sentence: (p) => {
       const many = p.level !== 1;
       return {
-        "hi-IN": `जब ${p.item} ${money(p.level)} ${unitWord(p.unit, "hi-IN", many)} या उससे कम बचेगा, मैं आपसे पूछूँगी कि और मँगाऊँ या नहीं।`,
-        "kn-IN": `${p.item} ${money(p.level)} ${unitWord(p.unit, "kn-IN", many)} ಅಥವಾ ಅದಕ್ಕಿಂತ ಕಡಿಮೆ ಉಳಿದಾಗ, ಇನ್ನಷ್ಟು ತರಿಸಲೇ ಎಂದು ನಾನು ನಿಮ್ಮನ್ನು ಕೇಳುತ್ತೇನೆ.`,
+        "hi-IN": `जब ${itemFor(p.item, "hi-IN")} ${money(p.level)} ${unitWord(p.unit, "hi-IN", many)} या उससे कम बचेगा, मैं आपसे पूछूँगी कि और मँगाऊँ या नहीं।`,
+        "kn-IN": `${itemFor(p.item, "kn-IN")} ${money(p.level)} ${unitWord(p.unit, "kn-IN", many)} ಅಥವಾ ಅದಕ್ಕಿಂತ ಕಡಿಮೆ ಉಳಿದಾಗ, ಇನ್ನಷ್ಟು ತರಿಸಲೇ ಎಂದು ನಾನು ನಿಮ್ಮನ್ನು ಕೇಳುತ್ತೇನೆ.`,
         "en-IN": `When ${p.item} is down to ${money(p.level)} ${unitWord(p.unit, "en-IN", many)} or less, I will ask you whether to buy more.`,
       };
     },
@@ -256,6 +264,37 @@ function lastSpokenSuggestion(businessId, agentId) {
 }
 
 /**
+ * The suggestion this call's agent already read out that says exactly the same thing as
+ * {kind, params}, or null. Proposing it again would replace it with a new rule and throw away the
+ * owner's yes to it (E2E full run: the first हाँ "replaced" the rule, a second हाँ was needed).
+ */
+function spokenTwin(businessId, agentId, { kind, params } = {}) {
+  if (!agentId) return null;
+  let built;
+  try {
+    built = buildRule(kind, params);
+  } catch {
+    return null;
+  }
+  const same = JSON.stringify(built.params);
+  const spokenIds = new Set(repo.listRuleReadbacks(businessId, { agent_id: agentId }).map((row) => row.rule_id));
+  const twin = repo
+    .listRules(businessId, { status: "suggested", scope_key: built.scope_key })
+    .filter((row) => spokenIds.has(row.id) && JSON.stringify(row.params) === same)
+    .at(-1);
+  return twin ? toRule(twin) : null;
+}
+
+/**
+ * The owner's spoken words since the server read this rule out in this call (the same ordering
+ * check as a deal's read-back), whatever they are; throws when there is no answer yet.
+ */
+function spokenAnswer(businessId, ruleId, { agentId, history }) {
+  const spoken = agentId ? repo.listRuleReadbacks(businessId, { rule_id: ruleId, agent_id: agentId }).map((row) => row.spoken_text) : [];
+  return approvals.answerAfterSpoken(businessId, history, { agentId, spoken, subject: { ruleId } }).text;
+}
+
+/**
  * The owner's spoken answer to what the server read out for this rule in this call: a clear yes
  * that comes after it (approvals.answerAfterSpoken, the same ordering check as a deal's read-back).
  * `history` is the call's Agora /history contents, fetched by the caller (never the model's words).
@@ -315,4 +354,4 @@ function decide(businessId, ruleId, decision, { via, agentId = null, history, se
   });
 }
 
-module.exports = { propose, decide, recordSpoken, lastSpokenSuggestion, spokenYes, get, list, active, buildRule, toRule, fold, KINDS, LANGS, BARGAIN_STYLES };
+module.exports = { propose, decide, recordSpoken, lastSpokenSuggestion, spokenTwin, spokenAnswer, spokenYes, get, list, active, buildRule, toRule, fold, KINDS, LANGS, BARGAIN_STYLES };

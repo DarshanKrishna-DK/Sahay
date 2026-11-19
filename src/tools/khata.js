@@ -16,6 +16,9 @@
 const khata = require("../sell/khata");
 const events = require("../events");
 const evidence = require("./evidence");
+const outcome = require("../agora/outcome");
+/** One /history read inside a tool is bounded, so the tool answers within the MCP timeout_ms. */
+const { TOOL_HISTORY_TIMEOUT_MS } = require("../agora/agent");
 const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
 
 const OWNER = ["owner"];
@@ -195,7 +198,7 @@ async function withHistory(ctx, decide) {
   const agent = require("../agora/agent");
   for (let attempt = 1; ; attempt++) {
     try {
-      return decide(await agent.history(ctx.agentId));
+      return decide(await agent.history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS }));
     } catch (err) {
       if (VOICE_RETRY.has(err?.code) && attempt < HISTORY_ATTEMPTS) {
         await sleep(HISTORY_RETRY_MS);
@@ -210,7 +213,7 @@ async function withHistory(ctx, decide) {
 async function ownerTurns(ctx, args) {
   if (ctx.agentId) {
     try {
-      return evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId));
+      return evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS }));
     } catch {
       // the call history is unavailable: fall back to the model's copy below
     }
@@ -317,19 +320,17 @@ async function answerPayment(ctx, args, language) {
   const out = await withHistory(ctx, (history) =>
     khata.confirmDraft(ctx.businessId, draft.id, { decision: args.decision, agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
   );
-  if (!out.receipt) return { recorded: false, status: "cancelled", draftId: draft.id, say: phrase("payment_cancelled", language) };
+  if (!out.receipt) {
+    events.emit(ctx.businessId, "receipt.cancelled", { draftId: draft.id, customerId: draft.customer_id }, { sessionId: ctx.sessionId ?? null, actor: "owner" });
+    return outcome.settle(ctx, phrase("payment_cancelled", language), language, { recorded: false, status: "cancelled", draftId: draft.id });
+  }
   const left = Math.max(khata.balancePaise(ctx.businessId, out.receipt.customer_id), 0);
-  return {
-    recorded: true,
-    status: "recorded",
-    receipt: out.receipt,
-    owed: khata.toRupees(left),
-    say: phrase("payment_recorded", language, {
-      name: out.receipt.customer_name,
-      amount: spokenAmount(out.receipt.amount_paise, language),
-      left: left ? spokenAmount(left, language) : null,
-    }),
-  };
+  const said = phrase("payment_recorded", language, {
+    name: out.receipt.customer_name,
+    amount: spokenAmount(out.receipt.amount_paise, language),
+    left: left ? spokenAmount(left, language) : null,
+  });
+  return outcome.settle(ctx, said, language, { recorded: true, status: "recorded", receipt: out.receipt, owed: khata.toRupees(left) });
 }
 
 const TOOLS = [

@@ -1,0 +1,253 @@
+"use strict";
+
+Object.assign(process.env, {
+  DB_FILE: ":memory:",
+  PUBLIC_URL: "https://sahay.test",
+  // No Razorpay keys: an issued bill reports its pay link as not made, nothing reaches Razorpay.
+  RAZORPAY_KEY_ID: "",
+  RAZORPAY_KEY_SECRET: "",
+});
+
+const assert = require("node:assert/strict");
+const { test } = require("node:test");
+
+const watch = require("../src/agora/confirm-watch");
+const registry = require("../src/tools/registry");
+const agent = require("../src/agora/agent");
+const repo = require("../src/db/repo");
+const db = require("../src/db");
+const events = require("../src/events");
+const items = require("../src/stock/items");
+const invoices = require("../src/sell/invoices");
+const { ToolError } = require("../src/tools/errors");
+
+const AGENT = "AG-W";
+
+/** An unregistered shop (plain bills) with basmati on sale, and a live owner session. */
+function shop() {
+  const businessId = repo.newId("biz");
+  repo.createBusiness(businessId, { name: "Annapurna Kirana", city: "Bengaluru", language: "hi-IN" });
+  items.upsert(businessId, { name: "बासमती चावल", unit: "kg", sale_price: 90 });
+  const session = repo.createSession(businessId, { kind: "owner", channel: `own-${Math.random().toString(16).slice(2, 10)}`, agent_id: AGENT, status: "active" });
+  return { businessId, ctx: { businessId, sessionId: session.id, agentId: AGENT, actor: "agent", toolScope: "owner" } };
+}
+
+/** A live call at the Agora boundary: /speak lines enter /history as server lines; owner(words) is an ASR turn. */
+function fakeCall(t) {
+  const call = { spoken: [], items: [], turn: 0, historyReads: 0 };
+  call.owner = (content, source = "asr") => call.items.push({ role: "user", content, metadata: { source }, turn_id: ++call.turn });
+  agent.setFetch(async (url, init) => {
+    let json;
+    if (/\/speak$/.test(url)) {
+      const body = JSON.parse(init.body);
+      call.spoken.push(body.text);
+      call.items.push({ role: "assistant", content: body.text, metadata: { source: "command" }, turn_id: ++call.turn });
+      json = { agent_id: AGENT };
+    } else if (/\/history$/.test(url)) {
+      call.historyReads += 1;
+      json = { contents: call.items.slice() };
+    } else throw new Error(`unexpected Agora call ${url}`);
+    return new Response(JSON.stringify(json), { status: 200 });
+  });
+  t.after(() => agent.setFetch(null));
+  return call;
+}
+
+/** Watch this business's call with a fake clock; ticks are driven by the test, never by a timer. */
+function watching(t, { businessId, ctx }, { callTool } = {}) {
+  let now = Date.now();
+  watch.configure({
+    live: (id) => (id === businessId ? { agentId: ctx.agentId, sessionId: ctx.sessionId, language: "hi-IN" } : null),
+    pollMs: 9 * 60 * 1000,
+    graceMs: 6000,
+    callTool: callTool ?? ((c, name, args) => registry.callTool(c, name, args)),
+  });
+  watch.watch(businessId);
+  t.after(() => watch.unwatch(businessId));
+  return {
+    tick: () => watch.tick(businessId, () => now),
+    advance: (ms) => {
+      now += ms;
+    },
+  };
+}
+
+/** The bill of the E2E run, drafted and read out by the server. */
+async function billReadOut(ctx, call) {
+  call.owner("रमेश ट्रेडर्स को 60 किलो बासमती चावल 90 रुपये किलो");
+  await registry.callTool(ctx, "draft_invoice", { customer: "रमेश ट्रेडर्स", lines: [{ item: "बासमती चावल", quantity: 60, unit: "किलो", rate: 90 }] });
+  const asked = await registry.callTool(ctx, "request_invoice_approval", {});
+  assert.equal(asked.readbackSpoken, true);
+  return asked;
+}
+
+const watchdogRows = (businessId) =>
+  db.prepare("SELECT detail FROM audit_log WHERE business_id = ? AND type = 'confirm.watchdog' ORDER BY id").all(businessId).map((r) => JSON.parse(r.detail));
+
+test("E2E full run bug 5c: the owner says हाँ to the bill and the model calls nothing; after the grace the server issues it through the same gate and says so", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+
+  assert.equal(await clock.tick(), "waiting", "no answer yet");
+  call.owner("हां, ठीक है।");
+  assert.equal(await clock.tick(), "grace", "the model gets its chance first");
+  clock.advance(3000);
+  assert.equal(await clock.tick(), "grace");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending", "nothing decided during the grace");
+
+  clock.advance(3100);
+  assert.equal(await clock.tick(), "acted");
+  const bill = invoices.get(businessId, asked.invoiceId);
+  assert.equal(bill.status, "issued");
+  assert.equal(bill.number, `INV/${require("../src/sell/gst").financialYear()}/0001`);
+  const decided = db.prepare("SELECT detail FROM audit_log WHERE business_id = ? AND type = 'invoice.decided'").get(businessId);
+  assert.equal(JSON.parse(decided.detail).evidenceUtterance, "हां, ठीक है।", "the owner's own words, read from the call, are the evidence");
+  assert.match(call.spoken.at(-1), /^बिल INV\/.*\/0001 बन गया/, "the server, not the model, says the bill is made");
+  assert.deepEqual(watchdogRows(businessId).map((r) => [r.kind, r.tool, r.answer, r.ok]), [["invoice", "confirm_invoice", "affirmative", true]]);
+  assert.equal(await clock.tick(), "idle", "nothing waits any more: polling stops");
+});
+
+test("E2E full run bug 7b: a spoken yes to a payment read-back is written down by the server when the model only says 'लिख लिया'", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  await billReadOut(ctx, call);
+  call.owner("हाँ");
+  await registry.callTool(ctx, "confirm_invoice", { decision: "approve" }); // the model did this one
+
+  call.owner("रमेश ट्रेडर्स ने 2000 रुपये नकद दिए");
+  const asked = await registry.callTool(ctx, "record_payment", { customer: "रमेश ट्रेडर्स", amount: 2000, mode: "cash", owner_words: "रमेश ट्रेडर्स ने 2000 रुपये नकद दिए" });
+  assert.equal(asked.status, "awaiting_answer");
+  const clock = watching(t, shopRow);
+  call.owner("हाँ");
+  assert.equal(await clock.tick(), "grace");
+  clock.advance(6100);
+  assert.equal(await clock.tick(), "acted");
+  const receipts = db.prepare("SELECT amount_paise, recorded_via, evidence_utterance FROM receipts WHERE business_id = ?").all(businessId);
+  assert.deepEqual(receipts.map((r) => ({ ...r })), [{ amount_paise: 200000, recorded_via: "voice", evidence_utterance: "हाँ" }]);
+  assert.match(call.spoken.at(-1), /^लिख लिया: रमेश ट्रेडर्स से 2 हज़ार रुपये। अब उनके 3 हज़ार 400 रुपये बाकी हैं।$/);
+});
+
+test("the model's own confirm call stands: the watchdog does not act again, even when the gate refused it", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  call.owner("हाँ");
+  assert.equal(await clock.tick(), "grace");
+  // The model calls the right tool with the wrong decision: the gate refuses (the owner said yes).
+  await assert.rejects(registry.callTool(ctx, "confirm_invoice", { decision: "reject" }), (err) => err.code === "NOT_NEGATIVE");
+  clock.advance(7000);
+  assert.equal(await clock.tick(), "model");
+  assert.equal(await clock.tick(), "waiting", "acted on once per answer");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
+  assert.deepEqual(watchdogRows(businessId), []);
+});
+
+test("a maybe, a question or a typed yes is never acted on", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  for (const [words, source] of [["शायद, सोचता हूँ", "asr"], ["कितना हुआ?", "asr"], ["हाँ", "message"]]) {
+    call.owner(words, source);
+    assert.equal(await clock.tick(), "waiting", words);
+    clock.advance(10_000);
+    assert.equal(await clock.tick(), "waiting", words);
+  }
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
+  assert.deepEqual(watchdogRows(businessId), []);
+});
+
+test("a gate refusal is said aloud as 'अभी हुआ नहीं' with the gate's reason, never as done", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  await billReadOut(ctx, call);
+  const tried = [];
+  const clock = watching(t, shopRow, {
+    callTool: async (c, name, args) => {
+      tried.push([c.agentId, c.toolScope, name, args.decision]);
+      throw new ToolError("READBACK_SUPERSEDED", "बीच में कुछ और पढ़ा गया था; बिल फिर से पढ़कर सुनाऊँ?", { status: 409 });
+    },
+  });
+  call.owner("हाँ जी");
+  await clock.tick();
+  clock.advance(6100);
+  assert.equal(await clock.tick(), "acted");
+  assert.deepEqual(tried, [[AGENT, "owner", "confirm_invoice", "approve"]]);
+  assert.equal(call.spoken.at(-1), "अभी हुआ नहीं। बीच में कुछ और पढ़ा गया था; बिल फिर से पढ़कर सुनाऊँ?");
+  assert.deepEqual(watchdogRows(businessId).map((r) => [r.ok, r.code]), [[false, "READBACK_SUPERSEDED"]]);
+});
+
+test("a clear no goes to the same tool as a rejection; nothing runs without a live call", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  call.owner("नहीं, रहने दो");
+  await clock.tick();
+  clock.advance(6100);
+  assert.equal(await clock.tick(), "acted");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "draft", "rejected: the bill stays a draft");
+
+  watch.configure({ live: () => null });
+  watch.watch(businessId);
+  assert.equal(await watch.tick(businessId), "idle");
+});
+
+test("start(): a read-back spoken in a live call starts the watch; the end of the call stops it", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  watch.configure({ live: (id) => (id === businessId ? { agentId: AGENT, sessionId: ctx.sessionId, language: "hi-IN" } : null), pollMs: 9 * 60 * 1000 });
+  watch.start();
+  t.after(() => watch.stop());
+  assert.equal(await watch.tick(businessId), "idle", "nothing watched before a read-back");
+  await billReadOut(ctx, call);
+  assert.equal(await watch.tick(businessId), "waiting", "invoice.spoken started the watch");
+  events.emit(businessId, "session.ended", { sessionId: ctx.sessionId, kind: "owner" }, { sessionId: ctx.sessionId, actor: "owner" });
+  assert.equal(await watch.tick(businessId), "idle");
+});
+
+test("latestWaiting: the answer goes to the question read out last; a read-back older than maxAgeMs is left alone", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  await billReadOut(ctx, call);
+  const first = watch.latestWaiting(businessId, AGENT);
+  assert.equal(first.kind, "invoice");
+  assert.equal(watch.latestWaiting(businessId, "AG-OTHER"), null, "another call's agent never heard it");
+  assert.equal(watch.latestWaiting(businessId, AGENT, Date.now() + watch.settings.maxAgeMs + 1000), null);
+});
+
+test("a late model call after the server acted is told it is done, not 'there is no bill'; a call in flight holds the server back", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  call.owner("हाँ");
+  await clock.tick();
+  clock.advance(6100);
+
+  // The model's confirm_invoice is running right now: the server waits for it.
+  const end = require("../src/tools/calls").begin(businessId, "confirm_invoice", { answer: false });
+  assert.equal(await clock.tick(), "waiting");
+  end();
+
+  assert.equal(await clock.tick(), "acted");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "issued");
+  const spokenBefore = call.spoken.length;
+  const late = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
+  assert.deepEqual([late.alreadyDone, late.by, late.say], [true, "server", "और कुछ बताइए?"]);
+  assert.equal(call.spoken.length, spokenBefore, "nothing said twice");
+  // Another tool's refusal is untouched.
+  await assert.rejects(registry.callTool(ctx, "record_payment", { decision: "confirm" }), (err) => err.code === "NO_PENDING_PAYMENT");
+});

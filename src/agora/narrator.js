@@ -310,6 +310,14 @@ const STATUS = {
   // final-2 B: after a "maybe", the model forgot a read-back was waiting and asked "shall I ask for approval?".
   approvalWaiting: () =>
     "A deal has been read out to the owner by the server and is waiting for the owner's answer. The owner's next clear yes or no answers it: call confirm_approval with no id (approve on a yes, reject on a no). Do not call request_approval again and do not ask whether to ask for approval. A maybe or a question is not an answer: say there is no hurry.",
+  // E2E full run, bug 1: the state of every read-back stays in the system message, so it survives
+  // the bounded LLM history (llm.max_history) and the model never answers a yes from memory.
+  invoiceWaiting: () =>
+    "A bill has been read out to the owner by the server and is waiting for the owner's answer. It is NOT made yet. The owner's next clear yes or no answers it: call confirm_invoice (approve on a yes, reject on a no). Never say the bill is made unless confirm_invoice returned in this turn.",
+  receiptWaiting: () =>
+    "A payment received has been read out to the owner by the server and is waiting for the owner's answer. It is NOT written down yet. The owner's next clear yes or no answers it: call record_payment with only decision (confirm on a yes, cancel on a no). Never say it is written down unless record_payment returned recorded in this turn.",
+  ruleWaiting: () =>
+    "A rule has been read out to the owner by the server and is waiting for the owner's answer. It is NOT kept yet. The owner's next clear yes or no answers it: call confirm_rule with no id (keep on a yes, forget on a no). Do not propose the same rule again.",
   orderPlaced: (v) =>
     `The owner approved the deal and order ${v.po} has been placed, with its purchase order. Do not call create_order for it again. If the owner wants to pay, call create_payment_link with no id.`,
 };
@@ -317,7 +325,7 @@ const STATUS = {
 /** Write the job state into the owner agent's LLM context; in order, never blocking speech. */
 function setStatus(state, kind, text) {
   state.callStatus[kind] = text;
-  const combined = [state.callStatus.approval, state.callStatus.order, state.callStatus.stock, state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
+  const combined = [state.callStatus.approval, state.callStatus.invoice, state.callStatus.receipt, state.callStatus.rule, state.callStatus.order, state.callStatus.stock, state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
   state.statusChain = state.statusChain.then(async () => {
     if (state.closed) return;
     try {
@@ -330,17 +338,54 @@ function setStatus(state, kind, text) {
 
 /* -------------------------------------------------------- approval hold --- */
 
+/** Called with a businessId whenever its narration hold ends (decided, withdrawn or timed out). */
+const releaseListeners = new Set();
+
+/** Run fn(businessId) each time a hold ends, so a question kept back (a low-stock reorder) can be asked then. Returns off(). */
+function onRelease(fn) {
+  releaseListeners.add(fn);
+  return () => releaseListeners.delete(fn);
+}
+
+function released(state) {
+  for (const fn of releaseListeners) {
+    try {
+      const pending = fn(state.businessId);
+      if (pending && typeof pending.catch === "function") pending.catch((err) => console.warn(`[narrator] release listener failed: ${err.message}`));
+    } catch (err) {
+      console.warn(`[narrator] release listener failed: ${err.message}`);
+    }
+  }
+}
+
 /** Hold narration; a line already waiting on its timer re-checks the hold when the timer fires. */
 function startHold(state, approvalId, ms = settings.approvalHoldMs) {
   state.approvalHold = { approvalId: approvalId ?? state.approvalHold?.approvalId ?? null, until: Date.now() + ms };
+  // A hold nobody answers still ends: when it does, what was kept back may be said.
+  clearTimeout(state.holdTimer);
+  state.holdTimer = setTimeout(() => {
+    state.holdTimer = null;
+    if (state.closed || approvalHoldLeft(state) > 0) return;
+    released(state);
+  }, ms + 50);
+  state.holdTimer.unref?.();
 }
 
 function endHold(state) {
   if (!state.approvalHold) return;
   state.approvalHold = null;
+  clearTimeout(state.holdTimer);
+  state.holdTimer = null;
   clearTimeout(state.timer);
   state.timer = null;
   pump(state);
+  released(state);
+}
+
+/** End the hold when it is for `id`, or when it was started without one (an item-tax read-back). */
+function endHoldFor(state, id) {
+  const held = state.approvalHold?.approvalId;
+  if (state.approvalHold && (held === id || held == null)) endHold(state);
 }
 
 /**
@@ -496,8 +541,10 @@ function onEvent(event) {
       return;
     case "rule.spoken":
       startHold(state, `rule:${d.ruleId}`);
+      setStatus(state, "rule", STATUS.ruleWaiting());
       return;
     case "rule.decided":
+      if (state.callStatus.rule && !repo.listRules(event.businessId, { status: "suggested" }).length) setStatus(state, "rule", null);
       if (state.approvalHold?.approvalId === `rule:${d.rule?.id}`) endHold(state);
       // The agent's prompt lists the active rules: a rule that started or stopped applying changes it.
       state.statusChain = state.statusChain.then(async () => {
@@ -508,6 +555,24 @@ function onEvent(event) {
           console.warn(`[narrator] rules update failed: ${err.message}`);
         }
       });
+      return;
+    case "invoice.spoken":
+      setStatus(state, "invoice", STATUS.invoiceWaiting());
+      return;
+    case "invoice.decided":
+      if (state.callStatus.invoice) setStatus(state, "invoice", null);
+      endHoldFor(state, `invoice:${d.approvalId}`);
+      return;
+    case "receipt.spoken":
+      setStatus(state, "receipt", STATUS.receiptWaiting());
+      return;
+    case "receipt.recorded":
+    case "receipt.cancelled":
+      if (state.callStatus.receipt) setStatus(state, "receipt", null);
+      if (String(state.approvalHold?.approvalId ?? "").startsWith("receipt:")) endHold(state);
+      return;
+    case "item.tax_confirmed":
+      endHoldFor(state, null);
       return;
     case "error":
       if (d.tool === "request_approval") endHold(state);
@@ -534,6 +599,7 @@ function missedFollowups(businessId, currentSessionId) {
 function attach(businessId, { agentId, sessionId, language }) {
   detach(businessId);
   const state = {
+    businessId,
     agentId,
     sessionId,
     language: langKey(language),
@@ -544,10 +610,11 @@ function attach(businessId, { agentId, sessionId, language }) {
     vendorBatches: new Map(),
     jobStartedAt: new Map(),
     lastSourcingStartedAt: null,
-    callStatus: { approval: null, order: null, sourcing: null, negotiation: null },
+    callStatus: { approval: null, invoice: null, receipt: null, rule: null, order: null, sourcing: null, negotiation: null },
     waitingApprovalId: null,
     statusChain: Promise.resolve(),
     approvalHold: null,
+    holdTimer: null,
     closed: false,
   };
   live.set(businessId, state);
@@ -562,6 +629,7 @@ function detach(businessId) {
   if (!state) return;
   state.closed = true;
   clearTimeout(state.timer);
+  clearTimeout(state.holdTimer);
   for (const timer of state.timers) clearTimeout(timer);
   for (const batch of state.vendorBatches.values()) if (batch && batch !== "spoken") clearTimeout(batch.timer);
   live.delete(businessId);
@@ -586,12 +654,14 @@ function isLive(businessId) {
 /** Subscribe to every business's events. Returns stop(). */
 function start() {
   if (!unsubscribe) unsubscribe = events.subscribeAll(onEvent);
+  require("./confirm-watch").start(); // a spoken yes the model did not act on is acted on through the same gate
   return stop;
 }
 
 function stop() {
   unsubscribe?.();
   unsubscribe = null;
+  require("./confirm-watch").stop();
   for (const businessId of [...live.keys()]) detach(businessId);
 }
 
@@ -606,4 +676,4 @@ function configure({ speak, status, rules, minGapMs, vendorDebounceMs, queueLimi
   );
 }
 
-module.exports = { VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };
+module.exports = { VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };

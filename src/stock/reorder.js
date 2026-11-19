@@ -28,11 +28,12 @@ const { StockError } = require("./errors");
 const round3 = (n) => Math.round(n * 1000) / 1000;
 const now = () => new Date().toISOString();
 
-const settings = { askDelayMs: 8000 };
+const settings = { askDelayMs: 8000, busyRetryMs: 1000, busyRetries: 20 };
 let speakImpl = (agentId, text) => require("../agora/agent").speak(agentId, text, { priority: "APPEND", interruptable: false });
 let liveImpl = (businessId) => require("../agora/narrator").liveCall(businessId);
 let heldImpl = (businessId) => require("../agora/narrator").isHeld(businessId);
 let holdImpl = (businessId, id) => require("../agora/narrator").holdForApproval(businessId, id);
+let busyImpl = (businessId) => require("../tools/calls").inFlight(businessId);
 
 /* ----------------------------------------------------------------- rows --- */
 
@@ -163,15 +164,37 @@ function question(item, onHand, quantity, unit, language) {
 
 const asking = new Set();
 
+/** businessId -> retries left while a tool call is still running (see askPending). */
+const retriesLeft = new Map();
+/** Businesses with a retry already scheduled. */
+const retrying = new Set();
+
 /**
  * Ask the owner about the oldest open proposal not yet asked in the live call, if any. Skipped
- * while a deal waits for approval or narration is held for a read-back (asked later: on the
- * next approval.decided, rule.decided or call start). Returns the spoken text or null.
+ * while a deal waits for approval or narration is held for a read-back: asked when that hold ends
+ * (narrator.onRelease), on the next approval.decided or rule.decided, or at call start.
+ * While a tool call is still running (the sale that made the stock low is still saying its
+ * result) it is asked a moment later, so the question never comes before that result
+ * (E2E full run, bug 6a: the hold of the bill's read-back swallowed the question for good).
+ * Returns the spoken text or null.
  */
 async function askPending(businessId) {
   const call = liveImpl(businessId);
   if (!call?.agentId || asking.has(businessId)) return null;
   if (heldImpl(businessId) || repo.listApprovals(businessId, { status: "pending" }).length) return null;
+  if (busyImpl(businessId)) {
+    const left = retriesLeft.get(businessId) ?? settings.busyRetries;
+    if (left > 0 && !retrying.has(businessId)) {
+      retriesLeft.set(businessId, left - 1);
+      retrying.add(businessId);
+      later(() => {
+        retrying.delete(businessId);
+        askPending(businessId).catch(report("asking"));
+      }, settings.busyRetryMs);
+    }
+    return null;
+  }
+  retriesLeft.delete(businessId);
   const row = openProposals(businessId).find((p) => !readbacks(businessId, p.id, call.agentId).length);
   if (!row) return null;
   asking.add(businessId);
@@ -315,25 +338,33 @@ function onEvent(event) {
 }
 
 let unsubscribe = null;
+let offRelease = null;
 
 /** Start watching every business. Returns stop(). */
 function start() {
   if (!unsubscribe) unsubscribe = events.subscribeAll(onEvent);
+  // A question kept back by a read-back's hold is asked as soon as that hold ends.
+  if (!offRelease) offRelease = require("../agora/narrator").onRelease((businessId) => askPending(businessId));
   return stop;
 }
 
 function stop() {
   unsubscribe?.();
   unsubscribe = null;
+  offRelease?.();
+  offRelease = null;
 }
 
-/** Tests: replace speaking, the live-call lookup, the narration hold and timing. */
-function configure({ speak, live, held, hold, askDelayMs } = {}) {
+/** Tests: replace speaking, the live-call lookup, the narration hold, the running-tool check and timing. */
+function configure({ speak, live, held, hold, busy, askDelayMs, busyRetryMs, busyRetries } = {}) {
   if (speak) speakImpl = speak;
   if (live) liveImpl = live;
   if (held) heldImpl = held;
   if (hold) holdImpl = hold;
+  if (busy) busyImpl = busy;
   if (askDelayMs !== undefined) settings.askDelayMs = askDelayMs;
+  if (busyRetryMs !== undefined) settings.busyRetryMs = busyRetryMs;
+  if (busyRetries !== undefined) settings.busyRetries = busyRetries;
 }
 
 module.exports = {

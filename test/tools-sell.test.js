@@ -97,7 +97,10 @@ test("voice: item tax read back and confirmed, bill drafted from the owner's wor
   assert.equal(done.pdfUrl, `/api/invoices/${done.invoiceId}/pdf`);
   assert.equal(done.payUrl, null, "no Razorpay keys here: no pay link, and the owner is told");
   assert.deepEqual(done.problems.map((p) => p.step), ["pay"]);
-  assert.match(done.say, /भुगतान लिंक नहीं बन पाया/);
+  assert.match(done.outcome, /भुगतान लिंक नहीं बन पाया/);
+  // E2E full run bug 1: the server says the issued bill itself; the model only hands back.
+  assert.equal(call.spoken.at(-1), done.outcome);
+  assert.equal(done.say, "और कुछ बताइए?");
   assert.equal(stock.onHand(biz, kept.item.id), -50);
 });
 
@@ -157,4 +160,77 @@ test("figures the owner did not say are not saved; tax is never guessed", async 
   assert.equal(added.customer.phone, "9845012345");
   const wrongPhone = await registry.callTool(ctx, "add_customer", { name: "Ramesh", phone: "9845099999" });
   assert.equal(wrongPhone.saved, false);
+});
+
+/* ------------------------------------------- E2E full run (voice fixes) --- */
+
+function callCtx(businessId, agentId = "AG-E") {
+  const session = repo.createSession(businessId, { kind: "owner", channel: `own-${Math.random().toString(16).slice(2, 10)}`, agent_id: agentId, status: "active" });
+  return { businessId, sessionId: session.id, agentId, actor: "agent", toolScope: "owner" };
+}
+
+function plainShop() {
+  const id = repo.newId("biz");
+  repo.createBusiness(id, { name: "Annapurna Kirana", city: "Bengaluru", language: "hi-IN" });
+  items.upsert(id, { name: "बासमती चावल", unit: "kg", sale_price: 90 });
+  return id;
+}
+
+test("E2E full run bug 5b: a spoken yes to 'shall I read it out?' after draft_invoice reads the bill out; it issues nothing", async (t) => {
+  const biz = plainShop();
+  const ctx = callCtx(biz);
+  const call = fakeCall(t);
+  call.owner("रमेश ट्रेडर्स को 60 किलो बासमती चावल 90 रुपये किलो");
+  const drafted = await registry.callTool(ctx, "draft_invoice", { customer: "रमेश ट्रेडर्स", lines: [{ item: "बासमती चावल", quantity: 60, unit: "किलो", rate: 90 }] });
+  assert.match(drafted.say, /पढ़कर सुनाऊँ\?$/);
+  call.owner("हाँ");
+  // The model sends this yes to confirm_invoice (as in the E2E run, where it got NO_PENDING_INVOICE twice).
+  const out = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
+  assert.equal(out.status, "asked");
+  assert.equal(out.readbackSpoken, true);
+  assert.equal(out.say, "बिल बनाऊँ, हाँ या ना?");
+  assert.match(call.spoken.at(-1), /रमेश ट्रेडर्स का बिल: 60 किलो बासमती चावल, 90 रुपये प्रति किलो, 5400 रुपये। कुल 5400 रुपये। क्या मैं यह बिल बना दूँ\?/);
+  assert.equal(invoices.get(biz, drafted.invoiceId).status, "pending", "read out, not issued: the earlier yes was to reading it");
+  // The owner's yes to the read-back now issues it.
+  call.owner("हाँ, बना दो");
+  const done = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
+  assert.equal(done.status, "issued");
+  // With nothing drafted or waiting, the refusal stands.
+  await refused(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), "NO_PENDING_INVOICE");
+});
+
+test("E2E full run bug 5d: a sale never leaves a purchase need behind, whichever tool the model calls first", async (t) => {
+  const biz = plainShop();
+  const call = fakeCall(t);
+  const words = "रमेश ट्रेडर्स को 190 किलो बासमती चावल 90 रुपये किलो";
+
+  // save_requirement first (the two calls of the E2E run, in this order): draft_invoice dismisses it.
+  const first = callCtx(biz);
+  call.owner(words);
+  const need = await registry.callTool(first, "save_requirement", { item: "बासमती चावल", quantity: 190, unit: "किलो", owner_words: words });
+  assert.equal(need.saved, true);
+  const drafted = await registry.callTool(first, "draft_invoice", { customer: "रमेश ट्रेडर्स", lines: [{ item: "बासमती चावल", quantity: 190, unit: "किलो", rate: 90 }] });
+  assert.deepEqual(drafted.purchaseNeedsDismissed, [need.requirementId]);
+  assert.equal(repo.getRequirement(biz, need.requirementId).status, "dismissed");
+
+  // draft_invoice first: save_requirement in the same turn saves nothing.
+  const second = callCtx(biz);
+  await registry.callTool(second, "draft_invoice", { customer: "रमेश ट्रेडर्स", lines: [{ item: "बासमती चावल", quantity: 190, unit: "किलो", rate: 90 }] });
+  const refusedNeed = await registry.callTool(second, "save_requirement", { item: "बासमती चावल", quantity: 190, unit: "किलो", owner_words: words });
+  assert.equal(refusedNeed.saved, false);
+  assert.equal(refusedNeed.sale, true);
+  assert.equal(refusedNeed.say, "");
+  assert.match(refusedNeed.hint, /never|nothing was saved as a purchase/i);
+  assert.equal(repo.listRequirements(biz).filter((r) => r.status !== "dismissed").length, 0);
+});
+
+test("E2E full run bug 5a: 'add a customer' saves the name alone; the phone is optional", async (t) => {
+  const biz = plainShop();
+  const ctx = callCtx(biz);
+  const call = fakeCall(t);
+  call.owner("नया ग्राहक जोड़िए, रमेश ट्रेडर्स, बेंगलुरु।");
+  const out = await registry.callTool(ctx, "add_customer", { name: "रमेश ट्रेडर्स", owner_words: "नया ग्राहक जोड़िए, रमेश ट्रेडर्स, बेंगलुरु।" });
+  assert.equal(out.saved, true);
+  assert.equal(out.customer.phone, null);
+  assert.equal(out.say, "रमेश ट्रेडर्स ग्राहक के रूप में जोड़ लिया।");
 });

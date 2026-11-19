@@ -21,7 +21,7 @@ const items = require("../stock/items");
 const reorder = require("../stock/reorder");
 const delivery = require("../stock/delivery");
 const say = require("../stock/say");
-const agentRules = require("../agent/rules");
+const outcome = require("../agora/outcome");
 const { canonicalUnit, unitRatio, unitWord, UNIT_CODES } = require("../procurement/units");
 const { ToolError, toToolError, sayFor } = require("./errors");
 
@@ -92,7 +92,7 @@ function defaultOrder(businessId, language) {
 
 /* ----------------------------------------------------------------- tools --- */
 
-module.exports = function stockTools({ ownerObj, idArg, withHistory, unheardFields }) {
+module.exports = function stockTools({ ownerObj, idArg, withHistory, unheardFields, askRule }) {
   return [
     {
       name: "set_opening_stock",
@@ -214,25 +214,18 @@ module.exports = function stockTools({ ownerObj, idArg, withHistory, unheardFiel
         ["item", "level"],
       ),
       async handler(ctx, args, language) {
-        const rule = await spoken(language, () => {
+        const params = await spoken(language, () => {
           const known = items.findByName(ctx.businessId, args.item);
           const unit = args.unit ? canonicalUnit(args.unit) : known?.unit;
           if (args.unit && !unit) throw stockToolError({ code: "UNKNOWN_UNIT", details: { unit: args.unit } }, language);
           if (!unit) throw new ToolError("UNIT_NEEDED", say.line("unit_needed", language, { item: args.item.trim() }, { allow: [args.item.trim()] }), { status: 400 });
-          return agentRules.propose(ctx.businessId, { kind: "reorder_level", params: { item: args.item, level: args.level, unit }, source: "owner_said" }, { sessionId: ctx.sessionId ?? null });
+          return { item: args.item, level: args.level, unit };
         });
-        const sentence = rule.sentence[language];
-        const result = { ruleId: rule.id, status: rule.status, sentence };
-        if (!ctx.agentId) return { ...result, readbackSpoken: false, say: `${sentence} ${say.line("level_tap", language)}` };
-        // The server says the rule itself, so a spoken yes can only answer exactly these words.
-        require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
-        try {
-          await require("../agora/agent").speak(ctx.agentId, sentence, { priority: "APPEND", interruptable: false });
-        } catch (err) {
-          return { ...result, readbackSpoken: false, say: `${sentence} ${say.line("level_tap", language)}`, message: `The rule could not be read out: ${err.message}` };
-        }
-        agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text: sentence, sessionId: ctx.sessionId ?? null });
-        return { ...result, readbackSpoken: true, next: "confirm_rule", say: say.line("level_question", language) };
+        // The server reads the rule out as a question and keeps it on the owner's yes (confirm_rule);
+        // the same level said again is not a new rule (askRule).
+        return spoken(language, () =>
+          askRule(ctx, { kind: "reorder_level", params }, language, { question: say.line("level_question", language), tap: say.line("level_tap", language) }),
+        );
       },
     },
     {
@@ -259,7 +252,7 @@ module.exports = function stockTools({ ownerObj, idArg, withHistory, unheardFiel
         );
         const item = decided.item;
         const word = say.itemWord(item, language);
-        if (decided.status === "declined") return { proposalId: row.id, status: "declined", say: say.line("reorder_declined", language) };
+        if (decided.status === "declined") return outcome.settle(ctx, say.line("reorder_declined", language), language, { proposalId: row.id, status: "declined" });
         const requirement = decided.requirement;
         const base = { proposalId: row.id, status: "accepted", requirementId: requirement.id, requirement };
         if (requirement.quantity == null) {
@@ -268,10 +261,10 @@ module.exports = function stockTools({ ownerObj, idArg, withHistory, unheardFiel
         const more = say.qty(requirement.quantity, requirement.unit, language);
         try {
           const started = await require("./registry").callTool({ ...ctx, toolScope: "owner" }, "start_sourcing", { requirementId: requirement.id, reply_language: language });
-          return { ...base, sourcingStarted: true, jobId: started.jobId, say: say.line("reorder_searching", language, { item: word, more }, { allow: allowItem(item) }) };
+          return outcome.settle(ctx, say.line("reorder_searching", language, { item: word, more }, { allow: allowItem(item) }), language, { ...base, sourcingStarted: true, jobId: started.jobId });
         } catch (err) {
           const why = err instanceof ToolError ? err.say : sayFor("internal", language);
-          return { ...base, sourcingStarted: false, sourcingError: err?.code ?? "INTERNAL", say: `${say.line("reorder_saved", language, { item: word }, { allow: allowItem(item) })} ${why}` };
+          return outcome.settle(ctx, `${say.line("reorder_saved", language, { item: word }, { allow: allowItem(item) })} ${why}`, language, { ...base, sourcingStarted: false, sourcingError: err?.code ?? "INTERNAL" });
         }
       },
     },

@@ -212,3 +212,48 @@ test("proposalFor picks the one asked in this call, names several open ones, and
   assert.equal(reorder.askedIn(biz, reorder.proposalFor(biz, { item: "rice" }).id, "AG4"), true);
   assert.throws(() => reorder.proposalFor(seedBusiness(), {}), { code: "NO_PROPOSAL" });
 });
+
+/* ------------------------------------------- E2E full run (voice fixes) --- */
+
+test("E2E full run bug 6a: a question kept back by a bill's read-back is asked the moment that hold ends", async () => {
+  const narrator = require("../src/agora/narrator");
+  narrator.configure({ speak: async () => {}, status: async () => {}, rules: async () => {} });
+  const biz = seedBusiness();
+  liveCall = { businessId: biz, agentId: "AG6", sessionId: null, language: "hi-IN" };
+  narrator.attach(biz, { agentId: "AG6", sessionId: null, language: "hi-IN" });
+  try {
+    held = true; // the bill's read-back holds narration
+    narrator.holdForApproval(biz, "invoice:iap_6");
+    const rice = items.upsert(biz, { name: "बासमती चावल", unit: "kg", reorder_level: 50 });
+    stock.move(biz, { itemId: rice.id, qty: 50, reason: "opening" });
+    await flush();
+    assert.deepEqual(spoken, [], "not asked over the bill");
+    held = false;
+    narrator.onEvent({ businessId: biz, type: "invoice.decided", data: { approvalId: "iap_6", status: "approved" } });
+    await flush();
+    await flush();
+    assert.deepEqual(spoken, [{ agentId: "AG6", text: "बासमती चावल कम है, 50 किलो बचा है। और मँगाऊँ?" }]);
+  } finally {
+    narrator.detach(biz);
+  }
+});
+
+test("E2E full run bug 6a: while the tool that sold the stock is still running, the question waits, then follows its result", async () => {
+  let busy = true;
+  reorder.configure({ busy: () => busy, busyRetryMs: 20, busyRetries: 50 });
+  try {
+    const biz = seedBusiness();
+    liveCall = { businessId: biz, agentId: "AG7", sessionId: null, language: "hi-IN" };
+    const oil = items.upsert(biz, { name: "oil", unit: "litre", reorder_level: 10 });
+    stock.move(biz, { itemId: oil.id, qty: 4, reason: "opening" });
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    assert.deepEqual(spoken, [], "not while confirm_invoice is still saying its result");
+    busy = false;
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    assert.equal(spoken.length, 1);
+    assert.match(spoken[0].text, /कम है, 4 लीटर बचा है। और मँगाऊँ\?$/);
+  } finally {
+    reorder.configure({ busy: (businessId) => require("../src/tools/calls").inFlight(businessId), busyRetryMs: 1000, busyRetries: 20 });
+  }
+});

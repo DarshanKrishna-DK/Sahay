@@ -132,7 +132,12 @@ test("record_payment in a call: the server reads the payment back itself, and on
   assert.equal(done.recorded, true);
   assert.equal(done.receipt.evidence_utterance, "हाँ");
   assert.equal(done.receipt.recorded_via, "voice");
-  assert.equal(done.say, "लिख लिया: रमेश से 2 हज़ार रुपये। अब उनके 3 हज़ार रुपये बाकी हैं।");
+  // E2E full run bug 1: the server says the recorded payment itself; the model only hands back.
+  assert.equal(done.outcome, "लिख लिया: रमेश से 2 हज़ार रुपये। अब उनके 3 हज़ार रुपये बाकी हैं।");
+  assert.equal(done.outcomeSpoken, true);
+  assert.equal(call.spoken.at(-1), done.outcome);
+  assert.equal(call.speakBodies.at(-1).interruptable, false);
+  assert.equal(done.say, "और कुछ बताइए?");
   assert.equal(receiptCount(businessId), 1);
   await expectToolError(registry.callTool(ctx, "record_payment", { decision: "confirm" }), "NO_PENDING_PAYMENT");
 });

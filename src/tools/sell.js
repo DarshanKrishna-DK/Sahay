@@ -17,6 +17,7 @@
  */
 
 const repo = require("../db/repo");
+const events = require("../events");
 const evidence = require("./evidence");
 const { ToolError, toToolError, sayFor, langKey } = require("./errors");
 const gst = require("../sell/gst");
@@ -26,6 +27,9 @@ const itemTax = require("../sell/item-tax");
 const gate = require("../sell/gate");
 const { SellError } = require("../sell/errors");
 const { canonicalUnit, unitWord } = require("../procurement/units");
+const outcome = require("../agora/outcome");
+/** One /history read inside a tool is bounded, so the tool answers within the MCP timeout_ms. */
+const { TOOL_HISTORY_TIMEOUT_MS } = require("../agora/agent");
 
 const items = () => require("../stock/items");
 
@@ -266,7 +270,7 @@ const money = (paise) => gst.rupeesText(paise);
 async function ownerTurns(ctx, args, n) {
   if (ctx.agentId) {
     try {
-      return evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId), n);
+      return evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId, { timeoutMs: TOOL_HISTORY_TIMEOUT_MS }), n);
     } catch {
       // the call history is unavailable: fall back to the model's copy below
     }
@@ -324,6 +328,37 @@ function currentInvoice(ctx, invoiceId, language) {
   return pool.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
 }
 
+/** The latest drafted (not yet put to the owner) bill of this call, or the named one; null when none. */
+function draftOfThisCall(ctx, invoiceId) {
+  const drafts = invoices.list(ctx.businessId, { status: "draft" }).filter((i) => (invoiceId ? i.id === invoiceId : ctx.sessionId && i.sessionId === ctx.sessionId));
+  return drafts.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1) ?? null;
+}
+
+/** A sale and a purchase are never the same turn: how far back a purchase need counts as part of this sale's turn. */
+const SALE_TURN_MS = 6000;
+
+/**
+ * Purchase needs the model saved in the same turn as this sale (E2E full run: "190 किलो" sold to a
+ * customer also became a 190 kg purchase need and a "delivery city?" question). Dismissed: a draft
+ * need of this call, saved within SALE_TURN_MS, for one of the bill's items, with no work on it.
+ */
+function dismissSaleTwins(ctx, lineItems, now = Date.now()) {
+  if (!ctx.sessionId) return [];
+  const dismissed = [];
+  for (const need of repo.listRequirements(ctx.businessId)) {
+    if (need.session_id !== ctx.sessionId || need.status !== "draft" || now - Date.parse(need.created_at) > SALE_TURN_MS) continue;
+    if (!lineItems.some((item) => item.id === items().findByName(ctx.businessId, need.item)?.id)) continue;
+    try {
+      const gone = repo.dismissRequirement(ctx.businessId, need.id);
+      events.emit(ctx.businessId, "requirement.saved", gone, { sessionId: ctx.sessionId, actor: "system" });
+      dismissed.push(gone);
+    } catch {
+      // work already started on it: leave it, the owner can dismiss it on the screen
+    }
+  }
+  return dismissed;
+}
+
 /* --------------------------------------------------------------- tools --- */
 
 function sellTools({ ownerObj, idArg, withHistory }) {
@@ -336,12 +371,33 @@ function sellTools({ ownerObj, idArg, withHistory }) {
   };
   const OWNER_WORDS = { type: "string", maxLength: 500, description: "The owner's last sentence(s), word for word as you heard them, in the owner's script. Always pass it." };
 
+  /** request_invoice_approval: the server reads the bill out in a call (once, unless repeat) and asks. */
+  async function askInvoice(ctx, args, language) {
+    const target = currentInvoice(ctx, args.invoiceId, language);
+    const { approval, invoice } = gate.requestInvoiceApproval(ctx.businessId, target.id, { sessionId: ctx.sessionId ?? null });
+    const readback = gate.buildReadback(ctx.businessId, invoice, langKey(language));
+    const result = { approvalId: approval.id, invoiceId: invoice.id, status: approval.status, totalPaise: approval.total_paise };
+    if (!ctx.agentId) return { ...result, readback, say: readback };
+    const readBefore = gate.readbacksOf(ctx.businessId, approval.id, ctx.agentId).length > 0;
+    if (readBefore && !args.repeat) {
+      return { ...result, readbackSpoken: true, next: "confirm_invoice", hint: "This bill was already read out. When the owner answers, call confirm_invoice (approve on a clear yes, reject on a no).", say: phrase("invoice_question", language) };
+    }
+    require("../agora/narrator").holdForApproval(ctx.businessId, `invoice:${approval.id}`);
+    try {
+      await require("../agora/agent").speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
+    } catch (err) {
+      throw new ToolError("READBACK_NOT_SPOKEN", sayFor("speak_failed", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
+    }
+    gate.recordInvoiceReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
+    return { ...result, readbackSpoken: true, next: "confirm_invoice", say: phrase("invoice_question", language) };
+  }
+
   return [
     {
       name: "add_customer",
       scopes: OWNER,
       description:
-        "Saves a customer (someone the shop sells to): name as the owner said it, and phone, GSTIN, state or address only when the owner said them. Saying an existing name updates that customer. draft_invoice adds a new customer by name itself, so call this only to save details.",
+        "Saves a customer (someone the shop sells to): when the owner asks to add a customer, call it at once with the name as the owner said it. Phone, GSTIN, state and address are optional: pass them only when the owner said them, and never ask for them before saving. Saying an existing name updates that customer.",
       inputSchema: ownerObj({
         owner_words: OWNER_WORDS,
         name: { type: "string", maxLength: 120 },
@@ -483,8 +539,10 @@ function sellTools({ ownerObj, idArg, withHistory }) {
           ? invoices.list(ctx.businessId, { status: "draft", customer_id: customer.id }).filter((i) => i.sessionId === ctx.sessionId).at(-1)
           : null;
         const invoice = invoices.draft(ctx.businessId, { customerId: customer.id, lines: drafted, invoiceId: replace?.id ?? null }, { sessionId: ctx.sessionId ?? null, actor: "agent" });
+        const dismissed = dismissSaleTwins(ctx, drafted.map((l) => ({ id: l.itemId })));
         return {
           saved: true,
+          ...(dismissed.length ? { purchaseNeedsDismissed: dismissed.map((r) => r.id) } : {}),
           invoiceId: invoice.id,
           invoice: invoices.summary(invoice, customer),
           next: "request_invoice_approval",
@@ -501,25 +559,7 @@ function sellTools({ ownerObj, idArg, withHistory }) {
         invoiceId: idArg("invoice", "the bill drafted in this call"),
         repeat: { type: "boolean", description: "Only when the owner asks to hear the bill again." },
       }),
-      handler: run(async (ctx, args, language) => {
-        const target = currentInvoice(ctx, args.invoiceId, language);
-        const { approval, invoice } = gate.requestInvoiceApproval(ctx.businessId, target.id, { sessionId: ctx.sessionId ?? null });
-        const readback = gate.buildReadback(ctx.businessId, invoice, langKey(language));
-        const result = { approvalId: approval.id, invoiceId: invoice.id, status: approval.status, totalPaise: approval.total_paise };
-        if (!ctx.agentId) return { ...result, readback, say: readback };
-        const readBefore = gate.readbacksOf(ctx.businessId, approval.id, ctx.agentId).length > 0;
-        if (readBefore && !args.repeat) {
-          return { ...result, readbackSpoken: true, next: "confirm_invoice", hint: "This bill was already read out. When the owner answers, call confirm_invoice (approve on a clear yes, reject on a no).", say: phrase("invoice_question", language) };
-        }
-        require("../agora/narrator").holdForApproval(ctx.businessId, null);
-        try {
-          await require("../agora/agent").speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
-        } catch (err) {
-          throw new ToolError("READBACK_NOT_SPOKEN", sayFor("speak_failed", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
-        }
-        gate.recordInvoiceReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
-        return { ...result, readbackSpoken: true, next: "confirm_invoice", say: phrase("invoice_question", language) };
-      }),
+      handler: run((ctx, args, language) => askInvoice(ctx, args, language)),
     },
     {
       name: "confirm_invoice",
@@ -529,17 +569,25 @@ function sellTools({ ownerObj, idArg, withHistory }) {
       inputSchema: ownerObj({ invoiceId: idArg("invoice", "the bill waiting for the owner"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
       handler: run(async (ctx, args, language) => {
         const pending = gate.listApprovals(ctx.businessId, { status: "pending", ...(args.invoiceId ? { invoice_id: args.invoiceId } : {}) });
-        if (!pending.length) throw new ToolError("NO_PENDING_INVOICE", phrase("no_invoice", language), { status: 409 });
+        if (!pending.length) {
+          // A yes to "shall I read it out?" after draft_invoice (E2E full run, bug 5b): a drafted bill of
+          // this call is read out now. Reading out decides nothing; only a yes to that read-back issues it.
+          const draft = ctx.agentId && args.decision === "approve" ? draftOfThisCall(ctx, args.invoiceId) : null;
+          if (!draft) throw new ToolError("NO_PENDING_INVOICE", phrase("no_invoice", language), { status: 409 });
+          const asked = await askInvoice(ctx, { invoiceId: draft.id }, language);
+          return { ...asked, status: "asked", hint: "The bill was not read out before, so the server has read it out now and asked. Wait for the owner; their yes or no goes to confirm_invoice." };
+        }
         if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", SAY.EVIDENCE_REQUIRED[langKey(language)], { status: 409 });
         const approval = pending.at(-1);
         const { invoice } = await withHistory(ctx, (history) =>
           gate.confirmInvoice(ctx.businessId, approval.id, { decision: args.decision, via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
         );
-        if (invoice.status !== "issued") return { invoiceId: invoice.id, status: invoice.status, say: phrase("invoice_rejected", language) };
+        if (invoice.status !== "issued") return outcome.settle(ctx, phrase("invoice_rejected", language), language, { invoiceId: invoice.id, status: invoice.status });
         const { invoice: done, problems } = await gate.finishIssue(ctx.businessId, invoice.id, { sessionId: ctx.sessionId ?? null });
         const failed = problems.map((p) => WHAT[p.step][langKey(language)]);
         const vars = { number: done.number, total: money(done.totals.totalPaise), pay: Boolean(done.payUrl) };
-        return {
+        const said = failed.length ? phrase("invoice_issued_partly", language, { number: done.number, what: failed.join(", ") }) : phrase("invoice_issued", language, vars);
+        return outcome.settle(ctx, said, language, {
           invoiceId: done.id,
           number: done.number,
           status: done.status,
@@ -549,8 +597,7 @@ function sellTools({ ownerObj, idArg, withHistory }) {
           shareUrl: done.shareUrl,
           testMode: true,
           problems,
-          say: failed.length ? phrase("invoice_issued_partly", language, { number: done.number, what: failed.join(", ") }) : phrase("invoice_issued", language, vars),
-        };
+        });
       }),
     },
   ];
