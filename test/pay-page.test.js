@@ -180,3 +180,11 @@ test("the customer's page never links to the owner-only bill PDF", () => {
   const page = /function checkoutForToken[\s\S]*?\n}\n/.exec(sell)[0];
   assert.doesNotMatch(page, /pdf/i, "the public pay data exposes no PDF URL, so the page offers no download");
 });
+
+test("an invoice page never shows the simulated-vendor label, even if the data said simulated, and [hidden] wins over the label's own display", async () => {
+  // E2E 2026-11-19 (ce5d22b): ".sim { display: inline-block }" beat the hidden attribute, so the
+  // label showed on a customer's bill although the API sent simulated:false. 331269c added the rule below.
+  assert.match(HTML, /\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+  const { el } = await load({ ...INVOICE, simulated: true });
+  assert.equal(el.sim.hidden, true, "a customer's bill has no vendor to label");
+});

@@ -214,8 +214,9 @@
     setText("item", isInvoice(d) ? d.item : d.quantity + " " + d.unit + " " + d.item);
     setText("buyer", d.buyer || "");
     setText("amount", rupees(d.amount, d.currency, c.lang));
-    // Only a simulated counterpart is labelled; a real shop's bill never is.
-    document.getElementById("sim").hidden = !d.simulated;
+    // Only a simulated vendor of a purchase order is labelled; a customer paying the shop's own bill
+    // has no vendor at all, whatever the data says.
+    document.getElementById("sim").hidden = isInvoice(d) || !d.simulated;
     document.getElementById("details").hidden = false;
     if (d.paid) {
       payBtn.hidden = true;
