@@ -89,4 +89,4 @@ function replyLanguage(businessId) {
   return activeOf(businessId, "reply_language").at(-1)?.params.language ?? null;
 }
 
-module.exports = { priceLimit, beta, bargainStyle, isAvoided, rankedVendors, usualQuantity, replyLanguage, covers, BETA };
+module.exports = { priceLimit, beta, bargainStyle, isAvoided, rankedVendors, usualQuantity, replyLanguage, covers, itemWords, BETA };
