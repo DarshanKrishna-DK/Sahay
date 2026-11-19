@@ -218,6 +218,8 @@ test("issued invoice: PDF with Indic names, pay page bound to the invoice, verif
   assert.equal(page.buyer, "रमेश ट्रेडर्स");
   assert.equal(page.simulated, false);
   assert.equal(page.amountPaise, invoice.totals.totalPaise);
+  assert.equal(page.invoiceNumber, invoice.number);
+  assert.equal(page.language, "en-IN", "the pay page speaks the shop's language");
 
   // asking again returns the same page
   assert.equal((await checkout.ensureCheckout(biz, draft.id, { razorpay, publicUrl: PUBLIC })).existing, true);

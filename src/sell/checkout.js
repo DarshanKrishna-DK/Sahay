@@ -146,6 +146,7 @@ function checkoutForToken(token, { razorpay = config.razorpay, now = Date.now } 
     amount: amountPaise / 100,
     currency: "INR",
     invoiceNumber: invoice.number,
+    language: ["hi-IN", "kn-IN", "en-IN"].includes(business.language) ? business.language : "en-IN", // the shop's wording on the page
     poNumber: invoice.number, // field name the pay page already reads
     merchant: business.name,
     vendor: business.name,
