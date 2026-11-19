@@ -236,3 +236,34 @@ test("final-2 B: while a read-back waits, the call status tells the model the ne
   assert.match(statuses.at(-1), /SAHAY\/2026\/AB12-0001/);
   assert.match(statuses.at(-1), /Do not call create_order/);
 });
+
+test("Track POLISH: a business hears its milestones in varied words, starting with the usual one, with the same figures, names and simulated label", async (t) => {
+  const { businessId, spoken } = liveNarrator(t);
+  const outcome = { agreed: true, unitPrice: 55, unit: "kg", vendorName: "BS Foods", simulated: true };
+  for (let i = 0; i < 3; i++) narrator.onEvent({ businessId, type: "negotiation.ended", data: { negotiationId: `neg_v${i}`, simulated: true, outcome } });
+  await until(() => spoken.length === 3, 3000);
+  const texts = spoken.map((s) => s.text);
+  assert.equal(texts[0], "BS Foods (सिम्युलेटेड विक्रेता) से मोल-भाव पूरा, 55 रुपये प्रति किलो पर बात बनी।", "the usual wording first");
+  for (let i = 1; i < texts.length; i++) assert.notEqual(texts[i], texts[i - 1], "never the same words twice in a row");
+  for (const text of texts) {
+    assert.match(text, /BS Foods \(सिम्युलेटेड विक्रेता\)/);
+    assert.match(text, /55 रुपये प्रति किलो/);
+  }
+});
+
+test("Track POLISH: every extra wording is in its own script and carries exactly the figures of the usual one", () => {
+  const vars = { count: 10, name: "BS Foods", vendor: "BS Foods", price: "55", unit: "किलो", sim: true, po: "SAHAY/2026/AB12-0001", amount: "11000", kind: "negotiation" };
+  const varsFor = (language) => ({ ...vars, unit: language === "kn-IN" ? "ಕೆಜಿ" : language === "en-IN" ? "kilogram" : "किलो" });
+  const numbers = (text) => (text.replace("SAHAY/2026/AB12-0001", "").match(/\d+/g) ?? []).sort();
+  for (const [key, byLanguage] of Object.entries(narrator.VARIANTS)) {
+    for (const [language, variants] of Object.entries(byLanguage)) {
+      const usual = narrator.LINES[key][language](varsFor(language));
+      for (const variant of variants) {
+        const text = variant(varsFor(language));
+        assert.deepEqual(numbers(text), numbers(usual), `${key} ${language}: ${text}`);
+        if (/सिम्युलेटेड|ಸಿಮ್ಯುಲೇಟೆಡ್|simulated/.test(usual)) assert.match(text, /सिम्युलेटेड विक्रेता|ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್|simulated vendor/, `${key} ${language} keeps the label`);
+        if (language !== "en-IN") assert.deepEqual(scriptProblems(text, language, { allow: ["BS Foods", "SAHAY/2026/AB12-0001"] }), { latin: [], foreign: false }, text);
+      }
+    }
+  }
+});
