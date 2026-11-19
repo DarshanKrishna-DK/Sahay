@@ -3,7 +3,7 @@
 /**
  * Speak-it: every card in the app has a 🔊 that reads it aloud, so reading is never required.
  * The browser sends only a key ("now", "rule:<id>", "memory:<id>", "approval:<id>", "order:<id>",
- * "need:<id>"); the sentence is always built here from this business's own rows, in its current
+ * "need:<id>", "invoice:<id>", "item:<id>", "owed:<customerId>"); the sentence is always built here from this business's own rows, in its current
  * reply language and script. Free text from a client is never spoken.
  *
  * In a live call the agent says it (/speak APPEND). Otherwise Murf Falcon renders it over HTTP
@@ -34,7 +34,7 @@ const SAMPLE_RATE = 24000;
 const RATE = Object.freeze({ slow: -20, normal: 0 });
 const REQUEST_TIMEOUT_MS = 15000;
 const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
-const KEY = /^(?:now|(rule|memory|approval|order|need):([A-Za-z0-9_]{1,64}))$/;
+const KEY = /^(?:now|(rule|memory|approval|order|need|invoice|item|owed):([A-Za-z0-9_]{1,64}))$/;
 
 let fetchImpl = (...args) => fetch(...args);
 
@@ -71,6 +71,19 @@ const NEED = {
   "hi-IN": (v) => `${v.amount ? `${v.amount} ` : ""}${v.item}${v.city ? `, ${v.city} के लिए` : ""}।`,
   "kn-IN": (v) => `${v.amount ? `${v.amount} ` : ""}${v.item}${v.city ? `, ${registry().knDative(v.city)}` : ""}.`,
   "en-IN": (v) => `${v.amount ? `${v.amount} of ` : ""}${v.item}${v.city ? ` for ${v.city}` : ""}.`,
+};
+
+/** An issued bill: its number, total and what is still due (amounts the way an owner says them). */
+const BILL = {
+  "hi-IN": (v) => `${v.name} का बिल ${v.number}। कुल ${v.total}। ${v.state}।`,
+  "kn-IN": (v) => `${v.name} ಅವರ ಬಿಲ್ ${v.number}. ಒಟ್ಟು ${v.total}. ${v.state}.`,
+  "en-IN": (v) => `Bill ${v.number} for ${v.name}. Total ${v.total}. ${v.state}.`,
+};
+const BILL_STATE = {
+  unpaid: { "hi-IN": () => "अभी भुगतान नहीं हुआ", "kn-IN": () => "ಇನ್ನೂ ಪಾವತಿ ಆಗಿಲ್ಲ", "en-IN": () => "Not paid yet" },
+  part: { "hi-IN": (open) => `${open} बाकी है`, "kn-IN": (open) => `${open} ಬಾಕಿ ಇದೆ`, "en-IN": (open) => `${open} still due` },
+  paid: { "hi-IN": () => "भुगतान हो गया", "kn-IN": () => "ಪಾವತಿ ಆಗಿದೆ", "en-IN": () => "Paid" },
+  cancelled: { "hi-IN": () => "यह बिल रद्द है", "kn-IN": () => "ಈ ಬಿಲ್ ರದ್ದಾಗಿದೆ", "en-IN": () => "Cancelled" },
 };
 
 /** The language the owner hears now: an active reply_language rule, else the business language. */
@@ -129,6 +142,37 @@ function needSentence(businessId, id, language) {
 }
 
 /**
+ * A bill waiting for the owner's yes is read exactly as the server's read-back (same figures, same
+ * question); an issued one says its number, total and what is still due.
+ */
+function invoiceSentence(businessId, id, language) {
+  const invoice = require("../sell/invoices").get(businessId, id);
+  if (!invoice) throw notFound();
+  if (invoice.status === "draft" || invoice.status === "pending") return require("../sell/gate").buildReadback(businessId, invoice, language);
+  const khata = require("../sell/khata");
+  const customer = require("../sell/customers").get(businessId, invoice.customerId);
+  const open = invoice.status === "paid" || invoice.status === "cancelled" ? 0 : khata.invoiceOpenPaise(businessId, invoice);
+  const state =
+    invoice.status === "cancelled" ? BILL_STATE.cancelled[language]()
+      : invoice.status === "paid" || open <= 0 ? BILL_STATE.paid[language]()
+        : open < invoice.totals.totalPaise ? BILL_STATE.part[language](khata.spokenRupees(open, language))
+          : BILL_STATE.unpaid[language]();
+  return BILL[language]({ name: customer?.name ?? invoice.recipient?.name ?? "", number: invoice.number, total: khata.spokenRupees(invoice.totals.totalPaise, language), state });
+}
+
+function itemSentence(businessId, id, language) {
+  const item = require("../stock/items").get(businessId, id);
+  if (!item) throw notFound();
+  return require("../stock/say").stockOne(businessId, item, language).say;
+}
+
+function owedSentence(businessId, customerId, language) {
+  const customer = require("../sell/customers").get(businessId, customerId);
+  if (!customer) throw notFound();
+  return require("../tools/khata").owedOne(businessId, customer, language).say;
+}
+
+/**
  * The sentence a key stands for, built from this business's rows: `{ text, language }`.
  * A key that is malformed or names another business's row is SPEAK_KEY_NOT_FOUND.
  */
@@ -149,6 +193,9 @@ function sentenceFor(businessId, key) {
     text = memory.sentence[language];
   } else if (kind === "approval") text = approvalSentence(businessId, id, language);
   else if (kind === "order") text = orderSentence(businessId, id, language);
+  else if (kind === "invoice") text = invoiceSentence(businessId, id, language);
+  else if (kind === "item") text = itemSentence(businessId, id, language);
+  else if (kind === "owed") text = owedSentence(businessId, id, language);
   else text = needSentence(businessId, id, language);
   return { text, language };
 }

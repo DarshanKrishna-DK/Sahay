@@ -60,7 +60,7 @@ function rung(o, max, ui, handlers) {
       h("span", { class: "mb-who-main" },
         scriptedText("span", name, { class: "mb-name" }),
         days !== null ? h("span", { class: `mb-age${days >= 30 ? " is-old" : ""}` }, icon("history", 18), h("span", { text: st("money.oldest", { d: daysWord(days) }) })) : null),
-      readButton(`owed:${id}`, () => st("say.owed", { name, amt: money(o.amount) }))),
+      readButton(`owed:${id}`)),
     h("p", { class: "mb-amt", text: money(o.amount) }),
     h("div", { class: "mb-acts" },
       keycapButton({ icon: "cash", word: st("money.gotPaid"), label: st("money.gotPaidLong", { name }), tone: "leaf", size: "md", onClick: (e) => handlers.paid(o, name, e.currentTarget) }),

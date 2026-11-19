@@ -68,9 +68,7 @@ function itemCard(it, asks, onAnswer) {
     h("div", { class: "sb-item-main" },
       h("div", { class: "sb-item-head" },
         scriptedText("h3", name, { class: "sb-item-name" }),
-        readButton(`item:${it.id}`, () => (low && levelQ
-          ? st("say.itemLow", { item: name, q: qtyText(it.onHand ?? 0, it.unit), lvl: levelQ })
-          : st("say.item", { item: name, q: qtyText(it.onHand ?? 0, it.unit) })))),
+        readButton(`item:${it.id}`)),
       h("p", { class: "sb-onhand" },
         h("span", { class: "sb-onhand-num", text: onNum }),
         h("span", { class: "sb-onhand-unit", text: unitWord(it.unit) })),
@@ -115,7 +113,7 @@ function orderCard(o, ui, onArrived) {
         h("span", { class: "sb-po-ico", "aria-hidden": "true" }, icon("truck", 24)),
         h("span", { class: "sb-po-id" },
           o.poNumber ? h("span", { class: "sb-bill-no", text: o.poNumber }) : h("span", { class: "sb-bill-no", text: st("stock.order") })),
-        readButton(`order:${id}`, () => st("say.order", { name: w.vendor || "", amt: money(o.amount) }))),
+        readButton(`order:${id}`)),
       perforation(),
       w.item ? h("p", { class: "sb-po-what" }, scriptedText("span", w.item, { class: "sb-po-item" }), w.qty !== null && w.qty !== undefined ? h("span", { class: "sb-po-qty", text: qtyText(w.qty, w.unit) }) : null) : null,
       w.vendor ? h("p", { class: "sb-po-from" }, icon("store", 20), scriptedText("span", w.vendor), w.simulated ? pill(t("simulated"), "robot", "sim") : null) : null,

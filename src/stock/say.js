@@ -173,4 +173,29 @@ function line(key, language, vars = {}, { allow = [] } = {}) {
   return text;
 }
 
-module.exports = { line, itemWord, qty, num, LINES, SIM };
+/**
+ * How much of one item is left, as get_stock and the Stock card's read-aloud say it:
+ * `{ stock: {...on_hand, level, low, counted}, say }`. Figures from the ledger only.
+ */
+function stockOne(businessId, item, language) {
+  const stock = require("./index");
+  const s = stock.withStock(businessId, item);
+  const counted = stock.listMoves(businessId, { itemId: item.id, limit: 1 }).length > 0;
+  return {
+    stock: { ...s, counted },
+    say: line(
+      "stock_one",
+      language,
+      {
+        item: itemWord(item, language),
+        counted,
+        left: qty(s.on_hand, item.unit, language),
+        low: counted && s.low,
+        level: s.level != null ? qty(s.level, item.unit, language) : null,
+      },
+      { allow: [item.name, item.name_native] },
+    ),
+  };
+}
+
+module.exports = { line, itemWord, qty, num, stockOne, LINES, SIM };

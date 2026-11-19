@@ -234,6 +234,16 @@ async function unheard(ctx, args) {
 
 const spokenAmount = (paise, language) => khata.spokenRupees(paise, language);
 
+/**
+ * What one customer owes, as who_owes_me and the Money card's read-aloud say it:
+ * `{ row, say }` (row null when they owe nothing). `rows` is khata.owed when the caller has it.
+ */
+function owedOne(businessId, customer, language, rows = khata.owed(businessId)) {
+  const row = rows.find((r) => r.customer.id === customer.id) ?? null;
+  if (!row) return { row: null, say: phrase("owed_one_none", language, { name: customer.name }) };
+  return { row, say: phrase("owed_one", language, { name: customer.name, amount: spokenAmount(row.amount_paise, language), days: row.days }) };
+}
+
 /* ------------------------------------------------------------- schemas --- */
 
 const REPLY_LANGUAGE = {
@@ -355,10 +365,8 @@ const TOOLS = [
       try {
         const rows = khata.owed(ctx.businessId);
         if (args.customer) {
-          const customer = khata.customerNamed(ctx.businessId, args.customer);
-          const row = rows.find((r) => r.customer.id === customer.id);
-          if (!row) return { owed: [], total: 0, say: phrase("owed_one_none", language, { name: customer.name }) };
-          return { owed: [row], total: row.amount, say: phrase("owed_one", language, { name: customer.name, amount: spokenAmount(row.amount_paise, language), days: row.days }) };
+          const { row, say } = owedOne(ctx.businessId, khata.customerNamed(ctx.businessId, args.customer), language, rows);
+          return { owed: row ? [row] : [], total: row ? row.amount : 0, say };
         }
         if (!rows.length) return { owed: [], total: 0, say: phrase("owed_none", language) };
         const lang = langKey(language);
@@ -400,4 +408,4 @@ const TOOLS = [
   },
 ];
 
-module.exports = { TOOLS, PHRASES, SAY, DEBTOR, OPENING, khataToolError };
+module.exports = { TOOLS, PHRASES, SAY, DEBTOR, OPENING, khataToolError, owedOne };

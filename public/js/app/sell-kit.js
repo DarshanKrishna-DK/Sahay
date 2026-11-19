@@ -117,11 +117,19 @@ function speakOnDevice(key, sentence) {
 }
 
 /**
- * The round read-aloud button on every card (speaker icon, tooltip + aria-label). The server reads
- * its own sentence for `key` (Murf, or the live call); when the server has no sentence for this
- * kind of card yet, the device voice reads `sentence()`, built only from what the card shows.
+ * Keys the server builds a sentence for (src/agent/speak.js). For these the server's own voice is
+ * the only voice: a failure is shown on the button, never replaced by the device's.
  */
-export function readButton(key, sentence, { size = "sm" } = {}) {
+const SERVER_KEY = /^(?:now|(?:rule|memory|approval|order|need|invoice|item|owed):[A-Za-z0-9_]{1,64})$/;
+export const isServerKey = (key) => SERVER_KEY.test(String(key));
+
+/**
+ * The round read-aloud button on every card (speaker icon, tooltip + aria-label). The server reads
+ * its own sentence for `key` (Murf, or the live call). Only a card the server has no sentence for
+ * (the khata total, the customer list) passes `sentence()`, built from what the card shows, for
+ * the device voice.
+ */
+export function readButton(key, sentence = null, { size = "sm" } = {}) {
   const label = t("speak.label");
   const note = h("span", { class: "speak-note", role: "status", "aria-live": "polite" });
   const btn = h("button", { class: `speak speak-${size}`, type: "button", "aria-label": label, dataset: { tip: label, state: "idle" } },
@@ -155,10 +163,10 @@ export function readButton(key, sentence, { size = "sm" } = {}) {
       busy = false;
       btn.dataset.state = "idle";
     } catch (err) {
-      if (err && err.code === "LIMIT") {
+      if ((err && err.code === "LIMIT") || isServerKey(key) || !sentence) {
         busy = false; playing = null;
         btn.dataset.state = "error";
-        note.textContent = err.message;
+        note.textContent = (err && err.message) || t("speak.failed");
       } else {
         try {
           busy = false;

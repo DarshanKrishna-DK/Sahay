@@ -234,3 +234,96 @@ test("POST /api/speak: audio/mpeg without a call, {spoken:true} in one, 404 for 
     assert.equal((await limited.json()).code, "RATE_LIMITED");
   });
 });
+
+/* ------------------------------------------- Sell, Stock and Money cards --- */
+
+const gstLib = require("../src/sell/gst");
+const sellSettings = require("../src/sell/settings");
+const sellCustomers = require("../src/sell/customers");
+const sellInvoices = require("../src/sell/invoices");
+const itemTax = require("../src/sell/item-tax");
+const gate = require("../src/sell/gate");
+const khata = require("../src/sell/khata");
+const stockLedger = require("../src/stock");
+const stockItems = require("../src/stock/items");
+
+/** A GST-registered shop with basmati rice (HSN + GST confirmed), Ramesh Traders and a drafted 50 kg bill. */
+function seedSale(language = "hi-IN") {
+  const biz = repo.newId("biz");
+  repo.createBusiness(biz, { name: "Asha Kirana", city: "Bengaluru", state: "Karnataka", language });
+  sellSettings.save(biz, { gst_scheme: "regular", gstin: "29AAPFU0939F1Z" + gstLib.checksumChar("29AAPFU0939F1Z") });
+  const text = itemTax.readback({ item: "basmati rice", hsn: "1006", gstRate: 5, unitWord: "kg" }, "en-IN");
+  itemTax.recordSpoken(biz, { itemName: "basmati rice", unit: "kg", hsn: "1006", gstRate: 5, agentId: "AG-s", text });
+  const history = [{ role: "assistant", content: text, metadata: { source: "command" }, turn_id: 1 }, { role: "user", content: "yes", metadata: { source: "asr" }, turn_id: 2 }];
+  const rice = itemTax.confirm(biz, { agentId: "AG-s", history }).item;
+  const { customer } = sellCustomers.save(biz, { name: "Ramesh Traders", phone: "9845012345" });
+  const invoice = sellInvoices.draft(biz, { customerId: customer.id, lines: [{ itemId: rice.id, quantity: 50, rate: 90 }] });
+  return { biz, rice, customer, invoice };
+}
+
+test("invoice:<id> reads a bill waiting for a yes exactly as the server's read-back, and an issued bill with its number, total and what is still due", () => {
+  const { biz, customer, invoice } = seedSale("hi-IN");
+  const waiting = speak.sentenceFor(biz, `invoice:${invoice.id}`);
+  assert.equal(waiting.language, "hi-IN");
+  assert.equal(waiting.text, gate.buildReadback(biz, sellInvoices.get(biz, invoice.id), "hi-IN"));
+  assert.deepEqual(scriptProblems(waiting.text, "hi-IN", { allow: ["Ramesh Traders"] }), NATIVE, waiting.text);
+
+  const { approval } = gate.requestInvoiceApproval(biz, invoice.id);
+  const issued = gate.confirmInvoice(biz, approval.id, { decision: "approve", via: "button" }).invoice;
+  const unpaid = speak.sentenceFor(biz, `invoice:${invoice.id}`).text;
+  assert.equal(unpaid, `Ramesh Traders का बिल ${issued.number}। कुल 4 हज़ार 725 रुपये। अभी भुगतान नहीं हुआ।`);
+  assert.deepEqual(scriptProblems(unpaid, "hi-IN", { allow: ["Ramesh Traders", issued.number] }), NATIVE, unpaid);
+
+  khata.recordReceipt(biz, { customerId: customer.id, amount: 2000, mode: "cash", invoiceId: invoice.id });
+  assert.match(speak.sentenceFor(biz, `invoice:${invoice.id}`).text, /2 हज़ार 725 रुपये बाकी है।$/);
+  khata.recordReceipt(biz, { customerId: customer.id, amount: 2725, mode: "upi", invoiceId: invoice.id });
+  assert.match(speak.sentenceFor(biz, `invoice:${invoice.id}`).text, /भुगतान हो गया।$/);
+
+  // The owner's reply language moves it, in that script.
+  const kn = rules.propose(biz, { kind: "reply_language", params: { language: "kn-IN" }, source: "owner_said" });
+  rules.decide(biz, kn.id, "keep", { via: "button" });
+  const out = speak.sentenceFor(biz, `invoice:${invoice.id}`);
+  assert.equal(out.language, "kn-IN");
+  assert.equal(out.text, `Ramesh Traders ಅವರ ಬಿಲ್ ${issued.number}. ಒಟ್ಟು 4 ಸಾವಿರ 725 ರೂಪಾಯಿ. ಪಾವತಿ ಆಗಿದೆ.`);
+});
+
+test("item:<id> says what is left (and when it is low) like get_stock; owed:<customerId> says who owes how much like who_owes_me", () => {
+  const { biz, rice, customer, invoice } = seedSale("en-IN");
+  assert.equal(speak.sentenceFor(biz, `item:${rice.id}`).text, "The stock of basmati rice has not been counted yet.");
+  stockLedger.setCount(biz, { itemId: rice.id, qty: 120, unit: "kg" });
+  assert.equal(speak.sentenceFor(biz, `item:${rice.id}`).text, "120 kilograms of basmati rice left.");
+
+  assert.equal(speak.sentenceFor(biz, `owed:${customer.id}`).text, "Ramesh Traders owes nothing.");
+  const { approval } = gate.requestInvoiceApproval(biz, invoice.id);
+  gate.confirmInvoice(biz, approval.id, { decision: "approve", via: "button" });
+  assert.equal(speak.sentenceFor(biz, `owed:${customer.id}`).text, "Ramesh Traders owes 4 thousand 725 rupees.");
+  assert.equal(speak.sentenceFor(biz, `item:${rice.id}`).text, "70 kilograms of basmati rice left.", "the sale took 50 kg out");
+
+  const hi = rules.propose(biz, { kind: "reply_language", params: { language: "hi-IN" }, source: "owner_said" });
+  rules.decide(biz, hi.id, "keep", { via: "button" });
+  const owed = speak.sentenceFor(biz, `owed:${customer.id}`);
+  assert.equal(owed.text, "Ramesh Traders के 4 हज़ार 725 रुपये बाकी हैं।");
+  const item = speak.sentenceFor(biz, `item:${rice.id}`).text;
+  assert.deepEqual(scriptProblems(item, "hi-IN"), NATIVE, item);
+  assert.match(item, /बासमती/);
+});
+
+test("invoice, item and owed keys of another business are not found", () => {
+  const mine = seedBusiness("en-IN");
+  const { rice, customer, invoice } = seedSale("en-IN");
+  for (const key of [`invoice:${invoice.id}`, `item:${rice.id}`, `owed:${customer.id}`, "invoice:inv_x", "item:itm_x", "owed:cus_x"]) {
+    assert.throws(() => speak.sentenceFor(mine, key), (err) => err.code === "SPEAK_KEY_NOT_FOUND", key);
+  }
+});
+
+test("POST /api/speak reads a bill aloud with Murf, under the same rate limit", async (t) => {
+  const calls = fakeMurf(t);
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    const { customer } = sellCustomers.save(me.business.id, { name: "Ramesh Traders" });
+    const res = await post(base, me.cookie, { key: `owed:${customer.id}` });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "audio/mpeg");
+    assert.match(calls.at(-1).body.text, /Ramesh Traders/);
+  });
+});

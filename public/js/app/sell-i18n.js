@@ -163,13 +163,7 @@ const T = {
   "mpad.saved": ["Saved", "लिख लिया", "ಉಳಿಸಲಾಗಿದೆ"],
 
   /* --------------------------------------------------- spoken sentences -- */
-  "say.invoice": ["Bill {num} for {name}. Total {amt}. {status}.", "{name} का बिल {num}। कुल {amt}। {status}।", "{name} ಅವರ ಬಿಲ್ {num}. ಒಟ್ಟು {amt}. {status}."],
-  "say.yes": ["Bill for {name}. Total {amt}, with GST {gst}. Should I make it?", "{name} का बिल। कुल {amt}, GST {gst} के साथ। बना दूँ?", "{name} ಅವರ ಬಿಲ್. ಒಟ್ಟು {amt}, GST {gst} ಸೇರಿ. ಮಾಡಲೇ?"],
-  "say.item": ["{item}: {q} left.", "{item}: {q} बचा है।", "{item}: {q} ಉಳಿದಿದೆ."],
-  "say.itemLow": ["{item}: only {q} left. Buy again at {lvl}.", "{item}: सिर्फ़ {q} बचा है। {lvl} पर फिर खरीदना था।", "{item}: ಕೇವಲ {q} ಉಳಿದಿದೆ. {lvl} ಆದಾಗ ಮತ್ತೆ ಕೊಳ್ಳಬೇಕು."],
-  "say.owed": ["{name} owes you {amt}.", "{name} से {amt} लेना है।", "{name} ಅವರಿಂದ {amt} ಬರಬೇಕು."],
   "say.totals": ["People owe you {amt} in all.", "कुल {amt} लेना है।", "ಒಟ್ಟು {amt} ಬರಬೇಕು."],
-  "say.order": ["Order from {name}, {amt}.", "{name} से ऑर्डर, {amt}।", "{name} ಅವರಿಂದ ಆರ್ಡರ್, {amt}."],
   "say.customers": ["{n} customers.", "{n} ग्राहक।", "{n} ಗ್ರಾಹಕರು."],
 };
 

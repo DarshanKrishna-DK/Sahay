@@ -79,25 +79,7 @@ async function spoken(language, fn, context) {
 
 const allowItem = (item) => [item?.name, item?.name_native];
 
-function itemLine(businessId, item, language) {
-  const s = stock.withStock(businessId, item);
-  const counted = stock.listMoves(businessId, { itemId: item.id, limit: 1 }).length > 0;
-  return {
-    stock: { ...s, counted },
-    say: say.line(
-      "stock_one",
-      language,
-      {
-        item: say.itemWord(item, language),
-        counted,
-        left: say.qty(s.on_hand, item.unit, language),
-        low: counted && s.low,
-        level: s.level != null ? say.qty(s.level, item.unit, language) : null,
-      },
-      { allow: allowItem(item) },
-    ),
-  };
-}
+const itemLine = (businessId, item, language) => say.stockOne(businessId, item, language);
 
 /** The order mark_order_delivered acts on when none is named: the one still awaiting delivery. */
 function defaultOrder(businessId, language) {
