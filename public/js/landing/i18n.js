@@ -10,6 +10,7 @@ const S = {
   navLabel: { en: "Page", hi: "पेज", kn: "ಪುಟ" },
   navHow: { en: "How it works", hi: "कैसे चलता है", kn: "ಹೇಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ" },
   navYes: { en: "Your yes", hi: "आपकी हाँ", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ" },
+  navSell: { en: "Bills and stock", hi: "बिल और स्टॉक", kn: "ಬಿಲ್ ಮತ್ತು ದಾಸ್ತಾನು" },
   langLabel: { en: "Language", hi: "भाषा", kn: "ಭಾಷೆ" },
   langChoose: { en: "Choose your language", hi: "अपनी भाषा चुनें", kn: "ನಿಮ್ಮ ಭಾಷೆ ಆರಿಸಿ" },
   toLight: { en: "Switch to light", hi: "रोशनी वाला रंग", kn: "ಬೆಳಕಿನ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
@@ -30,6 +31,8 @@ const S = {
   st3: { en: "Bargaining", hi: "मोलभाव", kn: "ಚೌಕಾಸಿ" },
   st4: { en: "Your yes", hi: "आपकी हाँ", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ" },
   st5: { en: "Learns you", hi: "आपको समझता है", kn: "ನಿಮ್ಮನ್ನು ಅರಿಯುತ್ತದೆ" },
+  st6: { en: "Bills and khata", hi: "बिल और खाता", kn: "ಬಿಲ್ ಮತ್ತು ಖಾತೆ" },
+  st7: { en: "Stock", hi: "स्टॉक", kn: "ದಾಸ್ತಾನು" },
 
   heroSub: {
     en: "Tell it what your shop needs. It finds sellers, bargains, and waits for your yes.",
@@ -91,16 +94,17 @@ const S = {
   sellerAsks: { en: "Seller asks", hi: "विक्रेता का दाम", kn: "ಮಾರಾಟಗಾರರ ಬೆಲೆ" },
   sahayOffers: { en: "Sahay offers", hi: "सहाय का दाम", kn: "ಸಹಾಯ್ ಬೆಲೆ" },
   bargainAlt: {
-    en: "Example: Sahay first says it is an automated assistant. The seller asks 62 rupees a kilo, Sahay offers 50, then 53; the seller comes down to 58, then 56, and they agree at 55 rupees a kilo.",
-    hi: "उदाहरण: सहाय पहले बताता है कि वह स्वचालित सहायक है। विक्रेता 62 रुपये किलो माँगता है, सहाय 50, फिर 53 कहता है; विक्रेता 58, फिर 56 पर आता है, और सौदा 55 रुपये किलो पर तय होता है।",
-    kn: "ಉದಾಹರಣೆ: ಸಹಾಯ್ ಮೊದಲು ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎನ್ನುತ್ತದೆ. ಮಾರಾಟಗಾರರು ಕಿಲೋಗೆ 62 ರೂಪಾಯಿ ಕೇಳುತ್ತಾರೆ, ಸಹಾಯ್ 50, ನಂತರ 53 ಎನ್ನುತ್ತದೆ; ಮಾರಾಟಗಾರರು 58, ನಂತರ 56ಕ್ಕೆ ಇಳಿಯುತ್ತಾರೆ, ಕಿಲೋಗೆ 55 ರೂಪಾಯಿಗೆ ಒಪ್ಪಂದ ಆಗುತ್ತದೆ.",
+    en: "Example: Sahay first says it is an automated assistant. The seller asks 65 rupees a kilo and Sahay offers 45; then 60 against 50; they meet at 55 rupees a kilo, shown as a balance whose beam levels when the two prices are equal.",
+    hi: "उदाहरण: सहाय पहले बताता है कि वह स्वचालित सहायक है। विक्रेता 65 रुपये किलो माँगता है, सहाय 45 कहता है; फिर 60 और 50; सौदा 55 रुपये किलो पर तय होता है। तराज़ू की डंडी तभी सीधी होती है जब दोनों दाम बराबर हों।",
+    kn: "ಉದಾಹರಣೆ: ಸಹಾಯ್ ಮೊದಲು ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎನ್ನುತ್ತದೆ. ಮಾರಾಟಗಾರರು ಕಿಲೋಗೆ 65 ರೂಪಾಯಿ ಕೇಳುತ್ತಾರೆ, ಸಹಾಯ್ 45 ಎನ್ನುತ್ತದೆ; ನಂತರ 60 ಮತ್ತು 50; ಕಿಲೋಗೆ 55 ರೂಪಾಯಿಗೆ ಒಪ್ಪಂದ. ಎರಡು ಬೆಲೆ ಸಮವಾದಾಗ ಮಾತ್ರ ತಕ್ಕಡಿಯ ದಂಡ ಸಮವಾಗುತ್ತದೆ.",
   },
+
 
   yesTitle: { en: "Nothing happens without your yes", hi: "आपकी हाँ के बिना कुछ नहीं होता", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಏನೂ ಆಗುವುದಿಲ್ಲ" },
   yesBody: {
     en: "Sahay reads the deal out loud. You say yes, or tap the tick. Only then it orders.",
-    hi: "सहाय सौदा पढ़कर सुनाता है। आप हाँ कहें या ✓ दबाएँ। तभी ऑर्डर होता है।",
-    kn: "ಸಹಾಯ್ ಒಪ್ಪಂದವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ನೀವು ಹೌದು ಎನ್ನಿ ಅಥವಾ ✓ ಒತ್ತಿ. ಆಮೇಲೆ ಮಾತ್ರ ಆರ್ಡರ್.",
+    hi: "सहाय सौदा पढ़कर सुनाता है। आप हाँ कहें या हाँ का बटन दबाएँ। तभी ऑर्डर होता है।",
+    kn: "ಸಹಾಯ್ ಒಪ್ಪಂದವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ನೀವು ಹೌದು ಎನ್ನಿ ಅಥವಾ ಹೌದು ಗುಂಡಿ ಒತ್ತಿ. ಆಮೇಲೆ ಮಾತ್ರ ಆರ್ಡರ್.",
   },
   perKg: { en: "/kg", hi: "/किलो", kn: "/ಕಿಲೋ" },
   kg: { en: "kg", hi: "किलो", kn: "ಕಿಲೋ" },
@@ -111,6 +115,34 @@ const S = {
     en: "Example: a yes card for Kite Hill Grains, 55 rupees a kilo times 50 kilos equals 2,750 rupees, with a yes and a no button. The order is placed only after yes.",
     hi: "उदाहरण: Kite Hill Grains के लिए हाँ वाला कार्ड, 55 रुपये किलो गुणा 50 किलो बराबर 2,750 रुपये, हाँ और नहीं के बटन के साथ। ऑर्डर सिर्फ़ हाँ के बाद होता है।",
     kn: "ಉದಾಹರಣೆ: Kite Hill Grains ಗಾಗಿ ಒಪ್ಪಿಗೆ ಕಾರ್ಡ್, ಕಿಲೋಗೆ 55 ರೂಪಾಯಿ ಗುಣಿಸು 50 ಕಿಲೋ ಸಮ 2,750 ರೂಪಾಯಿ, ಹೌದು ಮತ್ತು ಬೇಡ ಗುಂಡಿಗಳ ಜೊತೆ. ಹೌದು ಎಂದ ನಂತರ ಮಾತ್ರ ಆರ್ಡರ್.",
+  },
+
+  sellTitle: { en: "It writes the bill after your yes", hi: "आपकी हाँ के बाद बिल बनाता है", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರ ಬಿಲ್ ಬರೆಯುತ್ತದೆ" },
+  sellBody: {
+    en: "Say who bought what. Sahay reads the bill back, makes it only after your yes, and keeps your khata of who owes you.",
+    hi: "किसने क्या ख़रीदा, बताइए। सहाय बिल पढ़कर सुनाता है, आपकी हाँ के बाद ही बनाता है, और खाते में लिखता है कि किसका कितना बाक़ी है।",
+    kn: "ಯಾರು ಏನು ಕೊಂಡರು ಎಂದು ಹೇಳಿ. ಸಹಾಯ್ ಬಿಲ್ ಓದಿ ಹೇಳುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ ಮಾಡುತ್ತದೆ, ಯಾರು ಎಷ್ಟು ಬಾಕಿ ಎಂದು ಖಾತೆಯಲ್ಲಿ ಬರೆಯುತ್ತದೆ.",
+  },
+  sellPoint1: { en: "GST bill as a PDF, ready to share", hi: "GST बिल PDF में, भेजने के लिए तैयार", kn: "GST ಬಿಲ್ PDF ಆಗಿ, ಕಳುಹಿಸಲು ಸಿದ್ಧ" },
+  sellPoint2: { en: "Khata: who owes you, with a polite reminder", hi: "खाता: किसका बाक़ी है, और विनम्र याद-दिहानी", kn: "ಖಾತೆ: ಯಾರು ಬಾಕಿ ಇದ್ದಾರೆ, ಜೊತೆಗೆ ಸೌಮ್ಯ ನೆನಪು" },
+
+  stockTitle: { en: "When stock runs low, it offers to buy again", hi: "स्टॉक कम हो तो फिर से ख़रीदने को पूछता है", kn: "ದಾಸ್ತಾನು ಕಡಿಮೆಯಾದಾಗ ಮತ್ತೆ ಕೊಳ್ಳಲು ಕೇಳುತ್ತದೆ" },
+  stockBody: {
+    en: "Every bill takes stock out. Below your level, Sahay asks before it starts buying.",
+    hi: "हर बिल से स्टॉक घटता है। आपकी तय सीमा से नीचे जाते ही सहाय ख़रीद शुरू करने से पहले पूछता है।",
+    kn: "ಪ್ರತಿ ಬಿಲ್ ದಾಸ್ತಾನು ಕಡಿಮೆ ಮಾಡುತ್ತದೆ. ನೀವು ಇಟ್ಟ ಮಿತಿಗಿಂತ ಕೆಳಗೆ ಹೋದರೆ, ಖರೀದಿ ಶುರು ಮಾಡುವ ಮೊದಲು ಸಹಾಯ್ ಕೇಳುತ್ತದೆ.",
+  },
+  kg8: { en: "8 kg", hi: "8 किलो", kn: "8 ಕಿಲೋ" },
+  nodeSell: { en: "Sold", hi: "बिका", kn: "ಮಾರಾಟ" },
+  stockSold: { en: "12 kg rice on a bill", hi: "एक बिल पर 12 किलो चावल", kn: "ಒಂದು ಬಿಲ್‌ನಲ್ಲಿ 12 ಕಿಲೋ ಅಕ್ಕಿ" },
+  nodeLow: { en: "Stock low", hi: "स्टॉक कम", kn: "ದಾಸ್ತಾನು ಕಡಿಮೆ" },
+  stockLow: { en: "8 kg left, your level is 10", hi: "8 किलो बचा, आपकी सीमा 10", kn: "8 ಕಿಲೋ ಉಳಿದಿದೆ, ನಿಮ್ಮ ಮಿತಿ 10" },
+  nodeBuy: { en: "Buy again?", hi: "फिर ख़रीदें?", kn: "ಮತ್ತೆ ಕೊಳ್ಳಬೇಕೇ?" },
+  stockAsk: { en: "Sahay asks: 50 kg again?", hi: "सहाय पूछता है: फिर 50 किलो?", kn: "ಸಹಾಯ್ ಕೇಳುತ್ತದೆ: ಮತ್ತೆ 50 ಕಿಲೋ?" },
+  stockAlt: {
+    en: "Example: a bill sells 12 kilos of rice, stock falls to 8 kilos, below the owner's level of 10, and Sahay asks whether to buy 50 kilos again. Nothing is bought until the owner says yes.",
+    hi: "उदाहरण: एक बिल पर 12 किलो चावल बिकता है, स्टॉक 8 किलो रह जाता है, जो मालिक की सीमा 10 से कम है, और सहाय पूछता है कि क्या फिर से 50 किलो ख़रीदें। मालिक की हाँ के बिना कुछ नहीं ख़रीदा जाता।",
+    kn: "ಉದಾಹರಣೆ: ಒಂದು ಬಿಲ್‌ನಲ್ಲಿ 12 ಕಿಲೋ ಅಕ್ಕಿ ಮಾರಾಟವಾಗುತ್ತದೆ, ದಾಸ್ತಾನು 8 ಕಿಲೋಗೆ ಇಳಿಯುತ್ತದೆ, ಅದು ಮಾಲೀಕರ ಮಿತಿ 10ಕ್ಕಿಂತ ಕಡಿಮೆ, ಸಹಾಯ್ ಮತ್ತೆ 50 ಕಿಲೋ ಕೊಳ್ಳಲೇ ಎಂದು ಕೇಳುತ್ತದೆ. ಮಾಲೀಕರ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಏನೂ ಕೊಳ್ಳುವುದಿಲ್ಲ.",
   },
 
   learnTitle: { en: "Your Sahay learns you", hi: "आपका सहाय आपको समझता है", kn: "ನಿಮ್ಮ ಸಹಾಯ್ ನಿಮ್ಮನ್ನು ಅರಿಯುತ್ತದೆ" },

@@ -5,6 +5,7 @@ import { LANGS, applyLanguage, t } from "./i18n.js";
 import { initEdgeOrb } from "./edge-orb.js";
 import { initHover } from "./hover.js";
 import { initMotion } from "./motion.js";
+import { mountFigures } from "/figures/loader.js";
 
 const root = document.documentElement;
 const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -22,6 +23,7 @@ function setLanguage(next, { save = true } = {}) {
   markHeroLine(lang);
   updateThemeLabel();
   if (save) store("sahay-landing-lang", lang);
+  figures?.setLanguage(lang);
   document.dispatchEvent(new CustomEvent("landing:language", { detail: { lang } }));
 }
 
@@ -100,6 +102,8 @@ function initBottomCta() {
 }
 
 // ---- Boot ----------------------------------------------------------------------------------
+// The two anatomy figures load lazily, play only on screen and hold a still under reduced motion.
+const figures = mountFigures(document, { lang, reducedQuery });
 setLanguage(lang, { save: false });
 initRail();
 initBottomCta();

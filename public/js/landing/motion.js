@@ -60,6 +60,8 @@ export function initMotion({ reducedQuery }) {
     findScene(pinned("find"));
     bargainScene(pinned("bargain"));
     yesScene(pinned("yes"));
+    sellScene(pinned("sell"));
+    stockScene(pinned("stock"));
     learnScene(pinned("learn"));
     finale();
     railFill();
@@ -127,21 +129,13 @@ export function initMotion({ reducedQuery }) {
     tl.to({}, { duration: 0.5 });
   }
 
+  // The bargaining itself is Fig 1 (public/figures/balance): it runs its own rounds while on
+  // screen, so the scroll only brings in the disclosure line and the card.
   function bargainScene(tl) {
     copyIn(tl, "bargain");
     tl.from(".talk-sahay", { y: 24, opacity: 0, scale: 0.92, duration: 0.6 }, 0.2)
-      .from(".ladder-key", { opacity: 0, duration: 0.4 }, 0.5);
-    // One turn at a time: 62 (seller), 50 (Sahay), 58, 53, 56, then the deal at 55. Each line
-    // joins a new price to the same side's previous one, so the two sides visibly converge.
-    const rungs = gsap.utils.toArray(".scene-bargain .rung");
-    rungs.forEach((rung, i) => {
-      const at = 0.8 + i * 0.45;
-      const lines = document.querySelectorAll(`.ladder-lines line[data-at="${i}"]`);
-      if (lines.length) draw(tl, lines, at - 0.2, 0.3);
-      tl.from(rung, { scale: 0.2, opacity: 0, duration: 0.35, ease: rung.classList.contains("deal") ? "back.out(2.2)" : "back.out(1.8)" }, at);
-    });
-    tl.from(".deal-glow", { opacity: 0, scale: 0.5, duration: 0.5 }, 0.8 + rungs.length * 0.45)
-      .to({}, { duration: 0.5 });
+      .from("#bargain .fig-card", { y: 60, opacity: 0, duration: 0.8 }, 0.45)
+      .to({}, { duration: 1.6 });
   }
 
   function yesScene(tl) {
@@ -160,6 +154,27 @@ export function initMotion({ reducedQuery }) {
       .to(".yes-ok", { scale: 1.12, duration: 0.3, ease: "power2.out" }, 2)
       .to(".yes-ok", { scale: 1, duration: 0.3, ease: "power2.in" }, 2.3)
       .from(".yes-stamp", { scale: 1.6, opacity: 0, rotation: -14, duration: 0.5, ease: "power4.out" }, 2.4)
+      .to({}, { duration: 0.5 });
+  }
+
+  function sellScene(tl) {
+    copyIn(tl, "sell");
+    tl.from("#sell .beat-points li", { x: -24, opacity: 0, stagger: 0.15, duration: 0.5 }, 0.3)
+      .from("#sell .fig-card", { y: 60, opacity: 0, duration: 0.8 }, 0.35)
+      .to({}, { duration: 1.6 });
+  }
+
+  // Sell, stock low, buy again: the loop is drawn in the order it happens.
+  function stockScene(tl) {
+    copyIn(tl, "stock");
+    tl.from(".loop-track", { opacity: 0, duration: 0.5 }, 0.2);
+    draw(tl, ".loop-flow", 0.3, 2.2);
+    tl.from(".node-sell", { scale: 0.3, opacity: 0, duration: 0.5, ease: "back.out(1.8)" }, 0.4)
+      .from(".gauge-fill", { height: "70%", duration: 1, ease: "power2.inOut" }, 0.8)
+      .from(".gauge-num", { opacity: 0, duration: 0.3 }, 1.6)
+      .from(".node-low", { scale: 0.3, opacity: 0, duration: 0.5, ease: "back.out(1.8)" }, 1.3)
+      .from(".node-buy", { scale: 0.3, opacity: 0, duration: 0.5, ease: "back.out(1.8)" }, 2)
+      .from(".loop-arrow", { opacity: 0, duration: 0.4 }, 2.3)
       .to({}, { duration: 0.5 });
   }
 
