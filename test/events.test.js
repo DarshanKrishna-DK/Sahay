@@ -1,7 +1,6 @@
 "use strict";
 
 process.env.DB_FILE = ":memory:";
-process.env.SESSION_SIGNING_SECRET = "fake-events-test-secret-0123456789abcdef";
 
 const assert = require("node:assert/strict");
 const { after, before, test } = require("node:test");

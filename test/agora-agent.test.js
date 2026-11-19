@@ -1,20 +1,15 @@
 "use strict";
 
-// Fake credentials, set before config loads (process.loadEnvFile never overrides them).
+const { FAKE } = require("./_env");
+
+// Test settings. Every fake key comes from test/_env.js (FAKE), loaded first by npm test.
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
-  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
-  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
-  AGORA_CUSTOMER_ID: "test-customer",
-  AGORA_CUSTOMER_SECRET: "test-customer-secret",
-  MURF_API_KEY: "test-murf-key",
   MURF_REGION: "global",
   MURF_VOICE_HI: "hi-IN-khyati",
   MURF_VOICE_EN: "en-IN-isha",
   MURF_VOICE_KN: "kn-IN-harshitha",
-  SARVAM_API_KEY: "test-sarvam-key",
 });
 
 const assert = require("node:assert/strict");
@@ -78,7 +73,7 @@ test("buildJoinBody matches the S0-verified shape: managed gpt-4.1-mini, Sarvam 
   assert.equal(p.agent_rtc_uid, "1001");
   assert.deepEqual(p.remote_rtc_uids, ["1002"]);
   assert.deepEqual(p.advanced_features, { enable_rtm: true, enable_tools: true });
-  assert.deepEqual(p.asr, { vendor: "sarvam", language: "hi-IN", params: { api_key: "test-sarvam-key", language: "unknown" } });
+  assert.deepEqual(p.asr, { vendor: "sarvam", language: "hi-IN", params: { api_key: FAKE.SARVAM_API_KEY, language: "unknown" } });
   assert.equal(p.llm.credential_mode, "managed");
   assert.equal(p.llm.vendor, "openai");
   assert.equal(p.llm.style, "openai");
@@ -104,7 +99,7 @@ test("buildJoinBody matches the S0-verified shape: managed gpt-4.1-mini, Sarvam 
 
   const redacted = agent.redactJoinBody(body);
   const text = JSON.stringify(redacted);
-  for (const secret of ["007tok", "test-sarvam-key", "test-murf-key", "v1.a.b"]) assert.ok(!text.includes(secret), `${secret} redacted`);
+  for (const secret of ["007tok", FAKE.SARVAM_API_KEY, FAKE.MURF_API_KEY, "v1.a.b"]) assert.ok(!text.includes(secret), `${secret} redacted`);
 });
 
 test("buildJoinBody refuses two remote uids, a non-https MCP endpoint and an empty tool list", () => {
@@ -129,8 +124,8 @@ test("startOwnerAgent joins with a bearer that verifies for its session and list
   assert.match(started.disclosure, /ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ/, "Kannada disclosure in Kannada script");
 
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /\/v2\/projects\/0123456789abcdef0123456789abcdef\/join$/);
-  assert.equal(calls[0].auth, "Basic " + Buffer.from("test-customer:test-customer-secret").toString("base64"));
+  assert.match(calls[0].url, new RegExp(`/v2/projects/${FAKE.AGORA_APP_ID}/join$`));
+  assert.equal(calls[0].auth, "Basic " + Buffer.from(`${FAKE.AGORA_CUSTOMER_ID}:${FAKE.AGORA_CUSTOMER_SECRET}`).toString("base64"));
   const p = calls[0].body.properties;
   assert.equal(p.tts.params.voiceId, "kn-IN-harshitha");
   assert.equal(p.tts.params.locale, "kn-IN");
@@ -217,7 +212,7 @@ test("stopAgent treats 404 as already stopped and surfaces other failures withou
   assert.deepEqual(await agent.stopAgent("GONE"), { stopped: true, alreadyGone: true });
   await assert.rejects(agent.stopAgent("AG2"), (err) => {
     assert.equal(err.code, "AGORA_UNAUTHORIZED");
-    assert.ok(!err.message.includes("test-customer-secret"));
+    assert.ok(!err.message.includes(FAKE.AGORA_CUSTOMER_SECRET));
     return true;
   });
 });
@@ -618,7 +613,7 @@ test("agentStatus: GET /agents/{id} (agora-findings: Query status) returns the s
     : { status: 200, json: { message: "", start_ts: 1, stop_ts: 2, status: "STOPPED", agent_id: "AG1", name: "n" } }));
   assert.deepEqual(await agent.agentStatus("AG1"), { status: "STOPPED", stopTs: 2 });
   assert.equal(calls[0].method, "GET");
-  assert.match(calls[0].url, /\/v2\/projects\/0123456789abcdef0123456789abcdef\/agents\/AG1$/);
+  assert.match(calls[0].url, new RegExp(`/v2/projects/${FAKE.AGORA_APP_ID}/agents/AG1$`));
   await assert.rejects(agent.agentStatus("GONE"), (err) => err.name === "AgoraError" && err.status === 404);
   await assert.rejects(agent.agentStatus(""), (err) => err.code === "AGENT_REQUIRED");
 });
@@ -661,7 +656,7 @@ test("E2E r3 bug 8: every Agora POST logs its status and duration, with the agen
   assert.match(lines[1], /^\[agora\] POST \/agents\/<id>\/speak 200 in \d+ ms$/);
   for (const line of lines) {
     assert.ok(!line.includes("AGENT_SECRETISH_ID"));
-    assert.ok(!/test-customer|Basic /.test(line));
+    assert.ok(!line.includes(FAKE.AGORA_CUSTOMER_ID) && !/Basic /.test(line));
   }
 });
 

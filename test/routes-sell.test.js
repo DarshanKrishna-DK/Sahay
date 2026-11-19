@@ -2,7 +2,6 @@
 
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
   // No Razorpay keys: this test must never reach Razorpay (a .env on the machine would otherwise be read).
   RAZORPAY_KEY_ID: "",

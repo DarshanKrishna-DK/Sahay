@@ -1,7 +1,6 @@
 "use strict";
 
 process.env.DB_FILE = ":memory:";
-process.env.SESSION_SIGNING_SECRET = "fake-auth-test-secret-0123456789abcdef";
 
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -48,7 +47,7 @@ test("a token whose signature was changed is rejected, whichever character is al
 });
 
 test("a token signed with another secret is rejected", () => {
-  assert.throws(() => auth.verifySession(forge(claims(), "fake-other-secret-0123456789abcdef")), hasCode("BAD_SIGNATURE"));
+  assert.throws(() => auth.verifySession(forge(claims(), "y".repeat(48))), hasCode("BAD_SIGNATURE"));
 });
 
 test("an expired token is rejected even though its signature is valid", () => {
@@ -150,7 +149,7 @@ test("requireSession answers 401 without a valid browser cookie", async () => {
   assert.deepEqual(await status({}), [401, "MALFORMED"]);
   assert.deepEqual(await status(cookieOf("garbage")), [401, "MALFORMED"]);
   assert.deepEqual(await status(cookieOf(forge(claims({ exp: 1 })))), [401, "EXPIRED"]);
-  assert.deepEqual(await status(cookieOf(forge(claims(), "fake-other-secret-0123456789abcdef"))), [401, "BAD_SIGNATURE"]);
+  assert.deepEqual(await status(cookieOf(forge(claims(), "y".repeat(48)))), [401, "BAD_SIGNATURE"]);
   assert.deepEqual(await status(cookieOf(auth.signSession(claims({ scope: "mcp" })))), [401, "WRONG_SCOPE"]);
   // A browser token in the Authorization header is not a cookie.
   assert.deepEqual(await status({ authorization: `Bearer ${auth.signSession(claims())}` }), [401, "MALFORMED"]);

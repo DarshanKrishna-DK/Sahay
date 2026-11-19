@@ -2,13 +2,7 @@
 
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
-  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
-  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
-  AGORA_CUSTOMER_ID: "test-customer",
-  AGORA_CUSTOMER_SECRET: "test-customer-secret",
-  MURF_API_KEY: "test-murf-key",
   TELEGRAM_BOT_TOKEN: "",
 });
 

@@ -1,9 +1,10 @@
 "use strict";
 
+const { FAKE } = require("./_env");
+
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
-  TELEGRAM_BOT_TOKEN: "123456:test-bot-token",
+  TELEGRAM_BOT_TOKEN: FAKE.TELEGRAM_BOT_TOKEN,
   // Override the developer's demo delay from .env (loadEnvFile never overwrites a set key).
   FOLLOWUP_DELAY_SECONDS: "",
 });

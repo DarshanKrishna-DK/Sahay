@@ -1,0 +1,8 @@
+# ggshield / GitGuardian config (format version 2).
+# test/ holds only obviously fake, low-entropy keys, all defined in test/_env.js (FAKE); real keys
+# live only in the git-ignored .env.
+version: 2
+
+secret:
+  ignored_paths:
+    - "test/**"

@@ -1,22 +1,17 @@
 "use strict";
 
+const { FAKE } = require("./_env");
+
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
-  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
-  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
-  AGORA_CUSTOMER_ID: "test-customer",
-  AGORA_CUSTOMER_SECRET: "test-customer-secret",
-  MURF_API_KEY: "test-murf-key",
   MURF_REGION: "global",
   MURF_VOICE_HI: "hi-IN-khyati",
   MURF_VOICE_EN: "en-IN-isha",
   MURF_VOICE_KN: "kn-IN-harshitha",
-  SARVAM_API_KEY: "test-sarvam-key",
-  GROQ_API_KEY: "test-groq-key",
-  RAZORPAY_KEY_ID: "rzp_test_registry",
-  RAZORPAY_KEY_SECRET: "test-razorpay-secret",
+  GROQ_API_KEY: FAKE.GROQ_API_KEY,
+  RAZORPAY_KEY_ID: FAKE.RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: FAKE.RAZORPAY_KEY_SECRET,
 });
 
 const fs = require("node:fs");
@@ -460,7 +455,7 @@ test("approved deal -> create_order -> create_payment_link (Razorpay test, faked
   const token = link.url.split("/pay/")[1];
   const { razorpayOrderId } = payments.checkoutForToken(token);
   const paymentId = "pay_RegistryPay0001";
-  const signature = require("node:crypto").createHmac("sha256", "test-razorpay-secret").update(`${razorpayOrderId}|${paymentId}`).digest("hex");
+  const signature = require("node:crypto").createHmac("sha256", FAKE.RAZORPAY_KEY_SECRET).update(`${razorpayOrderId}|${paymentId}`).digest("hex");
   payments.verifyCheckoutPayment(token, { razorpay_payment_id: paymentId, razorpay_order_id: razorpayOrderId, razorpay_signature: signature });
   const paid = await registry.callTool(ctx, "get_order_status", {});
   assert.equal(paid.say, `Order ${order.poNumber} is paid.`);

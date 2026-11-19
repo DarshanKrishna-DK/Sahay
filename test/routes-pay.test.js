@@ -1,16 +1,12 @@
 "use strict";
 
+const { FAKE } = require("./_env");
+
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
-  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
-  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
-  AGORA_CUSTOMER_ID: "test-customer",
-  AGORA_CUSTOMER_SECRET: "test-customer-secret",
-  MURF_API_KEY: "test-murf-key",
-  RAZORPAY_KEY_ID: "rzp_test_routespay",
-  RAZORPAY_KEY_SECRET: "routes-pay-test-secret",
+  RAZORPAY_KEY_ID: FAKE.RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: FAKE.RAZORPAY_KEY_SECRET,
   SAHAY_ACCESS_CODE: "",
 });
 
@@ -114,7 +110,7 @@ test("GET /api/pay/:token: an unknown or malformed token is 404 PAY_LINK_INVALID
     const out = await call(base, "GET", `/api/pay/${token}`);
     assert.equal(out.status, 200);
     assert.equal(out.json.razorpayOrderId, link.razorpayOrderId);
-    assert.equal(out.json.keyId, "rzp_test_routespay");
+    assert.equal(out.json.keyId, FAKE.RAZORPAY_KEY_ID);
     assert.equal(out.json.poNumber, order.po_number);
     assert.equal(out.json.vendor, "Lakshmi Traders (simulated vendor)");
     assert.equal(out.json.testMode, true);

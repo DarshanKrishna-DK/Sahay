@@ -1,9 +1,10 @@
 "use strict";
 
+const { FAKE } = require("./_env");
+
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
-  TELEGRAM_BOT_TOKEN: "123456:test-bot-token",
+  TELEGRAM_BOT_TOKEN: FAKE.TELEGRAM_BOT_TOKEN,
 });
 
 const fs = require("node:fs");
@@ -20,7 +21,7 @@ function fakeTelegram(t, reply = () => ({ ok: true, result: { message_id: 7 } })
   const calls = [];
   telegram.setFetch(async (url, init) => {
     const method = String(url).split("/").pop();
-    assert.ok(String(url).startsWith("https://api.telegram.org/bot123456:test-bot-token/"));
+    assert.ok(String(url).startsWith(`https://api.telegram.org/bot${FAKE.TELEGRAM_BOT_TOKEN}/`));
     const body = typeof init.body === "string" ? JSON.parse(init.body) : init.body;
     calls.push({ method, body });
     const out = reply(method, body);
@@ -107,7 +108,7 @@ test("a Telegram refusal is a TelegramError without the bot token", async (t) =>
   await assert.rejects(telegram.sendToOwner(businessId, "x"), (err) => {
     assert.equal(err.name, "TelegramError");
     assert.equal(err.code, "REFUSED");
-    assert.ok(!err.message.includes("test-bot-token"));
+    assert.ok(!err.message.includes(FAKE.TELEGRAM_BOT_TOKEN));
     return true;
   });
 });

@@ -3,7 +3,6 @@
 // Stock REST (contract STK): GET /api/stock, POST /api/orders/:id/delivered, the reorder button.
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
 });
 

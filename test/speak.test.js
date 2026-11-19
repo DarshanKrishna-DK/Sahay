@@ -1,15 +1,11 @@
 "use strict";
 
+const { FAKE } = require("./_env");
+
 // Speak-it (plan Task B3): every card can be read aloud from a server-built sentence.
 Object.assign(process.env, {
   DB_FILE: ":memory:",
-  SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
   PUBLIC_URL: "https://sahay.test",
-  AGORA_APP_ID: "0123456789abcdef0123456789abcdef",
-  AGORA_APP_CERTIFICATE: "fedcba9876543210fedcba9876543210", // fake test value
-  AGORA_CUSTOMER_ID: "test-customer",
-  AGORA_CUSTOMER_SECRET: "test-customer-secret",
-  MURF_API_KEY: "test-murf-key",
   MURF_REGION: "global",
   MURF_VOICE_HI: "hi-IN-khyati",
   MURF_VOICE_EN: "en-IN-isha",
@@ -137,7 +133,7 @@ test("with no live call the sentence is Murf audio, cached by hash and served fr
   assert.deepEqual(first.audio, MP3);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://global.api.murf.ai/v1/speech/stream");
-  assert.equal(calls[0].headers["api-key"], "test-murf-key");
+  assert.equal(calls[0].headers["api-key"], FAKE.MURF_API_KEY);
   assert.deepEqual(
     { ...calls[0].body, text: undefined },
     { text: undefined, voiceId: "hi-IN-khyati", model: "falcon-2.1", locale: "hi-IN", format: "MP3", sampleRate: 24000, channelType: "MONO", rate: -20 },
