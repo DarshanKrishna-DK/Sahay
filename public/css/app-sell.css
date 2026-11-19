@@ -299,3 +299,105 @@
   .sb-pulse::after { animation: none; opacity: .6; transform: scale(1.3); }
   .sb-jar.is-low .sb-jar-fill, .sb-item.is-low { animation: none; }
 }
+
+/* ------------------------------------------------- shop details / GST -- */
+/* The sheet (shop-settings.js): three big scheme tiles, then the GST number, state and address.
+   Each tile carries the paper its scheme prints (plain bill, tax invoice, bill of supply), so the
+   choice reads as what the customer will hold, not as a tax term. */
+.shop-intro { display: flex; justify-content: flex-end; margin-top: -6px; }
+.shop-schemes { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.shop-legend { padding: 0; margin-bottom: 12px; }
+.shop-label { display: flex; align-items: center; gap: 10px; font-size: 1.15rem; font-weight: 700; color: var(--text-hi); }
+.shop-label > svg { color: var(--marigold-text); flex: none; }
+.shop-optional { font-weight: 500; color: var(--text-lo); }
+.shop-count { margin-left: auto; font-weight: 600; font-size: 1rem; color: var(--text-lo); font-variant-numeric: tabular-nums; }
+.shop-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.shop-tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 148px;
+  padding: 18px 16px; border-radius: var(--r-soft); border: 2px solid var(--edge); background: var(--glass);
+  color: var(--text-hi); text-align: left; cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-out), background-color var(--t-fast) var(--ease-out), transform 90ms var(--ease-out);
+}
+.shop-tile:hover { border-color: var(--marigold); }
+.shop-tile:active { transform: scale(.98); }
+.shop-tile:focus-visible { border-radius: var(--r-soft); }
+.shop-tile[aria-checked="true"] { border-color: var(--marigold); background: rgba(255, 176, 32, .14); }
+.shop-tile-ico { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-blob); background: rgba(255, 176, 32, .16); color: var(--marigold-text); }
+.shop-tile-word { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; line-height: 1.2; overflow-wrap: anywhere; }
+:lang(hi) .shop-tile-word { font-family: var(--font-deva); }
+:lang(kn) .shop-tile-word { font-family: var(--font-kn); }
+.shop-tile-paper { color: var(--text-lo); font-size: 1rem; line-height: 1.3; }
+.shop-tile-tick {
+  position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--marigold); color: var(--on-accent); opacity: 0; transform: scale(.6);
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.shop-tile[aria-checked="true"] .shop-tile-tick { opacity: 1; transform: none; }
+
+.shop-field { display: flex; flex-direction: column; gap: 8px; }
+.shop-field[hidden], .shop-input[hidden], .shop-help[hidden], .shop-derived[hidden] { display: none; }
+.shop-input {
+  width: 100%; min-height: 64px; padding: 0 20px; border-radius: var(--r-soft); border: 2px solid var(--edge);
+  background: var(--ink-1); color: var(--text-hi); font: inherit; font-size: 1.3rem;
+}
+.shop-input:focus-visible { border-color: var(--marigold); box-shadow: 0 0 0 4px rgba(255, 176, 32, .25); border-radius: var(--r-soft); outline: none; }
+.shop-input[aria-invalid="true"] { border-color: var(--coral); }
+.shop-input-gstin { font-family: var(--font-display); font-weight: 700; letter-spacing: .12em; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.shop-select { appearance: auto; cursor: pointer; }
+.shop-textarea { min-height: 96px; padding: 14px 20px; line-height: 1.4; resize: vertical; }
+.shop-help { color: var(--text-lo); font-size: 1rem; }
+.shop-help.is-error { color: var(--coral-text); font-weight: 600; }
+.shop-derived {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 64px; padding: 0 20px;
+  border-radius: var(--r-soft); border: 2px solid var(--leaf); background: rgba(46, 204, 133, .08); font-size: 1.2rem;
+}
+.shop-derived > svg { color: var(--leaf-text); flex: none; }
+.shop-derived-why { color: var(--text-lo); font-size: 1rem; }
+.shop-result:empty { display: none; }
+.shop-result-line { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 700; }
+.shop-result-line.is-ok { color: var(--leaf-text); }
+.shop-result-line.is-error { color: var(--coral-text); padding: 12px 16px; border-radius: var(--r-soft); border: 1px solid var(--coral); background: rgba(255, 107, 107, .08); }
+.shop-result-line > svg { flex: none; }
+.shop-actions { display: flex; }
+.shop-save { flex: 1; }
+.shop-save[aria-busy="true"] { cursor: progress; }
+.shop-save-ico { display: grid; place-items: center; }
+
+/* My Sahay row and the Sell screen's "needs" card. */
+.me-shopbox { grid-area: shop; display: flex; flex-direction: column; gap: 12px; }
+.me-shopbox:empty { display: none; }
+.shop-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.shop-facts li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 1.15rem; }
+.shop-facts svg { color: var(--marigold-text); flex: none; }
+.shop-fact-sub { color: var(--text-lo); font-size: 1rem; }
+.shop-fact-missing { color: var(--coral-text); font-weight: 600; }
+.shop-gstin { font-family: var(--font-display); font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.shop-need-line { display: flex; align-items: center; gap: 10px; margin: 0; padding: 12px 16px; border-radius: var(--r-soft); border: 1px solid var(--marigold); background: rgba(255, 176, 32, .08); }
+.shop-need-line > svg { color: var(--marigold-text); flex: none; }
+.me-shopbox .shop-open { align-self: flex-start; }
+.shop-need {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px 18px;
+  padding: 18px 20px; border-radius: var(--r-soft); border: 2px solid var(--marigold); background: rgba(255, 176, 32, .08);
+}
+.shop-need p { margin: 0; }
+.shop-need-ico { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-blob); background: rgba(255, 176, 32, .16); color: var(--marigold-text); }
+.shop-need-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shop-need-title { font-weight: 800; font-size: 1.2rem; }
+.shop-need-text { color: var(--text-hi); font-size: var(--fs-body); }
+.sb-yes .shop-need { grid-template-columns: auto minmax(0, 1fr); }
+.sb-yes .shop-need .shop-open { grid-column: 1 / -1; }
+
+@media (max-width: 560px) {
+  .shop-tiles { grid-template-columns: minmax(0, 1fr); }
+  .shop-tile { flex-direction: row; flex-wrap: wrap; align-items: center; min-height: 76px; padding: 12px 52px 12px 14px; gap: 4px 14px; }
+  .shop-tile-ico { width: 48px; height: 48px; }
+  .shop-tile-word { flex: 1 1 auto; }
+  .shop-tile-paper { flex-basis: 100%; padding-left: 62px; }
+  .shop-tile-tick { top: 50%; margin-top: -14px; }
+  .shop-need { grid-template-columns: auto minmax(0, 1fr); }
+  .shop-need .shop-open { grid-column: 1 / -1; width: 100%; }
+  .me-shopbox .shop-open { align-self: stretch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shop-tile, .shop-tile-tick { transition: none; }
+}

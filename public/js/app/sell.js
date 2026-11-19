@@ -10,6 +10,8 @@ import { stateView } from "./empty.js";
 import { yesNo, paper, perforation, pill } from "./ui.js";
 import { sell, loadSell, decideInvoice, pendingInvoices, invoiceCustomer, itemOf } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
+import { shopNeedCard, shopMissing } from "./shop-settings.js";
+import { SHOP_CODES } from "./shop-facts.js";
 import { ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, agentAction, sectionHead, buttonError, ask, alignNotches, count } from "./sell-kit.js";
 
 const STATUS_ICON = { draft: "doc", pending: "bell", issued: "receipt", part_paid: "rupee", paid: "checkCircle", cancelled: "ban" };
@@ -81,7 +83,8 @@ function yesCard(inv, ui, onDecide) {
         h("span", { class: "sb-total-word", text: st("sell.total") }),
         h("span", { class: "sb-total-num", text: money(tot.total) }))),
     inv.readback ? scriptedText("p", inv.readback, { class: "sb-readback" }) : null,
-    u.error ? h("p", { class: "sb-error", role: "alert" }, icon("alert", 20), h("span", { text: u.error })) : null,
+    u.fix ? shopNeedCard(u.fix, u.error)
+      : u.error ? h("p", { class: "sb-error", role: "alert" }, icon("alert", 20), h("span", { text: u.error })) : null,
     yesNo({
       busy: u.busy || null,
       yesWord: st("inv.yes.approve"), noWord: st("inv.yes.reject"),
@@ -178,7 +181,9 @@ export function createSell() {
       await decideInvoice(id, decision);
       ui.delete(id);
     } catch (err) {
-      ui.set(id, { error: err.status === 409 ? st("sbx.err.gone") : `${st("inv.yes.error")} ${buttonError(err)}`.trim() });
+      // A bill refused for missing shop details (no GSTIN / no state) opens the Shop details sheet.
+      if (SHOP_CODES.includes(err.code)) ui.set(id, { error: err.say || st(`shop.need.${err.code}`), fix: err.code, shop: JSON.stringify(sell.settings) });
+      else ui.set(id, { error: err.status === 409 ? st("sbx.err.gone") : `${st("inv.yes.error")} ${buttonError(err)}`.trim() });
     }
     render(true);
   }
@@ -191,18 +196,22 @@ export function createSell() {
     patch(topAct, JSON.stringify([document.documentElement.lang, empty, sell.status]), () =>
       (empty || sell.status !== "ready" ? [] : [agentAction({ word: st("sell.act"), hint: "sell.hint" })]));
     if (force) body.__key = null;
-    const key = JSON.stringify([document.documentElement.lang, sell.status, invoices, [...sell.customers.values()], sell.owed, [...ui.entries()], [...sell.receipts.map((r) => r.id)]]);
+    const need = shopMissing();
+    // Once the shop details change (saved from the sheet), a bill's "add shop details" note goes.
+    for (const [id, u] of ui) if (u.fix && u.shop !== JSON.stringify(sell.settings)) ui.delete(id);
+    const key = JSON.stringify([document.documentElement.lang, sell.status, need, invoices, [...sell.customers.values()], sell.owed, [...ui.entries()], [...sell.receipts.map((r) => r.id)]]);
     patch(body, key, () => {
       if (s) return s;
       if (empty) {
-        return stateView({ kind: "empty", icon: "receipt", title: st("sell.empty.title"), text: st("sell.empty.text"),
-          action: { label: st("sell.act"), icon: "mic", run: () => ask({ hint: "sell.hint" }) } });
+        return [need ? shopNeedCard(need) : null, stateView({ kind: "empty", icon: "receipt", title: st("sell.empty.title"), text: st("sell.empty.text"),
+          action: { label: st("sell.act"), icon: "mic", run: () => ask({ hint: "sell.hint" }) } })];
       }
       const pending = pendingInvoices();
       const others = invoices.filter((i) => i.status !== "pending");
       const owedBy = new Map(sell.owed.map((o) => [o.customerId, o.amount]));
       const names = [...sell.customers.values()].map((c) => c.name).filter(Boolean);
       return [
+        need ? shopNeedCard(need) : null,
         pending.length ? h("div", { class: "sb-yes-stack" },
           pending.length > 1 ? h("p", { class: "sb-waiting", role: "status" }, icon("bell", 20), h("span", { text: st("inv.yes.waiting", { n: pending.length }) })) : null,
           ...pending.map((inv) => yesCard(inv, ui, decide))) : null,

@@ -6,7 +6,10 @@
 // - a purchase order (Sahay's owner pays a vendor): purchase-order wording, in English, and the
 //   "simulated vendor" label when the vendor is simulated; back to the Buy screen;
 // - an invoice (kind "invoice": a customer pays the shop's bill): the shop is the merchant and the
-//   customer the buyer, in the shop's language; back to the Sell screen.
+//   customer the buyer, in the shop's language. The visitor is the shop's customer, who has no
+//   Sahay app, so there is no way "back to Sahay"; a verified payment ends on "Paid. Thank you."
+//   with the shop, the bill number and the amount. The bill's PDF is owner-only
+//   (/api/invoices/:id/pdf needs the shop's session), so this page offers no download.
 // Razorpay Standard Checkout: options key, amount, currency, name, description, order_id and a
 // success handler that receives razorpay_payment_id / razorpay_order_id / razorpay_signature,
 // which the server verifies before it marks the order or bill paid.
@@ -52,7 +55,7 @@
       brand: function (shop) { return "Sahay, an automated assistant for " + shop; },
       banner: "Razorpay TEST MODE: no real money moves. Use only Razorpay test card or UPI details.",
       pay: "Pay with Razorpay (test mode)",
-      back: "Back to Sahay",
+      thanks: "Paid. Thank you.", bill: "Bill", paidAmount: "Amount paid",
       fine: "This page opens Razorpay Checkout in test mode for the bill above. The bill is marked paid only after the server has verified Razorpay's payment signature.",
       loadFailed: "The bill could not be loaded.",
       unusable: "This payment link cannot be used.",
@@ -74,7 +77,7 @@
       brand: function (shop) { return "सहाय, " + shop + " का स्वचालित सहायक"; },
       banner: "Razorpay टेस्ट मोड: असली पैसा नहीं कटता। सिर्फ़ Razorpay के टेस्ट कार्ड या यूपीआई की जानकारी डालिए।",
       pay: "Razorpay से भुगतान करें (टेस्ट मोड)",
-      back: "सहाय पर वापस",
+      thanks: "भुगतान हो गया। धन्यवाद।", bill: "बिल", paidAmount: "चुकाई गई रकम",
       fine: "यह पन्ना ऊपर वाले बिल के लिए Razorpay चेकआउट टेस्ट मोड में खोलता है। सर्वर के Razorpay का हस्ताक्षर जाँचने के बाद ही बिल चुका हुआ माना जाता है।",
       loadFailed: "बिल नहीं खुल पाया।",
       unusable: "यह भुगतान लिंक काम नहीं करता।",
@@ -96,7 +99,7 @@
       brand: function (shop) { return "ಸಹಾಯ್, " + shop + " ಅವರ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ"; },
       banner: "Razorpay ಟೆಸ್ಟ್ ಮೋಡ್: ನಿಜವಾದ ಹಣ ಹೋಗುವುದಿಲ್ಲ. Razorpay ಟೆಸ್ಟ್ ಕಾರ್ಡ್ ಅಥವಾ ಯುಪಿಐ ವಿವರಗಳನ್ನು ಮಾತ್ರ ಬಳಸಿ.",
       pay: "Razorpay ಮೂಲಕ ಪಾವತಿಸಿ (ಟೆಸ್ಟ್ ಮೋಡ್)",
-      back: "ಸಹಾಯ್‌ಗೆ ಹಿಂತಿರುಗಿ",
+      thanks: "ಪಾವತಿ ಆಯಿತು. ಧನ್ಯವಾದಗಳು.", bill: "ಬಿಲ್", paidAmount: "ಪಾವತಿಸಿದ ಮೊತ್ತ",
       fine: "ಈ ಪುಟ ಮೇಲಿನ ಬಿಲ್‌ಗೆ Razorpay ಚೆಕ್‌ಔಟ್ ಅನ್ನು ಟೆಸ್ಟ್ ಮೋಡ್‌ನಲ್ಲಿ ತೆರೆಯುತ್ತದೆ. ಸರ್ವರ್ Razorpay ಸಹಿಯನ್ನು ಪರಿಶೀಲಿಸಿದ ನಂತರವೇ ಬಿಲ್ ಪಾವತಿಯಾಗಿದೆ ಎಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ.",
       loadFailed: "ಬಿಲ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ.",
       unusable: "ಈ ಪಾವತಿ ಲಿಂಕ್ ಬಳಸಲು ಆಗುವುದಿಲ್ಲ.",
@@ -117,18 +120,45 @@
   /** The page's words for this payment: purchase-order wording, or the shop's bill in its language. */
   function copyFor(d) {
     if (!isInvoice(d)) return PURCHASE;
-    var c = BILL[d.language] || BILL["en-IN"];
-    var out = {};
-    for (var k in c) out[k] = c[k];
-    out.backHref = "/app#/sell";
-    return out;
+    return BILL[d.language] || BILL["en-IN"];
   }
 
   // Razorpay Checkout leaves history entries behind (QA: the browser Back hung after it), so the
-  // way home is a plain link, always on the page and repeated after checkout.
+  // owner's way home is a plain link, always on the page and repeated after checkout. A bill's
+  // customer has no Sahay app: no such link for them.
   function showBack() {
+    if (!copy || !copy.backHref) return;
     var b = document.getElementById("done-back");
     if (b) b.hidden = false;
+  }
+
+  function setHidden(id, hidden) {
+    var el = document.getElementById(id);
+    if (el) el.hidden = hidden;
+  }
+
+  /**
+   * A bill that is paid: the customer's ending. The bill's details and the pay button give way to
+   * "Paid. Thank you." with the shop, the bill number and, when known, the amount just paid.
+   */
+  function showThanks(c, d, paidAmount) {
+    setText("thanks-title", c.thanks);
+    setText("thanks-label-shop", c.vendor);
+    setText("thanks-shop", d.merchant || d.vendor || "");
+    setText("thanks-label-bill", c.bill);
+    setText("thanks-bill", d.invoiceNumber || d.poNumber || "");
+    var known = typeof paidAmount === "number" && paidAmount > 0;
+    setText("thanks-label-amount", c.paidAmount);
+    setText("thanks-amount", known ? rupees(paidAmount, d.currency, c.lang) : "");
+    setHidden("thanks-label-amount", !known);
+    setHidden("thanks-amount-row", !known);
+    setHidden("details", true);
+    setHidden("po", true);
+    setHidden("title", true);
+    payBtn.hidden = true;
+    setHidden("thanks", false);
+    var heading = document.getElementById("thanks-title");
+    if (heading && typeof heading.focus === "function") heading.focus();
   }
 
   function show(text, kind) {
@@ -136,9 +166,10 @@
     statusEl.className = kind || "";
   }
 
-  function rupees(amount, currency) {
+  function rupees(amount, currency, lang) {
     try {
-      return new Intl.NumberFormat("en-IN", { style: "currency", currency: currency || "INR" }).format(amount);
+      var locale = lang === "hi" ? "hi-IN" : lang === "kn" ? "kn-IN" : "en-IN";
+      return new Intl.NumberFormat(locale, { style: "currency", currency: currency || "INR" }).format(amount);
     } catch (e) {
       return String(amount) + " " + (currency || "INR");
     }
@@ -160,11 +191,17 @@
     setText("brand-text", c.brand(d.merchant || d.vendor || ""));
     setText("banner", c.banner);
     setText("fine", c.fine);
-    setText("back-text", c.back);
-    setText("done-back-link", c.back);
     setText("pay", c.pay);
-    document.getElementById("back").href = c.backHref;
-    document.getElementById("done-back-link").href = c.backHref;
+    if (c.backHref) {
+      setText("back-text", c.back);
+      setText("done-back-link", c.back);
+      document.getElementById("back").href = c.backHref;
+      document.getElementById("done-back-link").href = c.backHref;
+    } else {
+      // The shop's customer: no link into the owner's app, before or after paying.
+      setHidden("back", true);
+      setHidden("done-back", true);
+    }
   }
 
   function render(d) {
@@ -176,13 +213,15 @@
     setText("vendor", isInvoice(d) ? d.merchant || d.vendor : d.vendor);
     setText("item", isInvoice(d) ? d.item : d.quantity + " " + d.unit + " " + d.item);
     setText("buyer", d.buyer || "");
-    setText("amount", rupees(d.amount, d.currency));
+    setText("amount", rupees(d.amount, d.currency, c.lang));
     // Only a simulated counterpart is labelled; a real shop's bill never is.
     document.getElementById("sim").hidden = !d.simulated;
     document.getElementById("details").hidden = false;
     if (d.paid) {
       payBtn.hidden = true;
       show(c.isPaid, "ok");
+      // Reopened after paying: nothing is open (the page says 0), so no amount is repeated.
+      if (isInvoice(d)) showThanks(c, d, null);
     } else {
       payBtn.disabled = false;
       show("");
@@ -228,6 +267,7 @@
       .then(function (body) {
         payBtn.hidden = true;
         show(body.status === "paid" ? c.verified(number) : c.recorded(number, body.status), body.status === "paid" ? "ok" : "bad");
+        if (body.status === "paid" && isInvoice(order)) showThanks(c, order, order.amount);
         showBack();
       })
       .catch(function (e) {

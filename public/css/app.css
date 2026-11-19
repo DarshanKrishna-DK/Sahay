@@ -827,7 +827,7 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .tg-err { display: flex; gap: 8px; align-items: center; color: var(--coral-text); flex-basis: 100%; }
 
 /* ============================================================== my sahay -- */
-.me { display: grid; gap: 28px 48px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "head stars" "profile stars" "actions stars"; align-items: start; }
+.me { display: grid; gap: 28px 48px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "head stars" "profile stars" "shop stars" "actions stars"; align-items: start; }
 .me-head { grid-area: head; display: flex; align-items: center; gap: 18px; }
 .me-profile { grid-area: profile; display: flex; flex-direction: column; gap: 26px; }
 .me-stars { grid-area: stars; display: flex; flex-direction: column; gap: 12px; }
@@ -889,7 +889,7 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .why { align-items: flex-start; }
 .rule-actions { display: flex; justify-content: space-around; padding: 6px 0; }
 @media (max-width: 999px) {
-  .me { grid-template-columns: 1fr; grid-template-areas: "head" "stars" "profile" "actions"; }
+  .me { grid-template-columns: 1fr; grid-template-areas: "head" "stars" "profile" "shop" "actions"; }
 }
 @media (max-width: 760px) {
   .star { width: 70px; height: 70px; font-size: .75rem; }

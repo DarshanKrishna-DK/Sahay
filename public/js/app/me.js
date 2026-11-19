@@ -8,6 +8,9 @@ import { t, LANGS, cityWord, addStrings } from "./i18n.js";
 import { state, loadAgent, updateProfile, decideRule, ownerLanguage, logout } from "./store.js";
 import { createThinkingOrb } from "./thinking-orb.js";
 import { passkeyAvailable, addPasskey, cancelled } from "./passkey.js";
+import { sell, loadSell } from "./store-sell.js";
+import { shopSummary } from "./shop-settings.js";
+import { st } from "./sell-i18n.js";
 
 addStrings({
   "me.account": ["Your account", "आपका खाता", "ನಿಮ್ಮ ಖಾತೆ"],
@@ -32,8 +35,9 @@ export function createMe() {
   const profileBox = h("div", { class: "me-profile" });
   const starsBox = h("div", { class: "me-stars" });
   const actions = h("div", { class: "me-actions" });
+  const shopBox = h("section", { class: "me-shopbox", "aria-labelledby": "me-shop-h" });
   const accountBox = h("div", { class: "me-account" });
-  el.append(head, profileBox, starsBox, actions, accountBox);
+  el.append(head, profileBox, shopBox, starsBox, actions, accountBox);
   const meOrb = createThinkingOrb({ size: 72, state: "idle" });
   const acct = { finger: null, busy: null, note: null, error: null };
   passkeyAvailable().then((ok) => { acct.finger = ok; renderAccount(); });
@@ -203,6 +207,20 @@ export function createMe() {
     }
   }
 
+  // Shop details / GST (contract SELL settings): how the shop bills, its state and GST number.
+  function renderShop() {
+    const s = sell.settings;
+    const key = JSON.stringify([sell.status, s, document.documentElement.lang]);
+    patch(shopBox, key, () => {
+      const body = shopSummary();
+      if (!body) return [];
+      return [
+        h("h2", { class: "pref-title", id: "me-shop-h" }, icon("store", 22), h("span", { text: st("shop.title") })),
+        ...(Array.isArray(body) ? body : [body]),
+      ];
+    });
+  }
+
   function renderActions() {
     patch(actions, document.documentElement.lang, () => [
       h("button", { class: "btn btn-primary btn-lg", type: "button", on: { click: teach } }, icon("mic", 24), h("span", { text: t("me.teach") })),
@@ -261,8 +279,12 @@ export function createMe() {
     if (all || parts.has("business") || parts.has("boot")) renderAccount();
     if (all || parts.has("business")) renderHead();
     if (all || parts.has("agent")) { renderProfile(); renderStars(); }
+    if (all || parts.has("sell")) renderShop();
     if (all) renderActions();
   }
 
-  return { el, update: (_s, parts) => render(parts), enter() { if (state.agent.status === "error" || state.agent.status === "missing") loadAgent(); } };
+  return { el, update: (_s, parts) => { if (sell.status === "idle" && state.boot === "ready") loadSell(); render(parts); }, enter() {
+    if (state.agent.status === "error" || state.agent.status === "missing") loadAgent();
+    if (state.boot === "ready" && (sell.status === "idle" || sell.status === "error")) loadSell();
+  } };
 }

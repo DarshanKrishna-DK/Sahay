@@ -23,7 +23,7 @@ export function openSheet({ title, body, opener }) {
   const onKey = (e) => {
     if (e.key === "Escape") { e.preventDefault(); closeSheet(); return; }
     if (e.key !== "Tab") return;
-    const f = [...panel.querySelectorAll("button:not([disabled]), a[href], input, [tabindex]:not([tabindex='-1'])")];
+    const f = [...panel.querySelectorAll("button:not([disabled]), a[href], input:not([hidden]), select:not([hidden]), textarea, [tabindex]:not([tabindex='-1'])")];
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1];
     if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) { e.preventDefault(); last.focus(); }

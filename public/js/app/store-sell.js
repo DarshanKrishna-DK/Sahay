@@ -10,6 +10,7 @@
 
 import { state as appState, touch, agentRequest, registerReducer, registerSnapshot } from "./store.js";
 import { pick, num, parseMaybeJson, asArray } from "./dom.js";
+import { normSettings } from "./shop-facts.js";
 
 export const sell = {
   status: "idle", // idle | loading | ready | missing | error
@@ -18,6 +19,7 @@ export const sell = {
   invoices: new Map(),
   receipts: [],
   owed: [],
+  settings: null, // the shop's GST scheme, GSTIN, state, address (GET /api/sell `settings`)
 };
 
 export const stock = {
@@ -188,6 +190,7 @@ export function loadSell({ quiet = false } = {}) {
       for (const i of asArray(r.invoices)) merge(invoices, normInvoice(i));
       sell.customers = customers;
       sell.invoices = invoices;
+      sell.settings = normSettings(r.settings);
       sell.receipts = asArray(r.receipts).map(normReceipt).filter(Boolean)
         .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
       sell.owed = asArray(r.owed).map(normOwed).filter((o) => o && o.amount !== null && o.amount > 0)
@@ -252,6 +255,19 @@ export async function decideInvoice(id, decision) {
   touch("sell");
   scheduleSell();
   return r;
+}
+
+/**
+ * The shop details sheet's Save: POST /api/sell/settings {gst_scheme, gstin?, state?, address}.
+ * The server validates the GSTIN (check character) and answers {code, message, say} when it
+ * refuses; the caller shows the say.
+ */
+export async function saveShopSettings(body) {
+  const r = await agentRequest("POST", "/api/sell/settings", body);
+  const next = normSettings(r && r.settings);
+  if (next) sell.settings = next;
+  touch("sell");
+  return sell.settings;
 }
 
 /** POST /api/receipts { customer_id, amount, mode, invoice_id? } (button path). Amount in rupees. */
@@ -366,6 +382,12 @@ export function applySellEvent(evt, { live = true } = {}) {
     case "reminder.sent":
       scheduleSell();
       break;
+    case "sell.settings_saved": {
+      const next = normSettings(d.settings);
+      if (next) sell.settings = next;
+      touch("sell");
+      break;
+    }
     case "item.saved":
       merge(stock.items, normItem(d.item || d));
       touch("stock");
