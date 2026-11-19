@@ -37,20 +37,23 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 /**
  * Sign a session. `exp` is a Unix time in seconds and is mandatory: Sahay does
- * not issue tokens that never expire.
+ * not issue tokens that never expire. `accountId` is set when an owner signed in
+ * (src/accounts); a device session has none.
  */
-function signSession({ businessId, sessionId, scope, exp }) {
+function signSession({ businessId, sessionId, scope, exp, accountId }) {
   if (!isId(businessId) || !isId(sessionId)) throw new AuthError("INVALID_CLAIMS", "businessId and sessionId are required.");
+  if (accountId !== undefined && !isId(accountId)) throw new AuthError("INVALID_CLAIMS", "accountId must be a non-empty string.");
   if (!SCOPES.includes(scope)) throw new AuthError("INVALID_CLAIMS", `scope must be one of: ${SCOPES.join(", ")}.`);
   if (!Number.isInteger(exp) || exp <= nowSeconds()) {
     throw new AuthError("INVALID_CLAIMS", "exp must be a Unix time in seconds, in the future.");
   }
-  const payload = Buffer.from(JSON.stringify({ businessId, sessionId, scope, exp })).toString("base64url");
+  const claims = { businessId, sessionId, scope, exp, ...(accountId !== undefined ? { accountId } : {}) };
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   const signedPart = `${VERSION}.${payload}`;
   return `${signedPart}.${mac(signedPart).toString("base64url")}`;
 }
 
-/** Verify a token and return `{ businessId, sessionId, scope, exp }`, or throw an AuthError. */
+/** Verify a token and return `{ businessId, sessionId, scope, exp, accountId? }`, or throw an AuthError. */
 function verifySession(token, { scope } = {}) {
   if (typeof token !== "string") throw new AuthError("MALFORMED", "No session token.");
   const parts = token.split(".");
@@ -72,10 +75,13 @@ function verifySession(token, { scope } = {}) {
   if (!claims || !isId(claims.businessId) || !isId(claims.sessionId) || !SCOPES.includes(claims.scope) || !Number.isInteger(claims.exp)) {
     throw new AuthError("MALFORMED", "Malformed session token.");
   }
+  if ("accountId" in claims && !isId(claims.accountId)) throw new AuthError("MALFORMED", "Malformed session token.");
   if (claims.exp <= nowSeconds()) throw new AuthError("EXPIRED", "Session token has expired.");
   if (scope !== undefined && claims.scope !== scope) throw new AuthError("WRONG_SCOPE", "Session token is not valid here.");
 
-  return { businessId: claims.businessId, sessionId: claims.sessionId, scope: claims.scope, exp: claims.exp };
+  const out = { businessId: claims.businessId, sessionId: claims.sessionId, scope: claims.scope, exp: claims.exp };
+  if ("accountId" in claims) out.accountId = claims.accountId;
+  return out;
 }
 
 function cookieToken(req) {
@@ -131,7 +137,7 @@ function clearSessionCookie(res) {
 }
 
 module.exports = {
-  AuthError, COOKIE_NAME,
+  AuthError, COOKIE_NAME, cookieToken,
   signSession, verifySession,
   requireSession, requireBearer,
   setSessionCookie, clearSessionCookie,

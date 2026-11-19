@@ -11,6 +11,40 @@ CREATE TABLE IF NOT EXISTS businesses (
   created_at  TEXT NOT NULL
 );
 
+-- ACC: owner accounts (src/accounts/*). Not tenant-owned: an account owns businesses through
+-- account_businesses. The phone is normalised to +91 and ten digits and is not verified
+-- (no SMS); the PIN is stored only as scrypt$N$r$p$salt$hash.
+CREATE TABLE IF NOT EXISTS accounts (
+  id              TEXT PRIMARY KEY,
+  phone           TEXT NOT NULL UNIQUE CHECK (phone GLOB '+91[6-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
+  pin_hash        TEXT NOT NULL CHECK (pin_hash LIKE 'scrypt$%'),
+  phone_verified  INTEGER NOT NULL DEFAULT 0 CHECK (phone_verified IN (0, 1)),
+  created_at      TEXT NOT NULL
+);
+
+-- One owner account per business; an account may own several businesses.
+CREATE TABLE IF NOT EXISTS account_businesses (
+  account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  business_id  TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL DEFAULT 'owner' CHECK (role IN ('owner')),
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (account_id, business_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS account_businesses_one_owner ON account_businesses(business_id) WHERE role = 'owner';
+
+-- WebAuthn credentials (@simplewebauthn/server). credential_id is base64url; public_key is the COSE key.
+-- counter only moves forward (src/accounts/store.js); a response whose counter did not grow is refused.
+CREATE TABLE IF NOT EXISTS passkeys (
+  id             TEXT PRIMARY KEY,
+  account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  credential_id  TEXT NOT NULL UNIQUE,
+  public_key     BLOB NOT NULL,
+  counter        INTEGER NOT NULL DEFAULT 0 CHECK (counter >= 0),
+  transports     TEXT,
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS passkeys_account ON passkeys(account_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          TEXT PRIMARY KEY,
   business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,

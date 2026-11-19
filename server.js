@@ -145,6 +145,7 @@ function createApp({ publicDir = PUBLIC_DIR } = {}) {
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
   app.use("/mcp", createMcpRouter());
+  app.use(require("./src/routes/auth").createAuthRouter()); // before /vendor/:code and the api router's requireSession
   app.use(createVendorRouter());
   app.use(createPayRouter());
   app.use(createApiRouter());
