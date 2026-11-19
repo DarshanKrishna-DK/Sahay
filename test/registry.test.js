@@ -1086,6 +1086,26 @@ test("E2E r4 bug 4: a fragment 'मुझे पांच' does not become '5 kg
   assert.equal(ok.saved, true);
 });
 
+test("final-2 E: in type mode a typed need (history source message) is saved; a typed yes still cannot approve", async (t) => {
+  stubIndiaMart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGT" });
+  const call = fakeCall(t);
+  call.typed = (content) => call.items.push({ role: "user", content, metadata: { source: "message" }, turn_id: ++call.turn });
+  call.typed("मुझे 50 किलो चीनी चाहिए, बेंगलुरु में");
+  const out = await registry.callTool(ctx, "save_requirement", { item: "चीनी", quantity: 50, unit: "किलो", city: "बेंगलुरु", owner_words: "मुझे 50 किलो चीनी चाहिए, बेंगलुरु में" });
+  assert.equal(out.saved, true);
+  assert.deepEqual(out.missing, []);
+  assert.equal(repo.getRequirement(businessId, out.requirementId).quantity, 50);
+  await jobs.whenSettled(out.jobId);
+
+  const { quote } = seedQuote(businessId);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  call.typed("हाँ");
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "TYPED_ANSWER");
+  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
+});
+
 test("E2E r4 bug 5: every hi/kn say template of the registry is in its own script (names, PO numbers, digits and Razorpay aside)", () => {
   const { PHRASES, SAY_WORDS } = registry;
   const { SAY } = require("../src/tools/errors");

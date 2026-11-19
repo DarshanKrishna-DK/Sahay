@@ -61,6 +61,11 @@ const SAY = {
     "kn-IN": "ಸ್ಪಷ್ಟವಾಗಿ ಹೌದು ಎಂದು ಕೇಳಿಸಲಿಲ್ಲ, ಈ ಆರ್ಡರ್ ಖಚಿತಪಡಿಸಲೇ, ಹೌದು ಅಥವಾ ಇಲ್ಲ?",
     "en-IN": "I did not hear a clear yes; shall I confirm this order, yes or no?",
   },
+  typed_answer: {
+    "hi-IN": "लिखी हुई हाँ नहीं गिनी जाती; स्क्रीन पर हाँ वाला कार्ड दबाइए, या बोलकर हाँ कहिए।",
+    "kn-IN": "ಬರೆದ ಹೌದು ಎಣಿಕೆಯಾಗುವುದಿಲ್ಲ; ಪರದೆಯ ಮೇಲಿನ ಹೌದು ಕಾರ್ಡ್ ಒತ್ತಿ, ಅಥವಾ ಬಾಯಿಂದ ಹೌದು ಎನ್ನಿ.",
+    "en-IN": "A typed yes does not count; press the yes card on the screen, or say yes out loud.",
+  },
   no_voice_evidence: {
     "hi-IN": "मैं आपकी आवाज़ में जवाब नहीं पढ़ पाई, कृपया स्क्रीन पर मंज़ूरी का बटन दबाइए।",
     "kn-IN": "ನಿಮ್ಮ ಧ್ವನಿಯ ಉತ್ತರ ಓದಲು ಆಗಲಿಲ್ಲ, ದಯವಿಟ್ಟು ಪರದೆಯ ಮೇಲೆ ಒಪ್ಪಿಗೆ ಬಟನ್ ಒತ್ತಿ.",
@@ -172,6 +177,7 @@ const CODE_MAP = {
   READBACK_NOT_HEARD: ["no_voice_evidence", 409],
   EVIDENCE_UNORDERED: ["no_voice_evidence", 409],
   NO_ANSWER_YET: ["not_affirmative", 409],
+  TYPED_ANSWER: ["typed_answer", 409],
   ANSWER_DURING_READBACK: ["not_affirmative", 409],
   READBACK_SUPERSEDED: ["not_affirmative", 409],
   BUSY: ["busy", 503],

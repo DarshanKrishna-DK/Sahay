@@ -14,6 +14,13 @@ test("ownerTurns keeps the owner's last ASR turns, newest last, and nothing the 
   assert.deepEqual(ownerTurns(null, 2), []);
 });
 
+test("ownerTurns counts a typed owner message (source message) as the owner's words, never an agent line or a command", () => {
+  const typed = (content, turn_id) => ({ role: "user", content, metadata: { source: "message" }, turn_id });
+  const contents = [asr("नमस्ते", 1), said("बताइए", 2), typed("मुझे 50 किलो चीनी चाहिए, बेंगलुरु", 3), { role: "user", content: "x", metadata: { source: "command" } }];
+  assert.deepEqual(ownerTurns(contents, 2), ["नमस्ते", "मुझे 50 किलो चीनी चाहिए, बेंगलुरु"]);
+  assert.deepEqual(notHeard(ownerTurns(contents), { item: "चीनी", quantity: 50, unit: "kg" }), [], "a typed need is borne out by the typed words (final-2 E)");
+});
+
 test("numberHeard: digits in any script must equal the quantity; number words in hi, kn and en count", () => {
   assert.equal(numberHeard("200 किलो", 200), true);
   assert.equal(numberHeard("२०० किलो", 200), true);

@@ -887,6 +887,7 @@ function paymentClause(order, payment, language) {
 const RULE_REFUSALS = {
   NOT_AFFIRMATIVE: "rule_unclear",
   NO_ANSWER_YET: "rule_unclear",
+  TYPED_ANSWER: "rule_tap",
   ANSWER_DURING_READBACK: "rule_unclear",
   READBACK_SUPERSEDED: "rule_unclear",
   NOT_NEGATIVE: "rule_forget_unclear",

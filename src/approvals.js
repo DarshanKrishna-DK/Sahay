@@ -271,6 +271,8 @@ const ANSWER_OVERLAP_MS = 500;
 const collapse = (text) => String(text ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
 const isServerLine = (item) => item?.role === "assistant" && item?.metadata?.source === "command" && typeof item.content === "string";
 const isOwnerAsr = (item) => item?.role === "user" && item?.metadata?.source === "asr" && typeof item.content === "string" && item.content.trim() !== "";
+/** A message the owner typed in the console (Agora /history source "message"): never an answer to a read-back. */
+const isOwnerTyped = (item) => item?.role === "user" && item?.metadata?.source === "message" && typeof item.content === "string" && item.content.trim() !== "";
 
 /** The pieces /speak sends for a text (agent.splitUtf8), each as /history shows it. */
 function spokenPieces(text) {
@@ -296,7 +298,7 @@ function answerToReadback(businessId, approval, contents, { agentId }) {
  * - every piece of it must be in the history as a server line, not interrupted;
  * - the owner's last ASR turn must come after it, in array order AND by a larger numeric
  *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence); a typed
- *   message is not an ASR turn, so it is never an answer;
+ *   message is not an ASR turn, so it is never an answer (TYPED_ANSWER when it is all there is);
  * - when Agora gives both speech timings, the owner must not have spoken over it;
  * - no read-back of another approval or rule may have been spoken in between.
  * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
@@ -329,7 +331,12 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
 
   let answerAt = -1;
   for (let i = contents.length - 1; i >= 0 && answerAt < 0; i--) if (isOwnerAsr(contents[i])) answerAt = i;
-  if (answerAt <= anchor) throw new ApprovalError("NO_ANSWER_YET", "The owner has not answered since the read-back.");
+  if (answerAt <= anchor) {
+    // A typed reply is the owner's words, but never consent: they press the card or say it aloud,
+    // and they are told so instead of "I did not hear a clear yes" (final-2 E).
+    if (contents.slice(anchor + 1).some(isOwnerTyped)) throw new ApprovalError("TYPED_ANSWER", "A typed reply cannot answer a read-back; the owner must say it aloud or press the button.");
+    throw new ApprovalError("NO_ANSWER_YET", "The owner has not answered since the read-back.");
+  }
 
   const said = contents[answerAt];
   const read = contents[anchor];
