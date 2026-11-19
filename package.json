@@ -19,6 +19,12 @@
     "agora-token": "2.0.6",
     "express": "^4.19.2",
     "pdfkit": "^0.15.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "sileo": "0.1.6",
     "thinking-orbs": "0.3.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
   }
 }
