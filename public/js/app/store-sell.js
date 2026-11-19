@@ -25,7 +25,7 @@ export const stock = {
   error: null,
   items: new Map(),
   moves: [],
-  proposals: new Map(), // itemId -> { quantity, unit, at }: Sahay asked "buy more?"
+  proposals: new Map(), // itemId -> { id, quantity, unit, at }: Sahay asked "buy more?"
 };
 
 /* ---------------------------------------------------------- normalisers -- */
@@ -144,7 +144,8 @@ function normOwed(o) {
 function normItem(i) {
   if (!i || typeof i !== "object") return null;
   const onHand = num(pick(i, "on_hand", "onHand"));
-  const level = num(pick(i, "reorder_level", "reorderLevel"));
+  // `level` is the effective reorder line (a reorder_level rule wins over the item's own).
+  const level = num(pick(i, "level", "reorder_level", "reorderLevel"));
   return {
     id: idOf(i, "itemId", "item_id", "id"),
     name: pick(i, "name"),
@@ -219,8 +220,10 @@ export function loadStock({ quiet = false } = {}) {
       if (Array.isArray(r.proposals)) {
         stock.proposals = new Map();
         for (const p of r.proposals) {
-          const itemId = idOf(p, "item_id", "itemId");
-          if (itemId && (pick(p, "status") || "open") === "open") stock.proposals.set(itemId, { quantity: num(pick(p, "quantity")), unit: pick(p, "unit") });
+          const itemId = idOf(p, "item_id", "itemId") ?? (p.item ? idOf(p.item, "id") : null);
+          if (itemId && (pick(p, "status") || "open") === "open") {
+            stock.proposals.set(itemId, { id: idOf(p, "proposalId", "id"), quantity: num(pick(p, "quantity")), unit: pick(p, "unit") });
+          }
         }
       }
       stock.status = "ready";
@@ -279,6 +282,20 @@ export async function markDelivered(orderId) {
   touch("orders", "stock");
   await loadStock({ quiet: true });
   return r;
+}
+
+/**
+ * The owner's tap on Sahay's "buy more?" (POST /api/stock/reorders/:id/decision, "yes" | "no").
+ * Yes saves the need and starts the search for sellers; an order still needs its own yes.
+ */
+export async function decideReorder(itemId, decision) {
+  const p = stock.proposals.get(String(itemId));
+  if (!p || !p.id) throw Object.assign(new Error("No open question for this item."), { status: 409 });
+  const r = await agentRequest("POST", `/api/stock/reorders/${encodeURIComponent(p.id)}/decision`, { decision });
+  stock.proposals.delete(String(itemId));
+  touch("stock");
+  loadStock({ quiet: true });
+  return r || {};
 }
 
 /* ---------------------------------------------------------------- queries -- */
@@ -382,9 +399,16 @@ export function applySellEvent(evt, { live = true } = {}) {
       const it = normItem(d.item || {});
       if (it && it.id) {
         merge(stock.items, it);
-        stock.proposals.set(it.id, { quantity: num(pick(d, "quantity")), unit: pick(d, "unit") || it.unit, at: evt.ts });
+        stock.proposals.set(it.id, { id: idOf(d, "proposalId", "proposal_id"), quantity: num(pick(d, "quantity")), unit: pick(d, "unit") || it.unit, at: evt.ts });
       }
       touch("stock");
+      break;
+    }
+    case "stock.reorder_decided": {
+      const itemId = idOf(d, "itemId", "item_id");
+      if (itemId) stock.proposals.delete(itemId);
+      touch("stock");
+      scheduleStock();
       break;
     }
     case "order.created": case "order.status":
