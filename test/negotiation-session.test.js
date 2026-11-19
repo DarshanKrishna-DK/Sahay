@@ -176,7 +176,10 @@ test("regression (E2E r2 BLOCKER): BS Foods listed 60/kg, owner max 90, 200 kg a
   assert.ok(quote.unit_price <= 90);
   assert.equal(quote.simulated, true);
   assert.equal(quote.unit, "kg");
-  assert.equal(quote.quoted_sentence, "ठीक है, 55 रुपये प्रति किलो में दे देंगे।", "the vendor line that produced the accept");
+  // The vendor's accept is one of several phrasings (Track POLISH); the quote keeps the one actually said.
+  const accepts = require("../src/negotiation/vendor-agent").VENDOR_LINES.accept["hi-IN"].map((line) => line({ price: "55", unit: "किलो" }));
+  assert.ok(accepts.includes(quote.quoted_sentence), quote.quoted_sentence);
+  assert.equal(quote.quoted_sentence, neg.transcript.findLast((turn) => turn.speaker === "vendor").text, "the vendor line that produced the accept");
   assert.equal(quote.freight, null, "no freight figure is invented");
   assert.equal(quote.confidence, 1);
 
