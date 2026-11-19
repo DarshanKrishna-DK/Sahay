@@ -675,6 +675,7 @@ async function finish(rt, mode, signal) {
     simulated: rt.counterpart === "simulated",
     rounds: rt.moves.length,
     reason: extracted.rejected ?? null,
+    ...(rt.hardCeiling ? { ceiling: rt.hardCeiling } : {}),
   };
   const status = quote ? "agreed" : rt.state === "walked_away" ? "walked_away" : "no_deal";
   repo.updateNegotiation(rt.businessId, rt.negotiationId, { status, outcome, ended_at: new Date().toISOString() });
@@ -814,8 +815,10 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   // is given back when the job ends in any way (jobs.startJob onSettled) or if it never starts.
   const releaseSlot = limits.tryAcquire("negotiation");
   if (!releaseSlot) throw new ToolError("BUSY", registry().phrase("busy", lang), { status: 503, message: "Too many negotiations are running." });
+  // The hard ceiling and where it came from, on record in the job input and the outcome (final-2 D).
+  const hardCeiling = { price: reservation, unit: requirement.unit, byRule: limit.byRule, ownerMax: limit.ownerMax, ruleId: limit.ruleId };
   try {
-    const started = startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy }, releaseSlot);
+    const started = startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling }, releaseSlot);
     return { ...started, ceiling: { price: reservation, unit: requirement.unit, byRule: limit.byRule, ownerMax: limit.ownerMax } };
   } catch (err) {
     releaseSlot();
@@ -825,7 +828,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
 
 /** Create the session, negotiation row and runtime, and start the job that owns `releaseSlot`. */
 function startJobFor(o, releaseSlot) {
-  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy } = o;
+  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling } = o;
   const channel = `neg-${crypto.randomBytes(6).toString("hex")}`;
   const session = repo.createSession(businessId, { kind: "negotiation", channel, status: "starting" });
   const negotiation = repo.createNegotiation(businessId, { requirement_id: requirementId, vendor_id: vendorId, session_id: session.id, counterpart });
@@ -843,6 +846,7 @@ function startJobFor(o, releaseSlot) {
     language: negotiationLanguage,
     reservation,
     ceiling,
+    hardCeiling,
     tick,
     open,
     beta,
@@ -870,7 +874,7 @@ function startJobFor(o, releaseSlot) {
 
   let jobId;
   try {
-    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart }, (job) => runNegotiation(rt, job), {
+    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart, ceiling: hardCeiling }, (job) => runNegotiation(rt, job), {
       onSettled: releaseSlot,
     });
   } catch (err) {
