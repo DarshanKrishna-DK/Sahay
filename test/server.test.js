@@ -164,6 +164,43 @@ test("script-src allows exactly the pinned GSAP 3.13.0, ScrollTrigger and Lenis 
   assert.ok(!scriptSrc.some((s) => /gsap@3\.13\.0\/?$|lenis@1\.3\.27\/?$|\/dist\/$/.test(s)), "files, never package folders");
 });
 
+test("the landing page loads GSAP, ScrollTrigger and Lenis with the server's pinned sha384 and no inline script", () => {
+  assert.doesNotMatch(indexHtml, /<script type="importmap">/, "the landing page is not the voice page");
+  const tags = [...indexHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+  assert.equal(tags.length, 5, "boot, GSAP, ScrollTrigger, Lenis, main module");
+  assert.ok(tags.every((m) => /\bsrc="/.test(m[1]) && m[2].trim() === ""), "every script is an external file");
+  const cdn = tags.map((m) => m[1]).filter((a) => /src="https:/.test(a)).map((attrs) => ({
+    src: /src="([^"]+)"/.exec(attrs)[1],
+    integrity: /integrity="([^"]+)"/.exec(attrs)?.[1],
+    crossorigin: /crossorigin="([^"]+)"/.exec(attrs)?.[1],
+  }));
+  assert.deepEqual(cdn.map((c) => c.src), Object.keys(server.LANDING_SCRIPTS));
+  for (const c of cdn) {
+    assert.equal(c.integrity, server.LANDING_SCRIPTS[c.src], `${c.src} integrity`);
+    assert.equal(c.crossorigin, "anonymous");
+  }
+  // Every local file the page asks for exists.
+  const local = [...indexHtml.matchAll(/(?:src|href)="(\/[^"#]*)"/g)].map((m) => m[1]).filter((u) => !u.startsWith("/app"));
+  for (const u of local) assert.ok(fs.existsSync(path.join(PUBLIC, u)), `${u} exists`);
+  // The disclosure is on the page in its static HTML, not only after a script runs.
+  assert.match(indexHtml, /Automated assistant/);
+  assert.match(indexHtml, /never orders or pays without your yes/);
+});
+
+test("landing words exist in Hindi, Kannada and English, in native script", async () => {
+  // public/ is browser ES modules in a CommonJS package: load the file's text as a module.
+  const source = fs.readFileSync(path.join(PUBLIC, "js", "landing", "i18n.js"), "utf8");
+  const i18n = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+  const keys = new Set([...indexHtml.matchAll(/data-i18n="([^"]+)"/g)].map((m) => m[1]));
+  for (const m of indexHtml.matchAll(/data-i18n-attr="([^"]+)"/g)) for (const pair of m[1].split(",")) keys.add(pair.split(":")[1]);
+  for (const k of ["toLight", "toDark"]) keys.add(k);
+  for (const key of keys) {
+    for (const lang of ["en", "hi", "kn"]) assert.ok(i18n.t(key, lang), `${key} in ${lang}`);
+    assert.match(i18n.t(key, "hi"), /[ऀ-ॿ]|^[\d\s₹,./:]+$|^“?[ऀ-ॿ]/u, `${key} hi is Devanagari`);
+    assert.match(i18n.t(key, "kn"), /[ಀ-೿]/u, `${key} kn is Kannada`);
+  }
+});
+
 test("boot ends every session a previous process left open, and returns their agents to stop", () => {
   const biz = repo.createBusiness(repo.newId("biz"), { name: "Crash Shop", language: "en-IN" });
   const active = repo.createSession(biz.id, { kind: "owner", channel: "own-a", status: "connecting" });

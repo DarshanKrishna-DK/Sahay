@@ -189,6 +189,7 @@ function boot() {
 
   const stopNarrator = narrator.start();
   const stopFollowups = followups.start();
+  const stopLearning = require("./src/agent").start(); // learned rule suggestions and memories
   const telegramAbort = new AbortController();
   if (telegram.isConfigured()) telegram.startPolling({ signal: telegramAbort.signal });
 
@@ -206,6 +207,7 @@ function boot() {
     force.unref();
     telegramAbort.abort();
     stopFollowups();
+    stopLearning();
     await Promise.allSettled([stopAllVoice(), negotiation.stopAll()]);
     stopNarrator();
     events.closeStreams();

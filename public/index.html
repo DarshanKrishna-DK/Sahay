@@ -2,260 +2,312 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sahay voice console</title>
-  <meta name="description" content="Talk to Sahay, an automated assistant that sources suppliers, negotiates and raises orders for your business, with your approval.">
-  <link rel="icon" type="image/png" href="/assets/sahay-logo.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sahay: your shop's buying assistant</title>
+  <meta name="description" content="Sahay is an automated buying assistant for Indian shops. Speak in Hindi, Kannada or English: it finds sellers, bargains, and orders only after your yes.">
+  <meta name="theme-color" content="#0B0E14">
+  <link rel="icon" type="image/png" href="/assets/sahay-favicon-48.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- The Agora SDKs come from here with SRI (CORS mode): open the connection during parse. -->
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Sans+Kannada:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/css/console.css">
-  <!-- process shim for the Agora toolkit and the saved theme, before first paint. -->
-  <script src="/js/boot.js"></script>
-  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins with SRI) are injected together (parallel download, run in order) by
-       js/voice.js right after first paint, so the console renders without waiting for 3 MB.
-       The toolkit ES module is imported at the same time; this import map pins its hash (Subresource
-       Integrity for import()). The server's CSP allows this one inline script by its sha256. -->
-  <script type="importmap">{"integrity":{"https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs":"sha384-gKgVIScrXAEj86/qjyYoJrj3lHYPHGhY8vgYBXrlaVhRO95WE68kC6xQW4YN3U+f"}}</script>
-  <script type="module" src="/js/app.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=Noto+Sans+Devanagari:wght@400..700&family=Noto+Sans+Kannada:wght@400..700&display=swap">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/landing.css">
+  <!-- Saved theme and language before first paint (classic script: the page allows no inline script). -->
+  <script src="/js/landing/boot.js"></script>
+  <!-- Motion libraries: exact pinned files with Subresource Integrity, listed in server.js CDN_SCRIPTS.
+       Without them (offline, blocked) the page is complete and static. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js" integrity="sha384-HOvlOYPIs/zjoIkWUGXkVmXsjr8GuZLV+Q+rcPwmJOVZVpvTSXQChiN4t9Euv9Vc" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js" integrity="sha384-P8VzCVnT9NBUkMrpcIZrJbA7EBjJvh/fJS6PmP+4nLIM284DtsImIv8D0fFjIkeh" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/lenis@1.3.27/dist/lenis.min.js" integrity="sha384-R18XzqnxvVLEF+BYfhpmDx30v7eP83fAckyfoRzK7/Uf6nGqufcmsk0eAKo7S3RU" crossorigin="anonymous"></script>
+  <script type="module" src="/js/landing/main.js"></script>
 </head>
 <body>
-  <a class="skip-link" id="call-skip" href="#call">Skip to the call</a>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
 
-  <header class="appbar">
-    <div class="brand">
-      <img src="/assets/sahay-logo.png" alt="" width="40" height="50">
-      <div class="brand-text">
-        <span class="brand-name">Sahay</span>
-        <span class="brand-sub">Voice procurement console</span>
-        <span class="business-name" id="business-name" hidden></span>
-      </div>
-    </div>
-
-    <p class="ai-notice" role="note">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <span><strong>Automated assistant.</strong> Sahay is an AI agent acting for your business<span class="long">. It asks for your yes before any order or payment</span>.</span>
+  <!-- Floating pill nav: centred, never full width. On phones the start button moves to a bottom pill. -->
+  <header class="pill-nav" id="pill-nav">
+    <a class="pill-brand" href="#top" aria-label="Sahay, back to top" data-i18n-attr="aria-label:brandTop">
+      <img src="/assets/sahay-mark-72.png" alt="" width="28" height="35">
+      <span class="pill-brand-name">Sahay</span>
+    </a>
+    <p class="ai-chip" role="note">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3v3M7 9h10a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="14" r="1.3" fill="currentColor"/><circle cx="14.5" cy="14" r="1.3" fill="currentColor"/></svg>
+      <span data-i18n="aiChip">Automated assistant</span>
     </p>
-
-    <span class="spacer"></span>
-
-    <span class="stream-status" id="stream-status" data-state="connecting" role="status" aria-live="polite">
-      <span class="dot" aria-hidden="true"></span><span class="text" id="stream-text">Connecting to live updates</span>
-    </span>
-    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch colour theme" title="Switch colour theme">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <nav class="pill-links" aria-label="Page" data-i18n-attr="aria-label:navLabel">
+      <a href="#say" data-i18n="navHow">How it works</a>
+      <a href="#yes" data-i18n="navYes">Your yes</a>
+    </nav>
+    <div class="lang-seg" role="group" aria-label="Language" data-i18n-attr="aria-label:langLabel">
+      <button type="button" class="lang-btn" data-lang="hi" lang="hi" aria-pressed="false">हिन्दी</button>
+      <button type="button" class="lang-btn" data-lang="kn" lang="kn" aria-pressed="false">ಕನ್ನಡ</button>
+      <button type="button" class="lang-btn" data-lang="en" lang="en" aria-pressed="true">English</button>
+    </div>
+    <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch to light">
+      <svg class="icon-sun" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
     </button>
+    <a class="pill-cta magnetic" href="/app#/talk">
+      <span class="mic-dot" aria-hidden="true"></span>
+      <span data-i18n="start">Start talking</span>
+    </a>
   </header>
 
-  <div class="banner" id="banner" hidden></div>
+  <!-- Edge orb: a glass half-disc on the right edge that fans out a semicircle of bubble links into the app. -->
+  <div class="edge-orb" id="edge-orb">
+    <button type="button" class="edge-orb-toggle" id="edge-orb-toggle" aria-expanded="false" aria-controls="edge-orb-menu" aria-label="Quick links into Sahay" data-i18n-attr="aria-label:edgeLabel">
+      <span class="edge-orb-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>
+    <nav class="edge-orb-menu" id="edge-orb-menu" aria-label="Quick links" data-i18n-attr="aria-label:edgeMenu" inert>
+      <a class="edge-bubble" href="/app#/talk" style="--i:0">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span data-i18n="edgeTalk">Talk</span>
+      </a>
+      <a class="edge-bubble" href="/app#/talk" style="--i:1">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M8 14h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span data-i18n="edgeType">Type</span>
+      </a>
+      <a class="edge-bubble" href="/app#/work" style="--i:2">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M3 17c3.5 0 3.5-10 7-10s3.5 10 7 10 4-4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="7" r="2" fill="currentColor"/></svg>
+        <span data-i18n="edgeWork">Work</span>
+      </a>
+      <a class="edge-bubble" href="/app#/orders" style="--i:3">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 8h6M9 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span data-i18n="edgeOrders">Orders</span>
+      </a>
+      <a class="edge-bubble" href="/app#/me" style="--i:4">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="3.5" fill="currentColor"/><circle cx="4.5" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="19.5" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="19.5" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.2 7.2l3 2.6M17.8 8.2l-3 2.3M15.9 17.7l-1.7-3" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span data-i18n="edgeMe">My Sahay</span>
+      </a>
+    </nav>
+  </div>
 
-  <!-- First run only: shown when POST /api/session answers BUSINESS_DETAILS_REQUIRED. -->
-  <section class="panel onboard" id="onboarding" aria-labelledby="onboard-title" hidden>
-    <div class="panel-head">
-      <div class="titles">
-        <h1 class="panel-title" id="onboard-title">Set up your business</h1>
-        <p class="panel-sub">Sahay uses these details on calls and on purchase orders. You only do this once.</p>
+  <!-- The river: the five steps of one purchase. Links to each scene; the current one lights up. -->
+  <nav class="river-rail" id="river-rail" aria-label="Steps" data-i18n-attr="aria-label:railLabel">
+    <svg class="river-path" viewBox="0 0 40 400" preserveAspectRatio="none" aria-hidden="true">
+      <path class="river-track" d="M20 0 C 36 60, 4 100, 20 160 S 36 260, 20 320 S 6 380, 20 400"/>
+      <path class="river-fill" d="M20 0 C 36 60, 4 100, 20 160 S 36 260, 20 320 S 6 380, 20 400" pathLength="1"/>
+    </svg>
+    <ol>
+      <li><a href="#say" data-step="say"><span class="station" aria-hidden="true">1</span><span class="station-name" data-i18n="st1">Heard you</span></a></li>
+      <li><a href="#find" data-step="find"><span class="station" aria-hidden="true">2</span><span class="station-name" data-i18n="st2">Finding sellers</span></a></li>
+      <li><a href="#bargain" data-step="bargain"><span class="station" aria-hidden="true">3</span><span class="station-name" data-i18n="st3">Bargaining</span></a></li>
+      <li><a href="#yes" data-step="yes"><span class="station" aria-hidden="true">4</span><span class="station-name" data-i18n="st4">Your yes</span></a></li>
+      <li><a href="#learn" data-step="learn"><span class="station" aria-hidden="true">5</span><span class="station-name" data-i18n="st5">Learns you</span></a></li>
+    </ol>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <!-- 1. Hero: the agent orb and one line in three scripts. -->
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-orb-wrap" aria-hidden="true">
+        <div class="orb" id="hero-orb">
+          <span class="orb-ripple"></span><span class="orb-ripple"></span><span class="orb-ripple"></span>
+          <span class="orb-core"></span>
+          <span class="orb-glint"></span>
+        </div>
+        <div class="orbit">
+          <span class="orbit-glyph" lang="hi">अ</span>
+          <span class="orbit-glyph" lang="kn">ಅ</span>
+          <span class="orbit-glyph" lang="en">A</span>
+        </div>
       </div>
-    </div>
-    <form id="onboard-form" novalidate>
-      <div class="field">
-        <label for="ob-name">Business name</label>
-        <input id="ob-name" name="name" type="text" autocomplete="organization" maxlength="80" required aria-describedby="ob-name-hint ob-name-error">
-        <p class="field-hint" id="ob-name-hint">Letters, numbers, spaces and . , &amp; ' - ( ) only.</p>
-        <p class="field-error" id="ob-name-error" hidden></p>
+
+      <div class="hero-copy">
+        <h1 class="hero-stack" id="hero-title">
+          <span class="hero-line" data-line="en" lang="en">Your shop's buying assistant. Just speak.</span>
+          <span class="hero-line" data-line="hi" lang="hi">आपकी दुकान का ख़रीद सहायक। बस बोलिए।</span>
+          <span class="hero-line" data-line="kn" lang="kn">ನಿಮ್ಮ ಅಂಗಡಿಯ ಖರೀದಿ ಸಹಾಯಕ. ಮಾತನಾಡಿ ಸಾಕು.</span>
+        </h1>
+        <p class="hero-sub" data-i18n="heroSub">Tell it what your shop needs. It finds sellers, bargains, and waits for your yes.</p>
+        <div class="hero-actions">
+          <a class="cta-big magnetic" href="/app#/talk">
+            <span class="cta-mic" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+            <span data-i18n="start">Start talking</span>
+          </a>
+          <div class="lang-tiles" role="group" aria-label="Choose your language" data-i18n-attr="aria-label:langChoose">
+            <button type="button" class="lang-tile" data-lang="hi" lang="hi" aria-pressed="false">हिन्दी</button>
+            <button type="button" class="lang-tile" data-lang="kn" lang="kn" aria-pressed="false">ಕನ್ನಡ</button>
+            <button type="button" class="lang-tile" data-lang="en" lang="en" aria-pressed="true">English</button>
+          </div>
+        </div>
       </div>
-      <div class="field">
-        <label for="ob-owner">Your name <span class="optional">(optional)</span></label>
-        <input id="ob-owner" name="ownerName" type="text" autocomplete="name" maxlength="80" aria-describedby="ob-owner-error">
-        <p class="field-error" id="ob-owner-error" hidden></p>
+      <a class="scroll-cue" href="#say">
+        <span class="scroll-cue-dot" aria-hidden="true"></span>
+        <span data-i18n="scrollCue">See how it works</span>
+      </a>
+    </section>
+
+    <!-- 2. Say what you need -->
+    <section class="beat" id="say" data-beat="say" aria-labelledby="say-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">1</span><span data-i18n="st1">Heard you</span></p>
+        <h2 id="say-title" data-i18n="sayTitle">Say what you need</h2>
+        <p class="beat-body" data-i18n="sayBody">In Hindi, Kannada or English. Sahay turns your words into a clear need.</p>
       </div>
-      <div class="field">
-        <label for="ob-city">City</label>
-        <input id="ob-city" name="city" type="text" autocomplete="address-level2" maxlength="80" required aria-describedby="ob-city-error">
-        <p class="field-error" id="ob-city-error" hidden></p>
+      <figure class="scene scene-say">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <div class="say-voice">
+          <span class="say-mic" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+          <svg class="say-wave" viewBox="0 0 240 80" aria-hidden="true" preserveAspectRatio="none"></svg>
+        </div>
+        <p class="say-bubble tilt" data-i18n="sayQuote">“Fifty kilos of rice, by Friday.”</p>
+        <div class="need-blob tilt">
+          <p class="need-head" data-i18n="needHead">Your need</p>
+          <dl class="need-fields">
+            <div class="need-field"><dt data-i18n="needWhat">What</dt><dd data-i18n="rice">Rice</dd></div>
+            <div class="need-field"><dt data-i18n="needHowMuch">How much</dt><dd data-i18n="qty50">50 kg</dd></div>
+            <div class="need-field"><dt data-i18n="needBy">By</dt><dd data-i18n="friday">Friday</dd></div>
+          </dl>
+        </div>
+        <figcaption class="sr-only" data-i18n="sayAlt">Example: the owner says fifty kilos of rice by Friday, and Sahay writes it as a need: rice, 50 kg, by Friday.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 3. Sahay finds real sellers -->
+    <section class="beat" id="find" data-beat="find" aria-labelledby="find-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">2</span><span data-i18n="st2">Finding sellers</span></p>
+        <h2 id="find-title" data-i18n="findTitle">Sahay finds real sellers</h2>
+        <p class="beat-body" data-i18n="findBody">Sellers who serve your city, from IndiaMART listings.</p>
       </div>
-      <fieldset class="field" id="ob-language" aria-describedby="ob-language-hint ob-language-error">
-        <legend>Language for calls</legend>
-        <p class="field-hint" id="ob-language-hint">Sahay starts in this language and switches when you speak another.</p>
-        <div class="choices">
-          <label class="choice" for="ob-lang-hi"><input type="radio" id="ob-lang-hi" name="language" value="hi-IN"><span lang="hi">हिन्दी</span><span class="choice-sub">Hindi</span></label>
-          <label class="choice" for="ob-lang-kn"><input type="radio" id="ob-lang-kn" name="language" value="kn-IN"><span lang="kn">ಕನ್ನಡ</span><span class="choice-sub">Kannada</span></label>
-          <label class="choice" for="ob-lang-en"><input type="radio" id="ob-lang-en" name="language" value="en-IN"><span>English</span></label>
-        </div>
-        <p class="field-error" id="ob-language-error" hidden></p>
-      </fieldset>
-      <!-- Shown only when GET /api/config says this server needs an access code. -->
-      <div class="field" id="ob-access" hidden>
-        <label for="ob-code">Access code</label>
-        <p class="field-hint" id="ob-code-hint">This Sahay server is invite only. Enter the code you were given.</p>
-        <input id="ob-code" name="accessCode" type="password" autocomplete="off" maxlength="256" aria-describedby="ob-code-hint ob-code-error">
-        <p class="field-error" id="ob-code-error" hidden></p>
+      <figure class="scene scene-find">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <svg class="city-map" viewBox="0 0 400 400" aria-hidden="true">
+          <path class="city-outline" pathLength="1" d="M200 38c62 4 118 30 146 84 26 50 22 112-8 160-30 50-86 82-146 80-58-2-110-36-138-84-26-46-30-104-4-150 28-50 88-94 150-90Z"/>
+          <path class="city-river" pathLength="1" d="M70 280c40-30 70-20 100-50s40-80 90-100 70-10 90-30"/>
+          <path class="city-road" d="M60 170h290M200 50v300M95 95l210 210"/>
+          <path class="seller-line" pathLength="1" data-to="a" d="M200 205 C 160 170, 130 140, 108 112"/>
+          <path class="seller-line" pathLength="1" data-to="b" d="M200 205 C 250 190, 280 160, 300 128"/>
+          <path class="seller-line" pathLength="1" data-to="c" d="M200 205 C 220 250, 250 280, 268 312"/>
+        </svg>
+        <span class="pt" style="--x:50;--y:8"><span class="city-name" data-i18n="bengaluru">Bengaluru</span></span>
+        <span class="pt" style="--x:50;--y:51"><span class="shop-pin tilt"><span class="shop-pin-dot" aria-hidden="true"></span><span data-i18n="yourShop">Your shop</span></span></span>
+        <span class="pt" style="--x:27;--y:26"><span class="seller tilt"><strong>Tamarind Lane Traders</strong><span data-i18n="km4">4 km</span></span></span>
+        <span class="pt" style="--x:75;--y:30"><span class="seller tilt"><strong>Kite Hill Grains</strong><span data-i18n="km6">6 km</span></span></span>
+        <span class="pt" style="--x:67;--y:80"><span class="seller tilt"><strong>Blue Door Wholesale</strong><span data-i18n="km9">9 km</span></span></span>
+        <figcaption class="sr-only" data-i18n="findAlt">Example: three invented sellers around Bengaluru, 4, 6 and 9 kilometres from your shop.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 4. Sahay bargains for you -->
+    <section class="beat" id="bargain" data-beat="bargain" aria-labelledby="bargain-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">3</span><span data-i18n="st3">Bargaining</span></p>
+        <h2 id="bargain-title" data-i18n="bargainTitle">Sahay bargains for you</h2>
+        <p class="beat-body" data-i18n="bargainBody">It talks to the seller, says first that it is an automated assistant, and brings the price down.</p>
       </div>
-      <div class="notice error" id="ob-form-error" role="alert" hidden></div>
-      <button class="btn btn-primary btn-wide" id="ob-submit" type="submit">Continue</button>
-    </form>
-  </section>
-
-  <main class="console" id="main">
-    <!-- Left: the call and its transcript -->
-    <div class="col-call">
-      <section class="panel call-panel" id="call" aria-labelledby="call-title">
-        <div class="panel-head">
-          <div class="titles">
-            <h2 class="panel-title" id="call-title">Call Sahay</h2>
-            <p class="panel-sub">Speak in Hindi, Kannada or English.</p>
-          </div>
+      <figure class="scene scene-bargain">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <p class="talk-bubble talk-sahay" data-i18n="disclose">“Hello, I am Sahay, an automated assistant for Mango Tree Kirana.”</p>
+        <div class="ladder" aria-hidden="true">
+          <svg class="ladder-lines">
+            <line class="l-seller" data-at="2" pathLength="1" x1="84%" y1="4%" x2="76%" y2="22%"/>
+            <line class="l-sahay" data-at="3" pathLength="1" x1="14%" y1="95%" x2="28%" y2="76%"/>
+            <line class="l-seller" data-at="4" pathLength="1" x1="76%" y1="22%" x2="68%" y2="38%"/>
+            <line class="l-seller" data-at="5" pathLength="1" x1="68%" y1="38%" x2="50%" y2="56%"/>
+            <line class="l-sahay" data-at="5" pathLength="1" x1="28%" y1="76%" x2="50%" y2="56%"/>
+          </svg>
+          <span class="pt" style="--x:84;--y:4"><span class="rung r-seller">₹62</span></span>
+          <span class="pt" style="--x:14;--y:95"><span class="rung r-sahay">₹50</span></span>
+          <span class="pt" style="--x:76;--y:22"><span class="rung r-seller">₹58</span></span>
+          <span class="pt" style="--x:28;--y:76"><span class="rung r-sahay">₹53</span></span>
+          <span class="pt" style="--x:68;--y:38"><span class="rung r-seller">₹56</span></span>
+          <span class="pt" style="--x:50;--y:56"><span class="deal-glow"></span><span class="rung deal"><span data-i18n="deal">Deal</span> ₹55</span></span>
+          <span class="ladder-key key-seller"><span class="key-dot" aria-hidden="true"></span><span data-i18n="sellerAsks">Seller asks</span></span>
+          <span class="ladder-key key-sahay"><span class="key-dot" aria-hidden="true"></span><span data-i18n="sahayOffers">Sahay offers</span></span>
         </div>
+        <figcaption class="sr-only" data-i18n="bargainAlt">Example: Sahay first says it is an automated assistant. The seller asks 62 rupees a kilo, Sahay offers 50, then 53; the seller comes down to 58, then 56, and they agree at 55 rupees a kilo.</figcaption>
+      </figure>
+    </section>
 
-        <div class="orb-wrap">
-          <div class="orb" id="orb" data-state="idle" aria-hidden="true">
-            <div class="orb-core">
-              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>
-            </div>
-          </div>
-          <div class="orb-text" role="status" aria-live="polite">
-            <p class="orb-label" id="orb-label">Ready to call</p>
-            <p class="orb-sub" id="orb-sub">Press Start call, then tell Sahay what you need to buy.</p>
-          </div>
-        </div>
-
-        <div class="lang-row" id="lang-row" aria-label="Language">
-          <span class="label">Language</span>
-          <span class="lang" data-lang="hi" lang="hi">हिन्दी</span>
-          <span class="lang" data-lang="kn" lang="kn">ಕನ್ನಡ</span>
-          <span class="lang" data-lang="en">English</span>
-          <span class="lang-note" id="lang-note">Detected from your speech once you talk.</span>
-        </div>
-
-        <div class="controls">
-          <button class="mic-btn" id="mic-btn" type="button" aria-pressed="false" aria-label="Mute microphone" disabled>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/><path class="slash" d="M3 3l18 18"/></svg>
-          </button>
-          <span class="meter" id="mic-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-          <button class="btn btn-primary" id="call-btn" type="button">Start call</button>
-        </div>
-
-        <button class="btn btn-primary btn-wide" id="audio-unlock" type="button" hidden>Tap to hear Sahay</button>
-
-        <div class="pipeline" id="pipeline" aria-label="Voice pipeline latency" hidden></div>
-        <div class="issues" id="call-issues" aria-live="polite"></div>
-      </section>
-
-      <section class="panel transcript-panel" aria-labelledby="transcript-title">
-        <div class="panel-head">
-          <div class="titles">
-            <h2 class="panel-title" id="transcript-title">Live transcript</h2>
-            <p class="panel-sub">What you said and what Sahay said, in the script it was spoken.</p>
-          </div>
-          <span class="count mono" id="transcript-count" hidden></span>
-        </div>
-        <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text"></div>
-      </section>
-    </div>
-
-    <!-- Right: what Sahay is doing -->
-    <div class="col-work">
-      <section class="panel plan" aria-labelledby="plan-title">
-        <div class="panel-head">
-          <div class="titles">
-            <h2 class="panel-title" id="plan-title">Plan</h2>
-            <p class="panel-sub">Each step lights up from what actually happened, not from what was promised.</p>
-          </div>
-        </div>
-        <ol class="steps" id="plan-steps"></ol>
-      </section>
-
-      <div class="work-grid">
-        <section class="panel" id="panel-requirement" aria-labelledby="req-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="req-title">Requirement</h2>
-              <p class="panel-sub">What you asked Sahay to buy.</p>
-            </div>
-          </div>
-          <div id="requirement-body"></div>
-        </section>
-
-        <section class="panel" id="panel-jobs" aria-labelledby="jobs-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="jobs-title">Jobs</h2>
-              <p class="panel-sub">Sourcing and negotiation running in the background.</p>
-            </div>
-            <span class="count mono" id="jobs-count" hidden></span>
-          </div>
-          <div id="jobs-body"></div>
-        </section>
-
-        <section class="panel span-2" id="panel-vendors" aria-labelledby="vendors-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="vendors-title">Vendor shortlist</h2>
-              <p class="panel-sub">Real listings found on IndiaMART, ranked by Sahay.</p>
-            </div>
-            <span class="count mono" id="vendors-count" hidden></span>
-          </div>
-          <div id="vendors-body"></div>
-        </section>
-
-        <section class="panel" id="panel-negotiation" aria-labelledby="nego-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="nego-title">Negotiation</h2>
-              <p class="panel-sub">Every offer and counter-offer, in order.</p>
-            </div>
-            <span class="count mono" id="nego-count" hidden></span>
-          </div>
-          <div id="nego-body"></div>
-        </section>
-
-        <section class="panel approval-panel" id="panel-approval" aria-labelledby="approval-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="approval-title">Approval</h2>
-              <p class="panel-sub">No order or payment link without your yes.</p>
-            </div>
-            <span class="chip" id="approval-chip" hidden></span>
-          </div>
-          <div id="approval-body"></div>
-        </section>
-
-        <section class="panel span-2" id="panel-quotes" aria-labelledby="quotes-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="quotes-title">Quotes compared</h2>
-              <p class="panel-sub">Ranked by landed cost: price, freight and delivery together.</p>
-            </div>
-            <span class="count mono" id="quotes-count" hidden></span>
-          </div>
-          <div id="quotes-body"></div>
-        </section>
-
-        <section class="panel" id="panel-order" aria-labelledby="order-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="order-title">Order</h2>
-              <p class="panel-sub">Purchase order, PDF, payment link and follow-ups.</p>
-            </div>
-            <span class="chip amber">Razorpay test mode</span>
-          </div>
-          <div id="order-body"></div>
-        </section>
-
-        <section class="panel" id="panel-audit" aria-labelledby="audit-title">
-          <div class="panel-head">
-            <div class="titles">
-              <h2 class="panel-title" id="audit-title">Audit trail</h2>
-              <p class="panel-sub">Every action Sahay took and every decision you gave.</p>
-            </div>
-            <span class="count mono" id="audit-count" hidden></span>
-          </div>
-          <div id="audit-body"></div>
-        </section>
+    <!-- 5. Nothing happens without your yes -->
+    <section class="beat" id="yes" data-beat="yes" aria-labelledby="yes-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">4</span><span data-i18n="st4">Your yes</span></p>
+        <h2 id="yes-title" data-i18n="yesTitle">Nothing happens without your yes</h2>
+        <p class="beat-body" data-i18n="yesBody">Sahay reads the deal out loud. You say yes, or tap the tick. Only then it orders.</p>
       </div>
-    </div>
+      <figure class="scene scene-yes">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <div class="yes-card tilt" aria-hidden="true">
+          <div class="yes-top">
+            <span class="yes-vendor">Kite Hill Grains</span>
+            <span class="yes-speak"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M4 9h4l5-4v14l-5-4H4Z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          </div>
+          <p class="yes-math">
+            <span class="yes-num" data-count="55" data-prefix="₹">₹55</span><span class="yes-unit" data-i18n="perKg">/kg</span>
+            <span class="yes-op">×</span>
+            <span class="yes-num" data-count="50">50</span><span class="yes-unit" data-i18n="kg">kg</span>
+          </p>
+          <p class="yes-total"><span class="yes-op">=</span> <span class="yes-num yes-big" data-count="2750" data-prefix="₹">₹2,750</span></p>
+          <div class="yes-buttons">
+            <span class="yes-btn yes-no"><svg viewBox="0 0 24 24" width="30" height="30"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><span data-i18n="no">No</span></span>
+            <span class="yes-btn yes-ok"><svg viewBox="0 0 24 24" width="32" height="32"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="yes">Yes</span></span>
+          </div>
+          <p class="yes-stamp"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="ordered">Ordered after your yes</span></p>
+        </div>
+        <figcaption class="sr-only" data-i18n="yesAlt">Example: a yes card for Kite Hill Grains, 55 rupees a kilo times 50 kilos equals 2,750 rupees, with a yes and a no button. The order is placed only after yes.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 6. Your Sahay learns you -->
+    <section class="beat" id="learn" data-beat="learn" aria-labelledby="learn-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">5</span><span data-i18n="st5">Learns you</span></p>
+        <h2 id="learn-title" data-i18n="learnTitle">Your Sahay learns you</h2>
+        <p class="beat-body" data-i18n="learnBody">Teach it by talking. It keeps your rules and shows you why.</p>
+      </div>
+      <figure class="scene scene-learn">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <svg class="constellation-lines" viewBox="0 0 400 400" aria-hidden="true">
+          <path pathLength="1" d="M200 200 L92 96"/><path pathLength="1" d="M200 200 L316 92"/><path pathLength="1" d="M200 200 L70 280"/><path pathLength="1" d="M200 200 L330 286"/><path class="line-suggest" pathLength="1" d="M200 200 L200 344"/>
+        </svg>
+        <span class="pt" style="--x:50;--y:50"><span class="mini-orb" aria-hidden="true"></span></span>
+        <span class="pt" style="--x:23;--y:24"><span class="memory tilt" data-i18n="ruleRice">Rice: never above ₹56</span></span>
+        <span class="pt" style="--x:79;--y:23"><span class="memory tilt" data-i18n="usual50">Usually 50 kg</span></span>
+        <span class="pt" style="--x:17.5;--y:70"><span class="memory tilt"><span data-i18n="likes">Likes</span> Kite Hill Grains</span></span>
+        <span class="pt" style="--x:82.5;--y:71.5"><span class="memory tilt" data-i18n="gentle">Bargains gently</span></span>
+        <span class="pt" style="--x:50;--y:88"><span class="memory m-suggest tilt">
+          <span class="suggest-ring" aria-hidden="true"></span>
+          <span data-i18n="keepRule">Keep this rule?</span>
+          <span class="suggest-btns" aria-hidden="true"><span class="sb-yes">✓</span><span class="sb-no">✕</span></span>
+        </span></span>
+        <figcaption class="sr-only" data-i18n="learnAlt">Example: Sahay remembers that rice is never bought above 56 rupees, the usual 50 kilos, a liked seller and a gentle bargaining style, and asks before keeping a new rule.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 7. Built on real voice, three languages, start -->
+    <section class="finale" id="start" aria-labelledby="finale-title">
+      <h2 id="finale-title" data-i18n="finaleTitle">Speak in your language. Sahay does the running around.</h2>
+      <ul class="credits">
+        <li class="credit tilt"><strong>Agora</strong><span data-i18n="creditAgora">Live voice call</span></li>
+        <li class="credit tilt"><strong>Sarvam</strong><span data-i18n="creditSarvam">Hears Hindi, Kannada, English</span></li>
+        <li class="credit tilt"><strong>Murf Falcon</strong><span data-i18n="creditMurf">Speaks back in your language</span></li>
+      </ul>
+      <div class="lang-tiles lang-tiles-finale" role="group" aria-label="Choose your language" data-i18n-attr="aria-label:langChoose">
+        <button type="button" class="lang-tile" data-lang="hi" lang="hi" aria-pressed="false">हिन्दी</button>
+        <button type="button" class="lang-tile" data-lang="kn" lang="kn" aria-pressed="false">ಕನ್ನಡ</button>
+        <button type="button" class="lang-tile" data-lang="en" lang="en" aria-pressed="true">English</button>
+      </div>
+      <a class="cta-orb magnetic" href="/app#/talk">
+        <span class="cta-orb-ring" aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span data-i18n="start">Start talking</span>
+      </a>
+    </section>
   </main>
+
+  <footer class="site-foot">
+    <p data-i18n="footNotice">Sahay is an automated assistant. It never orders or pays without your yes.</p>
+    <p data-i18n="footTest">Payments run in Razorpay test mode. Pictures on this page are examples with made-up names.</p>
+  </footer>
+
+  <!-- Phones: the one main action floats at the bottom. -->
+  <a class="bottom-cta magnetic" href="/app#/talk">
+    <span class="mic-dot" aria-hidden="true"></span>
+    <span data-i18n="start">Start talking</span>
+  </a>
 </body>
 </html>
