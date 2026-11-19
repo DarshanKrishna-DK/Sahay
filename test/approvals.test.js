@@ -455,3 +455,65 @@ test("review #6: a vendor's free-text payment terms are never part of the read-b
     assert.doesNotMatch(approval.readback, /advance|SYSTEM|owner agreed/, language);
   }
 });
+
+/* ------------- every server-spoken question counts (coordinator: reorder, invoice, item tax) --- */
+
+const db = require("../src/db");
+
+/** A reorder question as STK records it (reorder_readbacks), without the stock tables around it. */
+function reorderAsked(businessId, text, agentId = "AG1") {
+  db.getDb().exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.prepare("INSERT INTO reorder_readbacks (id, business_id, proposal_id, agent_id, spoken_text, spoken_at) VALUES (?, ?, ?, ?, ?, ?)").run(repo.newId("rrb"), businessId, "rop_test", agentId, text, new Date().toISOString());
+  } finally {
+    db.getDb().exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+/** An item-tax read-back as SELL records it (item_tax_readbacks). */
+function itemTaxAsked(businessId, text, agentId = "AG1") {
+  db.prepare("INSERT INTO item_tax_readbacks (id, business_id, item_name, hsn, gst_rate, agent_id, spoken_text, status, spoken_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)").run(repo.newId("itx"), businessId, "चावल", "1006", 5, agentId, text, new Date().toISOString());
+}
+
+test("a deal waits, then a reorder question is spoken: the owner's हाँ answers the reorder question, never the deal", () => {
+  const businessId = seedBusiness();
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const reorder = "चावल कम है, 5 किलो बचा है; और 50 किलो मँगाऊँ?";
+  reorderAsked(businessId, reorder);
+  const history = [...heard(approval.readback, { from: 10 }), said(reorder, 20), asr("हाँ", 30)];
+  assert.throws(() => voice(businessId, approval, history), refuses("READBACK_SUPERSEDED"));
+  assert.equal(repo.getApproval(businessId, approval.id).status, "pending");
+  // The reverse: the reorder question's yes after a deal read-back that came later is not the reorder's.
+  const reverse = [said(reorder, 10), ...heard(approval.readback, { from: 20 }), asr("हाँ", 30)];
+  assert.throws(() => approvals.answerAfterSpoken(businessId, reverse, { agentId: "AG1", spoken: [reorder], subject: {} }), refuses("READBACK_SUPERSEDED"));
+  // With nothing in between, each yes answers its own question.
+  assert.equal(approvals.answerAfterSpoken(businessId, [said(reorder, 10), asr("हाँ", 11)], { agentId: "AG1", spoken: [reorder], subject: {} }).text, "हाँ");
+  assert.equal(voice(businessId, approval, [said(reorder, 5), ...heard(approval.readback, { from: 10 }), asr("हाँ", 30)]).status, "approved");
+});
+
+test("an item-tax (sell) question between a rule or a deal and the yes supersedes it, and the other way round", () => {
+  const businessId = seedBusiness();
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const tax = "चावल पर HSN 1006, GST 5 प्रतिशत; यही रखूँ?";
+  itemTaxAsked(businessId, tax);
+  assert.throws(() => voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said(tax, 20), asr("हाँ", 30)]), refuses("READBACK_SUPERSEDED"));
+  const rule = "मैं बासमती चावल के लिए प्रति किलो 80 रुपये से ज़्यादा कभी नहीं दूँगी।";
+  assert.throws(() => approvals.answerAfterSpoken(businessId, [said(rule, 10), said(tax, 20), asr("हाँ", 30)], { agentId: "AG1", spoken: [rule], subject: { ruleId: "rul_x" } }), refuses("READBACK_SUPERSEDED"));
+  assert.throws(() => approvals.answerAfterSpoken(businessId, [said(tax, 10), ...heard(approval.readback, { from: 20 }), asr("हाँ", 30)], { agentId: "AG1", spoken: [tax], subject: {} }), refuses("READBACK_SUPERSEDED"));
+});
+
+test("any table of server-spoken questions (name *_readbacks with spoken_text) is counted, invoices included", () => {
+  const tables = approvals.spokenQuestionTables();
+  for (const name of ["approval_readbacks", "rule_readbacks", "reorder_readbacks", "invoice_readbacks", "item_tax_readbacks"]) assert.ok(tables.includes(name), name);
+  db.getDb().exec("CREATE TABLE IF NOT EXISTS probe_readbacks (id TEXT PRIMARY KEY, business_id TEXT NOT NULL, agent_id TEXT, spoken_text TEXT NOT NULL, spoken_at TEXT NOT NULL)");
+  const businessId = seedBusiness();
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  db.prepare("INSERT INTO probe_readbacks VALUES (?, ?, ?, ?, ?)").run("prb_1", businessId, "AG1", "यह नया सवाल है?", new Date().toISOString());
+  assert.throws(() => voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said("यह नया सवाल है?", 20), asr("हाँ", 30)]), refuses("READBACK_SUPERSEDED"));
+  // Another business's questions are not this call's.
+  const other = seedBusiness();
+  const theirs = "उनका सवाल?";
+  itemTaxAsked(other, theirs);
+  assert.equal(voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said(theirs, 20), asr("हाँ", 30)]).status, "approved");
+  db.getDb().exec("DROP TABLE probe_readbacks");
+});

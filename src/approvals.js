@@ -300,7 +300,8 @@ function answerToReadback(businessId, approval, contents, { agentId }) {
  *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence); a typed
  *   message is not an ASR turn, so it is never an answer (TYPED_ANSWER when it is all there is);
  * - when Agora gives both speech timings, the owner must not have spoken over it;
- * - no read-back of another approval or rule may have been spoken in between.
+ * - no other question the server spoke (another approval or rule, a reorder, an invoice, an item's
+ *   tax: every `*_readbacks` table) may have been spoken in between.
  * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
  */
 function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject = {} }) {
@@ -349,11 +350,8 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
 
   const own = new Set(readbacks.flat());
   const others = new Set(
-    [
-      ...repo.listApprovalReadbacks(businessId).filter((row) => row.approval_id !== subject.approvalId),
-      ...repo.listRuleReadbacks(businessId).filter((row) => row.rule_id !== subject.ruleId),
-    ]
-      .flatMap((row) => spokenPieces(row.spoken_text))
+    otherSpokenQuestions(businessId, subject)
+      .flatMap(spokenPieces)
       .filter((piece) => !own.has(piece)),
   );
   for (let i = anchor + 1; i < answerAt; i++) {
@@ -362,6 +360,40 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
     }
   }
   return { text: said.content.trim(), turnId: said.turn_id };
+}
+
+/**
+ * Every table of questions the server speaks into a call and waits on a yes for: a table named
+ * `<subject>_readbacks` with business_id and spoken_text columns (approval, rule, reorder,
+ * invoice, item tax, and any added later). Read from the schema, so a new kind of question can
+ * never be forgotten here (coordinator security note: a yes to a reorder or invoice question must
+ * not approve a deal that is still waiting, nor the other way round).
+ */
+function spokenQuestionTables() {
+  return db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%readbacks'")
+    .all()
+    .map((row) => row.name)
+    .filter((name) => /^[a-z][a-z0-9_]*_readbacks$/.test(name))
+    .filter((name) => {
+      const columns = new Set(db.prepare(`PRAGMA table_info("${name}")`).all().map((c) => c.name));
+      return columns.has("business_id") && columns.has("spoken_text");
+    });
+}
+
+/**
+ * The texts of every question the server spoke for this business except the subject being
+ * answered (its own read-backs are also dropped piece by piece by the caller).
+ */
+function otherSpokenQuestions(businessId, subject = {}) {
+  const texts = [];
+  for (const table of spokenQuestionTables()) {
+    let rows = db.prepare(`SELECT * FROM "${table}" WHERE business_id = ?`).all(businessId);
+    if (table === "approval_readbacks" && subject.approvalId) rows = rows.filter((row) => row.approval_id !== subject.approvalId);
+    if (table === "rule_readbacks" && subject.ruleId) rows = rows.filter((row) => row.rule_id !== subject.ruleId);
+    for (const row of rows) if (typeof row.spoken_text === "string" && row.spoken_text.trim()) texts.push(row.spoken_text);
+  }
+  return texts;
 }
 
 /** The owner's last words in the call, for a spoken rejection (no read-back binding needed to say no). */
@@ -444,6 +476,6 @@ function assertOrderApproved(businessId, order) {
 module.exports = {
   ApprovalError,
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
-  answerToReadback, answerAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr,
+  answerToReadback, answerAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr, spokenQuestionTables,
   buildReadback, loadDeal,
 };
