@@ -38,3 +38,19 @@ test("E2E r4 bug 7: per-business PO numbers (SAHAY/2026/AB12-0001) are allowed i
   assert.ok(isNativeScript("ಆರ್ಡರ್ SAHAY/2026/AB12CD-0002 ಖಚಿತ.", "kn-IN"));
   assert.deepEqual(scriptProblems("ऑर्डर SAHAY/2026/AB12-0001 ok", "hi-IN").latin, ["ok"]);
 });
+
+test("scriptOf names the script of a word (the first letter that has one); digits and punctuation have none", () => {
+  const { scriptOf } = require("../src/agora/script");
+  assert.equal(scriptOf("चावल"), "Devanagari");
+  assert.equal(scriptOf("ಅಕ್ಕಿ"), "Kannada");
+  assert.equal(scriptOf("rice"), "Latin");
+  assert.equal(scriptOf("அரிசி"), "Tamil");
+  assert.equal(scriptOf("బియ్యం"), "Telugu");
+  assert.equal(scriptOf("അരി"), "Malayalam");
+  assert.equal(scriptOf("চাল"), "Bengali");
+  assert.equal(scriptOf("ચોખા"), "Gujarati");
+  assert.equal(scriptOf("ਚੌਲ"), "Gurmukhi");
+  assert.equal(scriptOf("ଚାଉଳ"), "Oriya");
+  assert.equal(scriptOf("200"), null);
+  assert.equal(scriptOf("—"), null);
+});

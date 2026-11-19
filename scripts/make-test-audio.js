@@ -35,6 +35,10 @@ const CLIPS = {
   "kn-request": { locale: "kn-IN", voiceId: "hi-IN-chirag", text: "ನನಗೆ ಇನ್ನೂರು ಕಿಲೋ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ ಬೇಕು, ಬೆಂಗಳೂರಿಗೆ ಡೆಲಿವರಿ ಬೇಕು." },
   "en-request": { locale: "en-IN", voiceId: "en-IN-aarav", text: "I need two hundred kilos of basmati rice delivered to Bengaluru, under ninety rupees a kilo." },
   "mix-request": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "मुझे 500 cotton t-shirts चाहिए, Bengaluru delivery, एक सौ अस्सी rupees per piece तक।" },
+  // Mid-call language switching (no manual switch): English, Kanglish and Hinglish read-only questions.
+  "en-owes": { locale: "en-IN", voiceId: "en-IN-aarav", text: "Who owes me money right now?" },
+  "kanglish-stock": { locale: "kn-IN", voiceId: "hi-IN-chirag", text: "ನನ್ನ stock ಎಷ್ಟು ಇದೆ? basmati rice ಎಷ್ಟು ಉಳಿದಿದೆ?" },
+  "hinglish-owes": { locale: "hi-IN", voiceId: "hi-IN-chirag", text: "भाई, मेरे paise किसके पास बाकी हैं? total बताओ।" },
 };
 
 async function make(name) {

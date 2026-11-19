@@ -42,4 +42,16 @@ function isNativeScript(text, language, options) {
   return p.latin.length === 0 && !p.foreign;
 }
 
-module.exports = { scriptProblems, isNativeScript };
+/** Scripts an owner may speak or type in (Unicode script names), checked in this order. */
+const SCRIPTS = ["Latin", "Devanagari", "Kannada", "Tamil", "Telugu", "Malayalam", "Bengali", "Gujarati", "Gurmukhi", "Oriya"];
+const SCRIPT_RE = SCRIPTS.map((name) => [name, new RegExp(`\\p{Script=${name}}`, "u")]);
+
+/** The script of a word: that of its first letter that has one of SCRIPTS, else null (digits, punctuation). */
+function scriptOf(word) {
+  for (const ch of String(word ?? "")) {
+    for (const [name, re] of SCRIPT_RE) if (re.test(ch)) return name;
+  }
+  return null;
+}
+
+module.exports = { scriptProblems, isNativeScript, scriptOf, SCRIPTS };

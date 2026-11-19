@@ -355,8 +355,16 @@ test("E2E r2 bug 1: the prompt answers in the language of the owner's last sente
     assert.match(prompt, /most recent sentence/);
     assert.match(prompt, /An English sentence gets an English reply/);
     assert.match(prompt, /does not decide your reply language/);
-    assert.match(prompt, /Code-mixed: reply in the language most of the owner's words are in/);
+    assert.match(prompt, /Code-mixed: reply in the language the sentence is built in/);
     assert.doesNotMatch(prompt, /usually speaks/, "no line nudging the model toward the business language");
+    // Mid-call switching with no command, romanised and code-mixed speech (owner requirement 2026-11-20).
+    assert.match(prompt, /with no command needed: the owner may switch language in any sentence/);
+    assert.match(prompt, /Hinglish gets Hindi in Devanagari, Kanglish gets Kannada in Kannada script/);
+    assert.match(prompt, /romanised Kannada looks like nanage, beku/);
+    assert.match(prompt, /"nanage eradu nooru kilo akki beku" -> Kannada/);
+    assert.match(prompt, /A bare ok, yes, hmm, a number or a name does not change the language/);
+    assert.match(prompt, /The server also reads the owner's own last words and corrects reply_language/);
+    assert.match(agent.FILLER_PROMPT, /Hinglish .* gets Hindi in Devanagari; Kanglish gets Kannada in Kannada script/);
     // Without Agora's filler words the model says one itself: examples in every language, not one Hindi example that biases the model.
     const noFillers = agent.systemPrompt({ name: "Ganesh Traders", city: "Bengaluru", language }, { fillerWords: false });
     for (const filler of Object.values(agent.FILLER)) assert.ok(noFillers.includes(filler), `${language} prompt carries "${filler}"`);
@@ -793,6 +801,11 @@ test("E2E full run bug 5: Sarvam auto-detects the language in every call languag
     const body = agent.buildJoinBody({ name: "n", channel: "c", token: "t", agentUid: 1, remoteUids: [2], language, voiceId: "v", prompt: "p" });
     assert.deepEqual(body.properties.asr, { vendor: "sarvam", params: { api_key: FAKE.SARVAM_API_KEY, language: "unknown" } });
     assert.equal(body.properties.tts.params.locale, language, "only the voice follows the call language");
+    // With the owner-call tuning block on, nothing else pins a language: turn detection and interruption are language-free.
+    const tuned = agent.buildJoinBody({ name: "n", channel: "c", token: "t", agentUid: 1, remoteUids: [2], language, voiceId: "v", prompt: "p", tuning: true });
+    assert.deepEqual(tuned.properties.asr, body.properties.asr);
+    assert.doesNotMatch(JSON.stringify({ ...tuned.properties.turn_detection, ...tuned.properties.interruption }), /lang|locale|-IN/);
+    assert.equal(tuned.properties.language, undefined);
   }
 });
 
@@ -821,4 +834,25 @@ test("a bounded /history read (tools, watchdog) is tried once with its own timeo
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^\[agora\] GET \/agents\/<id>\/history 200 in \d+ ms$/);
   assert.doesNotMatch(lines[0], /AGSECRET/);
+});
+
+test("withHistorySnapshot: inside one tool call the first read of that agent is the snapshot, once; nothing outside sees it", async (t) => {
+  let reads = 0;
+  fakeAgora(t, (url) => {
+    if (!/\/history$/.test(url)) throw new Error(`unexpected ${url}`);
+    reads += 1;
+    return { json: { contents: [{ role: "user", content: `turn ${reads}`, metadata: { source: "asr" } }] } };
+  });
+  const snapshot = await agent.history("AGX", { timeoutMs: 1000 });
+  const outside = agent.history("AGX", { timeoutMs: 1000 });
+  const inside = await agent.withHistorySnapshot("AGX", snapshot, async () => {
+    const other = await agent.history("AGY", { timeoutMs: 1000 });
+    const first = await agent.history("AGX", { timeoutMs: 1000 });
+    const second = await agent.history("AGX", { timeoutMs: 1000 });
+    return [other[0].content, first[0].content, second[0].content];
+  });
+  assert.equal((await outside)[0].content, "turn 2", "a read outside the tool call is never served the snapshot");
+  assert.deepEqual(inside, ["turn 3", "turn 1", "turn 4"], "another agent reads afresh; the snapshot is used once");
+  assert.equal(reads, 4);
+  assert.equal(await agent.withHistorySnapshot("AGX", null, async () => (await agent.history("AGX", { timeoutMs: 1000 }))[0].content), "turn 5", "no snapshot: a plain read");
 });

@@ -74,3 +74,15 @@ test("notHeard accepts complete requirements in Hindi, Kannada and English, and 
   assert.deepEqual(notHeard(["मुझे चीनी चाहिए"], { item: "basmati rice" }), ["item"]);
   assert.deepEqual(notHeard(["अभी बताती हूँ"], {}), [], "nothing claimed, nothing to check");
 });
+
+test("code-mixed and romanised turns: Kanglish and Hinglish number words count, and digits still must match", () => {
+  assert.equal(numberHeard("nanage eradu nooru kilo akki beku", 200), true, "romanised Kannada");
+  assert.equal(numberHeard("ನನಗೆ ಐವತ್ತು kilo sugar ಬೇಕು", 50), true, "Kanglish in Kannada script");
+  assert.equal(numberHeard("mujhe dhai sau kilo chahiye", 250), true, "romanised Hindi");
+  assert.equal(numberHeard("pachaas kilo cheeni", 50), true);
+  assert.equal(numberHeard("ondu saavira", 1000), true);
+  assert.equal(numberHeard("mujhe 50 kilo chahiye", 500), false, "digits that differ are still refused");
+  assert.equal(numberHeard("Ramesh ke saath baat karo", 60), false, "saath ('with') is not a number word");
+  assert.deepEqual(notHeard(["nanage eradu nooru kilo basmati akki beku"], { quantity: 200 }), []);
+  assert.deepEqual(notHeard(["mujhe basmati chawal chahiye"], { quantity: 200 }), ["quantity"], "a romanised turn without a number does not vouch for one");
+});

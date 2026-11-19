@@ -37,12 +37,18 @@ const fold = (text) =>
 
 const tokens = (text) => fold(text).split(" ").map((t) => t.replace(/\.$/, "")).filter(Boolean);
 
-/** Whole-word number words (Hindi, romanised Hindi, English). "do" is left out: it is also English. */
+/** Whole-word number words (Hindi, romanised Hindi and Kannada, English). "do" is left out: it is also English. */
 const NUMBER_WORDS = new Set([
   "एक", "दो", "तीन", "चार", "पांच", "पाँच", "छह", "छः", "छे", "सात", "आठ", "नौ", "दस", "ग्यारह", "बारह", "तेरह", "चौदह",
   "पंद्रह", "पन्द्रह", "सोलह", "सत्रह", "अठारह", "उन्नीस", "बीस", "तीस", "चालीस", "पचास", "साठ", "सत्तर", "अस्सी", "नब्बे",
   "सौ", "हज़ार", "हजार", "लाख", "करोड़", "डेढ़", "ढाई", "सवा", "आधा", "पच्चीस", "दर्जन",
   "ek", "teen", "char", "chaar", "panch", "paanch", "saat", "aath", "das", "bees", "pachas", "pachaas", "sau", "hazar", "hazaar",
+  // Romanised Hindi (typed Hinglish). Left out: "do" (English), "saath" ("with"), "nau" (rare, and "now" misheard).
+  "chhe", "chhah", "gyarah", "barah", "pandrah", "solah", "tees", "chalis", "chaalis", "sattar", "assi", "nabbe",
+  "dedh", "dhai", "dhaai", "sawa", "aadha", "aadhaa", "darjan",
+  // Romanised Kannada (typed Kanglish), whole words only.
+  "ondu", "eradu", "mooru", "muru", "naalku", "nalku", "aidu", "aaru", "elu", "entu", "ombattu", "hattu", "ippattu", "muvattu",
+  "nalavattu", "aivattu", "nooru", "nuru", "innooru", "innuru", "munnooru", "saavira", "savira", "ardha",
   "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
   "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
   "eighty", "ninety", "hundred", "thousand", "lakh", "lakhs", "crore", "crores", "dozen", "half",

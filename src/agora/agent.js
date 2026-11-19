@@ -16,6 +16,7 @@
  * The only network boundary is `fetch`; tests replace it with `setFetch`.
  */
 
+const { AsyncLocalStorage } = require("node:async_hooks");
 const { config } = require("../config");
 const { buildRtcRtmToken } = require("./token");
 
@@ -188,7 +189,7 @@ const FILLER_PHRASES = {
 const FILLER_PROMPT = [
   "Write only what a warm, quick Indian shop assistant says out loud in the first second after hearing the shop owner's message, while she looks something up.",
   'Two to five words: a short acknowledgement or thinking sound, nothing else. Examples: Hindi "हाँ जी, एक सेकंड", "अच्छा, देखती हूँ", "हम्म, ज़रा देखूँ"; Kannada "ಸರಿ, ಒಂದು ನಿಮಿಷ", "ಹೂಂ, ನೋಡ್ತೀನಿ"; English "Okay, one sec", "Hmm, let me see".',
-  "Use exactly the language of the owner's message: Hindi in Devanagari script with feminine forms, Kannada in Kannada script, English in English. Never write Hindi or Kannada in Latin letters.",
+  "Use exactly the language of the owner's message, in that language's own script: Hindi in Devanagari script with feminine forms, Kannada in Kannada script, English in English, and any other Indian language in its own script. Hinglish (Hindi grammar with English words, or Hindi in Latin letters) gets Hindi in Devanagari; Kanglish gets Kannada in Kannada script. Never write Hindi or Kannada in Latin letters.",
   "Never answer the message, never a number, price, name, promise or question.",
   'Never apologise, console or react to a problem (no "कोई बात नहीं", "दिक्कत", "माफ़", "ಪರವಾಗಿಲ್ಲ", "sorry", "no problem"), and never say that anything is done, saved or made: you do not know the result yet.',
 ].join(" ");
@@ -269,6 +270,19 @@ const TEACHING =
   "Teaching: when the owner tells you how they like to buy (the most they will pay for an item, a vendor to prefer or avoid, a usual quantity, a reply language, how hard to bargain), call teach_rule with that one rule. The server reads the rule out itself; say only the tool's `say` question and wait. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no). A typed message never keeps a rule: if the owner types yes, ask them to tap the tick on the rule card on the screen. To drop a rule call forget_rule; to tell the owner what their Sahay knows call get_my_agent. When save_requirement returns usualQuantity, say only its `say`; on the owner's yes call save_requirement with use_usual_quantity true and nothing else.";
 
 /**
+ * Reply language, every turn, with no switching command (owner requirement 2026-11-20). Sarvam
+ * transcribes each utterance in its own script (params.language "unknown"), so the owner's words
+ * show the language; the server applies the same rule to tool `say` lines (src/agora/language.js).
+ */
+const LANGUAGE_RULES = [
+  "Language: choose the language of every reply, filler included, from the owner's most recent sentence only, every turn, with no command needed: the owner may switch language in any sentence. An English sentence gets an English reply; a Hindi sentence gets Hindi in Devanagari script; a Kannada sentence gets Kannada in Kannada script.",
+  "Hindi or Kannada words written in Latin letters count as Hindi or Kannada: answer them in their own script. Romanised Hindi looks like mujhe, chahiye, kya, hai, nahi, kitna, mera, batao, karo; romanised Kannada looks like nanage, beku, eshtu, ide, illa, maadi, houdu, akki.",
+  "Code-mixed: reply in the language the sentence is built in (its verbs, pronouns, question words and case endings), even when most nouns are English. Hinglish gets Hindi in Devanagari, Kanglish gets Kannada in Kannada script; English loanwords such as stock, order, delivery or bill are then written in that script (स्टॉक, ऑर्डर; ಸ್ಟಾಕ್, ಆರ್ಡರ್).",
+  'Examples: "mujhe 50 kilo sugar chahiye" -> Hindi; "मेरा order कब आएगा?" -> Hindi; "ನನ್ನ stock ಎಷ್ಟು ಇದೆ?" -> Kannada; "nanage eradu nooru kilo akki beku" -> Kannada; "Who owes me money?" -> English; "stock check karo" -> Hindi.',
+  "A bare ok, yes, hmm, a number or a name does not change the language: keep the language of your previous reply. If the owner speaks another Indian language (Tamil, Telugu, Marathi, Bengali, Gujarati, Malayalam, Punjabi, Odia), reply in that language in its own script. Never write Hindi or Kannada in Latin letters.",
+];
+
+/**
  * How Sahay talks: a warm, quick shop assistant on a phone call, in the owner's language (Track
  * POLISH, "like ChatGPT voice"). Murf Falcon voices have one style ("Conversational"), so the
  * human feel comes from the words: varied reactions, an occasional thinking sound, one question at
@@ -332,10 +346,10 @@ function systemPrompt(business, { now = new Date(), rules = [], fillerWords = tr
     `You are Sahay, an automated assistant that runs the shop for ${where || "an Indian small business"}: buying from vendors, selling to customers, the khata (who owes the shop) and stock. You talk to the owner by voice.`,
     "The system has already told the owner that you are an automated assistant. Do not greet again; answer what the owner says.",
     `Today's date in India is ${todayInIndia(now)}.`,
-    "Language: choose the language of every reply, filler included, from the owner's most recent sentence only. An English sentence gets an English reply; a Hindi sentence gets Hindi in Devanagari script; a Kannada sentence gets Kannada in Kannada script. Hindi or Kannada words written in Latin letters count as Hindi or Kannada: answer them in their own script. Code-mixed: reply in the language most of the owner's words are in. Never write Hindi or Kannada in Latin letters.",
+    ...LANGUAGE_RULES,
     "Script: a Hindi reply uses only Devanagari and a Kannada reply only Kannada script, for every word: fillers, loanwords, item names and city names (बेंगलुरु in Hindi, ಬೆಂಗಳೂರು in Kannada). Never put a Devanagari word in a Kannada reply or a Kannada word in a Hindi reply, and never a word that joins Latin letters to Devanagari or Kannada letters. Inside Hindi or Kannada the only Latin letters allowed are a vendor's, customer's or business's own name, a purchase-order or bill number and the word Razorpay; digits are fine. If a tool's `say` has a city or an item in another script, say that word in the reply's script.",
     `The greeting was spoken in ${LANGUAGE_NAMES[language]} because that is the business's language. That greeting does not decide your reply language, and neither do your earlier replies or the language of tool results. When the owner switches language, switch with them at once.`,
-    "Every tool takes reply_language: always set it to the language of the owner's last sentence (hi-IN for Hindi, kn-IN for Kannada, en-IN for English), so the tool's `say` comes back in that language.",
+    "Every tool takes reply_language: always set it to the language of the owner's last sentence (hi-IN for Hindi, kn-IN for Kannada, en-IN for English), so the tool's `say` comes back in that language. For any other Indian language set en-IN and say the tool's `say` in the owner's language. The server also reads the owner's own last words and corrects reply_language when it is wrong, so a `say` can come back in the owner's language even if you passed another: speak it as it is.",
     "Voice: you speak with a woman's voice, so when you speak Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
     ...SPOKEN_STYLE,
     waitingLine(fillerWords),
@@ -435,9 +449,12 @@ function buildJoinBody(o) {
       enable_string_uid: false,
       idle_timeout: o.idleTimeout ?? OWNER_IDLE_TIMEOUT_SECONDS,
       advanced_features: advanced,
-      // Sarvam auto-detects with params.language "unknown" (docs: models/asr/sarvam.md). The optional
-      // top-level asr.language is left out: a Kannada clip in a Hindi call gave no turn at all with it
-      // set to hi-IN (E2E full run; cause not proven live, see agora-findings.md).
+      // Sarvam detects the language of every utterance with params.language "unknown" (Agora sarvam.md;
+      // Sarvam STT: "unknown" = auto-detect, one of 22 Indic languages or English). Nothing else is
+      // pinned: no top-level asr.language (Agora: params.language takes precedence; default en-US),
+      // no model and no mode, so Sarvam's default transcribe mode writes each language in its own
+      // script (Hinglish in Devanagari). Verified offline on the test clips (agora-findings.md,
+      // "Multilingual owner calls").
       asr: { vendor: "sarvam", params: { api_key: config.sarvam.key, language: "unknown" } },
       llm,
       tts: {
@@ -702,9 +719,31 @@ async function think(agentId, text, { onListening = "append", onThinking = "appe
   return call("POST", `/agents/${encodeURIComponent(agentId)}/think`, body);
 }
 
+/**
+ * One tool call's /history snapshot: the read made for the reply language just before the tool
+ * runs (src/agora/language.js) is handed to the tool's own first read of the same agent, so the
+ * language costs no second round trip. Scoped to that tool call only (AsyncLocalStorage): the
+ * narrator and the confirmation watchdog never see it. Used once; older than SNAPSHOT_MS it is
+ * not used at all.
+ */
+const snapshotScope = new AsyncLocalStorage();
+const SNAPSHOT_MS = 1000;
+
+/** Run `fn` with `contents` (just read from /history of `agentId`) as its first read of that agent. */
+function withHistorySnapshot(agentId, contents, fn) {
+  if (!agentId || !Array.isArray(contents)) return fn();
+  return snapshotScope.run({ agentId, contents, at: Date.now() }, fn);
+}
+
 /** GET /history (running agents only). Returns the `contents` array. */
 async function history(agentId, { timeoutMs } = {}) {
   if (!agentId) throw new AgoraError("AGENT_REQUIRED", "history needs an agent id.");
+  const snapshot = snapshotScope.getStore();
+  if (snapshot?.agentId === agentId && snapshot.contents) {
+    const { contents, at } = snapshot;
+    snapshot.contents = null;
+    if (Date.now() - at <= SNAPSHOT_MS) return contents.slice();
+  }
   // A bounded read (tools, the confirmation watchdog) is tried once; the default keeps one retry.
   const json = await call("GET", `/agents/${encodeURIComponent(agentId)}/history`, undefined, timeoutMs ? { timeoutMs } : { retry: true });
   if (!Array.isArray(json?.contents)) throw new AgoraError("HISTORY_BAD_RESPONSE", "Agora answered /history without contents.");
@@ -747,6 +786,7 @@ module.exports = {
   speak,
   think,
   history,
+  withHistorySnapshot,
   lastUserUtterance,
   splitUtf8,
   languageOf,

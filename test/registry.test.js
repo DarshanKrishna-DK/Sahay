@@ -401,8 +401,10 @@ test("review #2: a yes said before the read-back, or with no read-back spoken, d
   const call = fakeCall(t);
   call.owner("yes");
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  const readsBefore = call.historyReads;
   await expectToolError(registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "NO_ANSWER_YET");
-  assert.equal(call.historyReads, 3, "the answer may lag in /history, so it is looked for again before refusing");
+  // The first read is shared with the reply-language read (src/agora/language.js, agent.withHistorySnapshot).
+  assert.equal(call.historyReads - readsBefore, 3, "the answer may lag in /history, so it is looked for again before refusing");
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
 
   // An approval put up without a call (no agent): its read-back was never spoken, so no yes counts.

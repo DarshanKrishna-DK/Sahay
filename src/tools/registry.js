@@ -1748,8 +1748,10 @@ async function callTool(ctx, name, args = {}) {
   const businessLanguage = languageOf(ctx.businessId);
   // `say` follows the language the owner just used; the business language is the fallback. An
   // owner's reply_language rule fixes it, whatever the model passes.
-  const replyLanguage = policy.replyLanguage(ctx.businessId) ?? (LANGS.includes(args?.reply_language) ? args.reply_language : null);
-  const language = replyLanguage ?? businessLanguage;
+  const fixedLanguage = policy.replyLanguage(ctx.businessId);
+  const modelLanguage = LANGS.includes(args?.reply_language) ? args.reply_language : null;
+  let replyLanguage = fixedLanguage ?? modelLanguage;
+  let language = replyLanguage ?? businessLanguage;
   const tool = BY_NAME.get(name);
   if (!tool || !tool.scopes.includes(ctx.toolScope)) {
     throw new ToolError("UNKNOWN_TOOL", sayFor("internal", language), { status: 404, message: `No tool ${name} for this agent.` });
@@ -1758,10 +1760,18 @@ async function callTool(ctx, name, args = {}) {
   const problem = validateArgs(tool.inputSchema, args);
   // `details.problem` names the argument (never a value), so the model can correct its next call.
   if (problem) throw new ToolError("INVALID_ARGUMENTS", sayFor("invalid", language), { status: 400, message: problem, details: { problem } });
+  let snapshot = null;
+  if (!fixedLanguage && ctx.toolScope === SCOPES.owner) {
+    // In a call the owner's own latest words decide, not the model's reply_language (src/agora/language.js).
+    const heard = await require("../agora/language").resolveReplyLanguage(ctx, modelLanguage);
+    if (heard.language) language = replyLanguage = heard.language;
+    snapshot = heard.contents;
+  }
   if (replyLanguage) require("../agora/narrator").useLanguage(ctx.businessId, replyLanguage);
   const end = toolCalls.begin(ctx.businessId, name, { answer: Boolean(args?.decision || args?.confirm) });
   try {
-    return await tool.handler(ctx, args ?? {}, language, { businessLanguage });
+    // The tool's own first /history read reuses the one just made for the language (one round trip).
+    return await require("../agora/agent").withHistorySnapshot(ctx.agentId, snapshot, () => tool.handler(ctx, args ?? {}, language, { businessLanguage }));
   } catch (err) {
     const toolError = toToolError(err, language);
     if (toolError.code === "INTERNAL" || toolError.status >= 500) {
