@@ -36,6 +36,22 @@ async function register({ phone, pin: pinText, business, claimBusinessId = null 
   });
 }
 
+/** A shop name compared as the owner means it: Unicode form, case and runs of spaces aside. */
+const shopNameKey = (name) => (typeof name === "string" ? name.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-IN") : "");
+
+/**
+ * Which device-session business (`device`: {id, name}, unowned, from the browser's signed cookie)
+ * a signup takes over, or null for a new business. Only the same shop name as typed, or the
+ * client's explicit `claimDevice === true` ("Continue with <device shop>?" answered yes): an old
+ * anonymous cookie must never swallow a different shop the owner just typed (E2E 2026-11-19, 1a).
+ */
+function deviceBusinessToClaim({ device, typedName, claimDevice = false }) {
+  if (!device?.id) return null;
+  if (claimDevice === true) return device.id;
+  const typed = shopNameKey(typedName);
+  return typed && typed === shopNameKey(device.name) ? device.id : null;
+}
+
 /**
  * Check a PIN for a phone, counting the attempt against `lockKey` (phone + client IP).
  * Returns {account, businessId}. Throws PIN_LOCKED (429, retryAfterSeconds) or WRONG_PIN (401);
@@ -70,6 +86,6 @@ function primaryBusiness(accountId) {
 
 module.exports = {
   AccountError, normalisePhone, maskPhone, isPin: pin.isPin,
-  register, loginWithPin, primaryBusiness,
+  register, loginWithPin, primaryBusiness, deviceBusinessToClaim,
   store, passkeys,
 };

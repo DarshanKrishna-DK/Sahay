@@ -3,7 +3,10 @@
 /**
  * Owner accounts over HTTP (docs/superpowers/plans/2026-11-19-business-suite-contract.md, ACC).
  *
- *   POST /api/auth/register                {phone, pin, name, city, state?, language, accessCode?} -> 201 {account, business}
+ *   POST /api/auth/register                {phone, pin, name, city, state?, language, accessCode?, claimDevice?} -> 201 {account, business}
+ *     With an unowned device-session cookie, the account takes over that business only when `name`
+ *     is its name (case and spaces aside) or claimDevice is exactly true (the app asked "Continue
+ *     with <device shop>?"); any other name makes a new business from the typed details.
  *   POST /api/auth/login                   {phone, pin, language?} -> 200 {account, business}
  *   POST /api/auth/logout                  -> 204
  *   GET  /api/auth/me                      -> {account, business} | 401 NOT_SIGNED_IN
@@ -178,10 +181,13 @@ function createAuthRouter() {
           language,
         };
 
-        // The device-session business this browser already uses, when nobody owns it yet.
+        // The device-session business this browser already uses, when nobody owns it yet, is taken
+        // over only for the same shop name or an explicit claimDevice: true; otherwise the typed
+        // shop becomes a new business (and needs the access code like any new business).
         const claims = cookieClaims(req);
-        const claimBusinessId =
-          claims && !claims.accountId && repo.getBusiness(claims.businessId) && !store.ownerOf(claims.businessId) ? claims.businessId : null;
+        const deviceBusiness = claims && !claims.accountId ? repo.getBusiness(claims.businessId) : null;
+        const device = deviceBusiness && !store.ownerOf(deviceBusiness.id) ? deviceBusiness : null;
+        const claimBusinessId = accounts.deviceBusinessToClaim({ device, typedName: business.name, claimDevice: body.claimDevice });
 
         // The same per-IP window as POST /api/session, counted before the access code is checked.
         limit(`session:${clientIp(req)}`, RATE.newBusiness.perIp, language);

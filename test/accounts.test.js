@@ -195,3 +195,18 @@ test("a response with no readable challenge is rejected", async () => {
   await assert.rejects(passkeys.verifyAuthentication({ id: "x", response: { clientDataJSON: "not-json" } }), hasCode("PASSKEY_REJECTED"));
   await assert.rejects(passkeys.verifyAuthentication(null), hasCode("PASSKEY_REJECTED"));
 });
+
+/* ------------------------------------------- device business at signup --- */
+
+test("signup claims a device business only for the same shop name (case, spaces, Unicode form aside) or an explicit claimDevice: true", () => {
+  const { deviceBusinessToClaim } = require("../src/accounts");
+  const device = { id: "biz_device", name: "Sri  Ganesh Provisions" };
+  const claim = (typedName, claimDevice) => deviceBusinessToClaim({ device, typedName, claimDevice });
+  assert.equal(claim("sri ganesh provisions"), "biz_device");
+  assert.equal(claim("  SRI GANESH   PROVISIONS "), "biz_device");
+  assert.equal(deviceBusinessToClaim({ device: { id: "b", name: "आशा किराना" }, typedName: "आशा किराना".normalize("NFD") }), "b");
+  assert.equal(claim("Annapurna Kirana"), null, "another shop name makes a new business");
+  assert.equal(claim("Annapurna Kirana", true), "biz_device", "unless the client explicitly asks to keep this device's shop");
+  for (const loose of [false, "true", 1, undefined]) assert.equal(claim("Annapurna Kirana", loose), null);
+  assert.equal(deviceBusinessToClaim({ device: null, typedName: "x", claimDevice: true }), null, "nothing to claim");
+});

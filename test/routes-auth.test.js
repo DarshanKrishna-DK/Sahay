@@ -102,11 +102,44 @@ test("register creates an account and a business, answers 201 and sets the HttpO
   });
 });
 
-test("register claims the device-session business the request already carries", async () => {
+test("register claims the device-session business when the typed shop name is its name (case and spaces aside)", async () => {
+  await withApp(async (base) => {
+    const device = await call(base, "POST", "/api/session", { body: { name: "Old Device Shop", city: "Mysuru", language: "kn-IN", accessCode: CODE }, ip: freshIp() });
+    const out = await register(base, { name: "  old   DEVICE shop ", city: "Mysuru", language: "kn-IN", accessCode: undefined }, { cookie: device.cookie });
+    assert.equal(out.status, 201, JSON.stringify(out.json));
+    assert.equal(out.json.business.id, device.json.business.id);
+    assert.equal(out.json.business.name, "Old Device Shop", "a claimed business keeps its details");
+    assert.equal(store.ownerOf(device.json.business.id), out.json.account.id);
+  });
+});
+
+test("register with an old device cookie and another shop name makes a new business with the typed details (E2E 2026-11-19 bug 1a)", async () => {
+  await withApp(async (base) => {
+    const device = await call(base, "POST", "/api/session", { body: { name: "Sri Ganesh Provisions", city: "Mysuru", language: "kn-IN", accessCode: CODE }, ip: freshIp() });
+    // A new business needs the access code like any other; the old cookie does not stand in for it.
+    const noCode = await register(base, { name: "Annapurna Kirana", city: "Bengaluru", language: "hi-IN", accessCode: undefined }, { cookie: device.cookie });
+    assert.equal(noCode.status, 403);
+    assert.equal(noCode.json.code, "ACCESS_CODE_REQUIRED");
+    for (const claimDevice of [false, "true", 1]) {
+      const sneaky = await register(base, { name: "Annapurna Kirana", accessCode: undefined, claimDevice }, { cookie: device.cookie });
+      assert.equal(sneaky.status, 403, `claimDevice ${JSON.stringify(claimDevice)} is not an explicit claim`);
+    }
+
+    const out = await register(base, { name: "Annapurna Kirana", city: "Bengaluru", language: "hi-IN" }, { cookie: device.cookie });
+    assert.equal(out.status, 201, JSON.stringify(out.json));
+    assert.notEqual(out.json.business.id, device.json.business.id, "the old business is not adopted");
+    assert.deepEqual([out.json.business.name, out.json.business.city, out.json.business.language], ["Annapurna Kirana", "Bengaluru", "hi-IN"]);
+    assert.equal(store.ownerOf(device.json.business.id), null, "the old device business stays unclaimed");
+    const me = await call(base, "GET", "/api/auth/me", { cookie: out.cookie });
+    assert.equal(me.json.business.name, "Annapurna Kirana");
+  });
+});
+
+test("register claims the device-session business when the client explicitly asks (claimDevice: true)", async () => {
   await withApp(async (base) => {
     const device = await call(base, "POST", "/api/session", { body: { name: "Old Device Shop", city: "Mysuru", language: "kn-IN", accessCode: CODE }, ip: freshIp() });
     assert.equal(device.status, 200);
-    const out = await register(base, { name: "Typed Again", language: "kn-IN", accessCode: undefined }, { cookie: device.cookie });
+    const out = await register(base, { name: "Typed Again", language: "kn-IN", accessCode: undefined, claimDevice: true }, { cookie: device.cookie });
     assert.equal(out.status, 201, JSON.stringify(out.json));
     assert.equal(out.json.business.id, device.json.business.id, "the same business, now owned by the account");
     assert.equal(out.json.business.name, "Old Device Shop", "a claimed business keeps its details");
