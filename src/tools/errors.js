@@ -121,6 +121,11 @@ const SAY = {
     "kn-IN": "ಮಾಹಿತಿ ತೆಗೆಯುವ ಸೇವೆ ಉತ್ತರಿಸಲಿಲ್ಲ.",
     "en-IN": "The extraction service did not answer.",
   },
+  speak_failed: {
+    "hi-IN": "मैं इसे अभी पढ़कर नहीं सुना पाई।",
+    "kn-IN": "ಇದನ್ನು ಈಗ ಓದಿ ಹೇಳಲು ಆಗಲಿಲ್ಲ.",
+    "en-IN": "I could not read this out just now.",
+  },
   rule_already_decided: {
     "hi-IN": "यह नियम पहले ही हटा दिया गया था, रखना हो तो मुझे फिर से बताइए।",
     "kn-IN": "ಈ ನಿಯಮವನ್ನು ಈಗಾಗಲೇ ತೆಗೆದುಹಾಕಲಾಗಿದೆ, ಬೇಕಿದ್ದರೆ ನನಗೆ ಮತ್ತೆ ಹೇಳಿ.",
@@ -174,6 +179,10 @@ const CODE_MAP = {
   INVALID_RULE: ["invalid", 400],
   RULE_NOT_FOUND: ["not_found", 404],
   RULE_ALREADY_DECIDED: ["rule_already_decided", 409],
+  SPEAK_KEY_NOT_FOUND: ["not_found", 404],
+  MURF_FAILED: ["speak_failed", 502],
+  MURF_NOT_CONFIGURED: ["speak_failed", 503],
+  MURF_VOICE_MISSING: ["speak_failed", 503],
   ILLEGAL_TRANSITION: ["order_step_not_allowed", 409],
   PAID_BY_PAYMENT_ONLY: ["order_step_not_allowed", 409],
   PO_NOT_ISSUED: ["po_failed", 502],

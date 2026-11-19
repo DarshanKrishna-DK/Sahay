@@ -438,5 +438,5 @@ module.exports = {
   ApprovalError,
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
   answerToReadback, answerAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr,
-  buildReadback,
+  buildReadback, loadDeal,
 };

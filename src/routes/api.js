@@ -38,6 +38,7 @@ const agentProfile = require("../agent/profile");
 const agentRules = require("../agent/rules");
 const agentMemories = require("../agent/memories");
 const agentPolicy = require("../agent/policy");
+const speakIt = require("../agent/speak");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -52,6 +53,7 @@ const RATE = Object.freeze({
   voiceToken: Object.freeze({ perBusiness: { max: 20, windowMs: 10 * MINUTE }, perIp: { max: 60, windowMs: 10 * MINUTE } }),
   voiceStart: Object.freeze({ perBusiness: { max: 6, windowMs: 10 * MINUTE }, perIp: { max: 20, windowMs: 10 * MINUTE } }),
   pay: Object.freeze({ perIp: { max: 60, windowMs: 10 * MINUTE } }),
+  speak: Object.freeze({ perBusiness: { max: 30, windowMs: 10 * MINUTE } }),
 });
 /** How often a live owner call's agent is checked with Agora (it may have left on idle_timeout). */
 const AGENT_WATCH_MS = 30 * 1000;
@@ -488,6 +490,22 @@ function createApiRouter() {
     wrap(async (req, res) => {
       const { businessId } = req.auth;
       res.json({ profile: agentProfile.update(businessId, req.body, { sessionId: voice.get(businessId)?.sessionId ?? null }) });
+    }),
+  );
+
+  // Speak-it: the client names a card by key; the server builds the sentence (never free text).
+  // In a live call the agent says it; otherwise the answer is Murf audio.
+  router.post(
+    "/api/speak",
+    json,
+    wrap(async (req, res) => {
+      const { businessId } = req.auth;
+      const key = req.body?.key;
+      if (typeof key !== "string" || key.length > 80) throw new HttpError(400, "INVALID", "key names a card, such as now or rule:<id>.");
+      rateLimit([{ key: `speak:biz:${businessId}`, ...RATE.speak.perBusiness }]);
+      const out = await speakIt.speak(businessId, key, { agentId: voice.get(businessId)?.agentId ?? null });
+      if (out.kind === "spoken") return res.json({ spoken: true });
+      res.set("Cache-Control", "private, max-age=600").type("audio/mpeg").send(out.audio);
     }),
   );
 
