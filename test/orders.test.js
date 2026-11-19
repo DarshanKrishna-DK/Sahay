@@ -1,59 +1,23 @@
 "use strict";
 
 const fs = require("node:fs");
-const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
-const util = require("node:util");
 
 // A real database file in a temp folder, so purchase orders are written beside it and removed afterwards.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "sahay-orders-"));
 process.env.DB_FILE = path.join(TMP, "sahay.db");
 
-/**
- * Razorpay test keys come from the environment or, failing that, from the .env
- * of this checkout (or of the main checkout when this is a git worktree). Only
- * the two Razorpay variables are taken, only if the key is a test key, and
- * their values are never printed.
- */
-function findRazorpayTestKeys() {
-  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) return;
-  const root = path.join(__dirname, "..");
-  const candidates = [path.join(root, ".env")];
-  const gitPointer = path.join(root, ".git");
-  if (fs.existsSync(gitPointer) && fs.statSync(gitPointer).isFile()) {
-    const gitDir = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(gitPointer, "utf8"))?.[1].trim();
-    if (gitDir) candidates.push(path.resolve(gitDir, "..", "..", "..", ".env"));
-  }
-  const envFile = candidates.find((file) => fs.existsSync(file));
-  if (!envFile) return;
-  const { RAZORPAY_KEY_ID: keyId, RAZORPAY_KEY_SECRET: keySecret } = util.parseEnv(fs.readFileSync(envFile, "utf8"));
-  if (keyId?.startsWith("rzp_test_") && keySecret) {
-    process.env.RAZORPAY_KEY_ID = keyId;
-    process.env.RAZORPAY_KEY_SECRET = keySecret;
-  }
-}
-findRazorpayTestKeys();
-
 const assert = require("node:assert/strict");
 const { after, test } = require("node:test");
 
 const approvals = require("../src/approvals");
-const { splitUtf8 } = require("../src/agora/agent");
 const { config } = require("../src/config");
+const { splitUtf8 } = require("../src/agora/agent");
 const db = require("../src/db");
 const orders = require("../src/orders");
-const payments = require("../src/orders/payments");
 const po = require("../src/orders/po");
 const repo = require("../src/db/repo");
-
-// Opt-in: a Razorpay test account can create only 30 payment links in total, ever
-// ("test mode limit of 30 reached for payment_link"), so ordinary test runs must not spend them.
-const RAZORPAY_SKIP = process.env.RAZORPAY_LIVE_TEST !== "1"
-  ? "live Razorpay test is opt-in (RAZORPAY_LIVE_TEST=1): test accounts allow only 30 payment links in total"
-  : config.razorpay.keyId && config.razorpay.keySecret
-    ? false
-    : "no Razorpay test key in the environment or .env (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET); the Razorpay API is not called and no response is faked";
 
 after(() => {
   db.close();
@@ -348,113 +312,16 @@ test("advanceOrder follows the table, never marks an order paid by hand and is t
   );
 });
 
-/* ------------------------------------------------------- payments --- */
-
-const TEST_KEYS = { keyId: "rzp_test_fake001", keySecret: "fake-secret", base: "https://api.razorpay.com/v1" };
-
-/** Fail the test if anything tries to reach the network. */
-function forbidNetwork(t) {
-  return t.mock.method(globalThis, "fetch", () => {
-    throw new Error("the network must not be called");
-  });
-}
-
-test("a payment link is refused with a live Razorpay key, before any network call", async (t) => {
-  const network = forbidNetwork(t);
-  const businessId = seedBusiness();
-  const { order } = await seedOrder(businessId);
-
-  for (const keyId of ["rzp_live_fake001", "rzp_test", "live_rzp_test_x"]) {
-    await assert.rejects(payments.createPaymentLink(businessId, order.id, { razorpay: { ...TEST_KEYS, keyId } }), refuses("RAZORPAY_LIVE_KEY"), keyId);
-    await assert.rejects(payments.refreshPaymentStatus(businessId, order.id, { razorpay: { ...TEST_KEYS, keyId } }), refuses("RAZORPAY_LIVE_KEY"), keyId);
-  }
-  await assert.rejects(payments.createPaymentLink(businessId, order.id, { razorpay: { ...TEST_KEYS, keySecret: null } }), refuses("RAZORPAY_NOT_CONFIGURED"));
-  await assert.rejects(payments.createPaymentLink(businessId, order.id, { razorpay: { ...TEST_KEYS, keyId: null } }), refuses("RAZORPAY_NOT_CONFIGURED"));
-
-  assert.equal(network.mock.callCount(), 0);
-  assert.equal(repo.getOrder(businessId, order.id).payment_link_url, null);
-  assert.ok(!auditTypes(businessId).includes("payment.link"));
+test("e2e r3 PO defect: mixed Latin and Indic text is split into runs, each in a font that has its glyphs", () => {
+  const runs = po.fontRuns('• As quoted: "55 रुपये किलो, ठीक है।"');
+  assert.deepEqual(runs.map((r) => [r.text, r.font === "Helvetica" ? "Helvetica" : r.font.script]), [
+    ['• As quoted: "55 ', "Helvetica"],
+    ["रुपये किलो", "Devanagari"],
+    [", ", "Helvetica"],
+    ["ठीक है।", "Devanagari"],
+    ['"', "Helvetica"],
+  ]);
+  assert.deepEqual(po.fontRuns("Lakshmi Traders - 50 kg").map((r) => r.font), ["Helvetica"]);
+  assert.deepEqual(po.fontRuns("ಅಕ್ಕಿ और चावल").map((r) => r.font.script), ["Kannada", "Devanagari"]);
+  assert.throws(() => po.fontRuns("As quoted: அரிசி"), refuses("UNPRINTABLE_TEXT"));
 });
-
-test("a payment link is refused for an order that is not this business's, not approved or not payable", async (t) => {
-  const network = forbidNetwork(t);
-  const businessId = seedBusiness();
-  const other = seedBusiness({ name: "Other" });
-  const { order } = await seedOrder(businessId);
-  const options = { razorpay: TEST_KEYS };
-
-  await assert.rejects(payments.createPaymentLink(other, order.id, options), refuses("ORDER_NOT_FOUND"));
-  await assert.rejects(payments.createPaymentLink(businessId, "ord_missing", options), refuses("ORDER_NOT_FOUND"));
-  await assert.rejects(payments.refreshPaymentStatus(other, order.id, options), refuses("ORDER_NOT_FOUND"));
-  await assert.rejects(payments.refreshPaymentStatus(businessId, order.id, options), refuses("NO_PAYMENT_LINK"));
-
-  orders.advanceOrder(businessId, order.id, "cancelled");
-  await assert.rejects(payments.createPaymentLink(businessId, order.id, options), refuses("ORDER_NOT_PAYABLE"));
-
-  assert.equal(network.mock.callCount(), 0);
-  assert.equal(repo.getOrder(businessId, order.id).payment_link_url, null);
-});
-
-test("when Razorpay cannot be reached the error is surfaced and no link is recorded", async () => {
-  const businessId = seedBusiness();
-  const { order } = await seedOrder(businessId);
-  // A port that was just released: a real refused connection, not a made-up response.
-  const listener = net.createServer();
-  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
-  const { port } = listener.address();
-  await new Promise((resolve) => listener.close(resolve));
-  const unreachable = { razorpay: { ...TEST_KEYS, base: `http://127.0.0.1:${port}` } };
-
-  await assert.rejects(payments.createPaymentLink(businessId, order.id, unreachable), refuses("RAZORPAY_UNREACHABLE"));
-  assert.equal(repo.getOrder(businessId, order.id).payment_link_url, null);
-  assert.ok(!auditTypes(businessId).includes("payment.link"));
-  // The failed attempt does not block a later one.
-  await assert.rejects(payments.createPaymentLink(businessId, order.id, unreachable), refuses("RAZORPAY_UNREACHABLE"));
-});
-
-test("a real Razorpay test-mode link is created once per order, however often it is asked for", { skip: RAZORPAY_SKIP }, async (t) => {
-  try {
-    await realPaymentLink(t);
-  } catch (err) {
-    if (err.code !== "RAZORPAY_RATE_LIMITED") throw err;
-    t.skip("Razorpay answered HTTP 429 (rate limit), so the live payment link was NOT verified in this run; run the test again in a minute");
-  }
-});
-
-async function realPaymentLink(t) {
-  const businessId = seedBusiness();
-  const { order } = await seedOrder(businessId, { source: "simulated", counterpart: "simulated" });
-
-  const [first, second] = await Promise.all([payments.createPaymentLink(businessId, order.id), payments.createPaymentLink(businessId, order.id)]);
-  assert.match(first.paymentLinkId, /^plink_/);
-  assert.match(first.url, /^https:\/\/rzp\.io\//);
-  assert.equal(first.amount, 3250);
-  assert.equal(first.currency, "INR");
-  assert.equal(first.existing, false);
-  assert.deepEqual({ ...second, existing: false }, first, "the simultaneous call shares the same link");
-  assert.equal(second.existing, true);
-
-  const stored = repo.getOrder(businessId, order.id);
-  assert.equal(stored.payment_link_id, first.paymentLinkId);
-  assert.equal(stored.payment_link_url, first.url);
-  const linkEvents = repo.listAudit(businessId, { type: "payment.link" });
-  assert.equal(linkEvents.length, 1);
-  assert.equal(linkEvents[0].detail.testMode, true);
-  assert.equal(linkEvents[0].detail.vendorLabel, "simulated vendor");
-
-  const status = await payments.refreshPaymentStatus(businessId, order.id);
-  assert.deepEqual(status, { orderId: order.id, linkStatus: "created", orderStatus: "confirmed" });
-
-  // Razorpay made the link but our record of it is lost: asking again finds the same link instead of a second one.
-  repo.updateOrder(businessId, order.id, { payment_link_id: null, payment_link_url: null });
-  const recovered = await payments.createPaymentLink(businessId, order.id);
-  assert.equal(recovered.paymentLinkId, first.paymentLinkId);
-  assert.equal(recovered.url, first.url);
-
-  // With the link on record, no further call goes to Razorpay.
-  const network = forbidNetwork(t);
-  const again = await payments.createPaymentLink(businessId, order.id);
-  assert.equal(again.url, first.url);
-  assert.equal(again.existing, true);
-  assert.equal(network.mock.callCount(), 0);
-}

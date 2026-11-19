@@ -50,6 +50,24 @@ function stubFetch(t, handler) {
   return requested;
 }
 
+/**
+ * Razorpay's Orders API at the network boundary (POST /v1/orders, GET /v1/orders?receipt=), answering
+ * in the shapes of the Razorpay docs. Any other call fails the test: payment links are gone.
+ */
+function stubRazorpayOrders(t) {
+  let made = 0;
+  const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  return stubFetch(t, async (url, init) => {
+    if (/^https:\/\/api\.razorpay\.com\/v1\/orders\?receipt=ord_/.test(url) && (init.method ?? "GET") === "GET") return json({ entity: "collection", count: 0, items: [] });
+    if (url === "https://api.razorpay.com/v1/orders" && init.method === "POST") {
+      const body = JSON.parse(init.body);
+      made += 1;
+      return json({ id: `order_Reg${String(made).padStart(8, "0")}`, entity: "order", amount: body.amount, currency: body.currency, receipt: body.receipt, status: "created" });
+    }
+    throw new Error(`unexpected network call: ${url}`);
+  });
+}
+
 function fakeAgora(t, handler) {
   agent.setFetch(async (url, init) => {
     const out = await handler(url, init);
@@ -131,7 +149,7 @@ test("get_business_profile says the profile in the business script", async () =>
   const businessId = seedBusiness("kn-IN");
   const out = await registry.callTool(ownerCtx(businessId), "get_business_profile", {});
   assert.equal(out.business.id, businessId);
-  assert.equal(out.say, "ಇದು Asha Kirana ಅವರ ಖಾತೆ, ನಗರ Bengaluru.");
+  assert.equal(out.say, "ಇದು Asha Kirana ಅವರ ಖಾತೆ, ನಗರ ಬೆಂಗಳೂರು.");
 });
 
 /* ------------------------------------------------------------- requirement --- */
@@ -151,7 +169,7 @@ test("save_requirement records what is known, lists what is missing, and updates
   assert.deepEqual(second.missing, []);
   assert.equal(second.requirement.max_price, 95);
   assert.equal(second.requirement.session_id, ctx.sessionId);
-  assert.equal(second.say, "ठीक है, 200 किलो बासमती चावल लिख लिया, Bengaluru के लिए।");
+  assert.equal(second.say, "ठीक है, 200 किलो बासमती चावल लिख लिया, बेंगलुरु के लिए।");
   stop();
   assert.deepEqual(seen, ["requirement.saved", "requirement.saved"]);
 });
@@ -258,7 +276,27 @@ test("get_ranked_deals ranks stored quotes and speaks the best landed cost", asy
   assert.equal(out.deals.length, 1);
   assert.equal(out.deals[0].landedCost, 3250);
   assert.equal(out.deals[0].rank, 1);
-  assert.equal(out.say, "सबसे अच्छा सौदा Lakshmi Traders: 62 रुपये प्रति किलो, कुल 3250 रुपये।");
+  assert.equal(out.approvalCanFollow, true);
+  assert.equal(out.say, "सबसे अच्छा सौदा Lakshmi Traders: 62 रुपये प्रति किलो, कुल 3250 रुपये। क्या इस डील को मंज़ूरी के लिए पढ़ूँ?");
+});
+
+test("get_ranked_deals asks about approval only when request_approval would put up that same deal", async () => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const a = seedQuote(businessId);
+  repo.createQuote(businessId, { requirement_id: a.need.id, vendor_id: a.quote.vendor_id, unit_price: 62, unit: "kg", freight: 150, landed_cost: 3250 });
+  const tied = await registry.callTool(ctx, "get_ranked_deals", { requirementId: a.need.id });
+  assert.equal(tied.approvalCanFollow, false, "a tie is named by request_approval, not offered");
+  assert.doesNotMatch(tied.say, /approval\?$/);
+
+  const solo = seedBusiness("en-IN");
+  const { quote, need } = seedQuote(solo);
+  const asked = await registry.callTool(ownerCtx(solo), "request_approval", { quoteId: quote.id });
+  approvals.confirmApproval(solo, asked.approvalId, { decision: "approve", via: "button" });
+  await registry.callTool(ownerCtx(solo), "create_order", {});
+  const ordered = await registry.callTool(ownerCtx(solo), "get_ranked_deals", { requirementId: need.id });
+  assert.equal(ordered.approvalCanFollow, false, "an ordered deal is not offered again");
+  assert.doesNotMatch(ordered.say, /approval\?$/);
 });
 
 test("create_order is refused without an approved approval (the gate, negative)", async () => {
@@ -393,19 +431,33 @@ test("approved deal -> create_order -> create_payment_link (Razorpay test, faked
   assert.equal(order.say, `The order is placed, purchase order number ${order.poNumber}.`);
   await expectToolError(registry.callTool(ctx, "create_order", { approvalId: asked.approvalId }), "APPROVAL_CONSUMED");
 
-  const razorpay = stubFetch(t, async (url, init) => {
-    assert.match(url, /^https:\/\/api\.razorpay\.com\/v1\/payment_links/);
-    assert.equal(JSON.parse(init.body).amount, 325000);
-    return new Response(JSON.stringify({ id: "plink_test1", short_url: "https://rzp.io/i/test1" }), { status: 200, headers: { "Content-Type": "application/json" } });
-  });
+  const before = await registry.callTool(ctx, "get_order_status", {});
+  assert.equal(before.say, `Order ${order.poNumber} is confirmed; payment is pending and no payment link has been made yet.`);
+  assert.deepEqual(before.orders[0].payment, { status: "pending", linkExists: false, url: null });
+
+  const razorpay = stubRazorpayOrders(t);
   const link = await registry.callTool(ctx, "create_payment_link", { orderId: order.orderId });
-  assert.equal(link.url, "https://rzp.io/i/test1");
+  assert.match(link.url, /^https:\/\/sahay\.test\/pay\/[A-Za-z0-9_-]{22}$/);
   assert.equal(link.testMode, true);
-  assert.equal(razorpay.length, 1);
+  assert.equal(link.say, `The test-mode payment link for order ${order.poNumber} is ready and on the screen.`);
+  assert.ok(razorpay.includes("https://api.razorpay.com/v1/orders"), "a Razorpay order, not a payment link");
+  assert.ok(!razorpay.some((url) => url.includes("payment_links")));
 
   const status = await registry.callTool(ctx, "get_order_status", {});
   assert.equal(status.orders.length, 1);
-  assert.equal(status.say, `Order ${order.poNumber} is confirmed.`);
+  assert.equal(status.say, `Order ${order.poNumber} is confirmed; payment is pending and the payment link is ready.`);
+
+  // Checkout's success handler, verified with the key secret: the order is paid.
+  const payments = require("../src/orders/payments");
+  const token = link.url.split("/pay/")[1];
+  const { razorpayOrderId } = payments.checkoutForToken(token);
+  const paymentId = "pay_RegistryPay0001";
+  const signature = require("node:crypto").createHmac("sha256", "test-razorpay-secret").update(`${razorpayOrderId}|${paymentId}`).digest("hex");
+  payments.verifyCheckoutPayment(token, { razorpay_payment_id: paymentId, razorpay_order_id: razorpayOrderId, razorpay_signature: signature });
+  const paid = await registry.callTool(ctx, "get_order_status", {});
+  assert.equal(paid.say, `Order ${order.poNumber} is paid.`);
+  assert.equal(paid.orders[0].payment.status, "paid");
+  await expectToolError(registry.callTool(ctx, "create_payment_link", {}), "ORDER_ALREADY_PAID");
 });
 
 test("create_payment_link is refused for an order that does not exist for this business", async () => {
@@ -432,10 +484,12 @@ test("save_requirement stores canonical units and cities from Hindi, Kannada and
   assert.equal(hi.requirement.unit, "kg");
   assert.equal(hi.requirement.city, "Bengaluru");
   assert.equal(hi.requirement.item, "बासमती चावल", "the item is kept as the owner said it");
-  assert.equal(hi.say, "ठीक है, 200 किलो बासमती चावल लिख लिया, Bengaluru के लिए।");
+  assert.equal(hi.say, "ठीक है, 200 किलो बासमती चावल लिख लिया, बेंगलुरु के लिए।");
 
-  const kn = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "ಕಿಲೋ", city: "ಬೆಂಗಳೂರು" });
+  const kn = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "ಕಿಲೋ", city: "ಬೆಂಗಳೂರು", reply_language: "kn-IN" });
   assert.deepEqual([kn.requirement.unit, kn.requirement.city], ["kg", "Bengaluru"]);
+  assert.match(kn.say, /ಬೆಂಗಳೂರುಗೆ/, "the city is said in Kannada script, never \"Bengaluruಗೆ\"");
+  assert.doesNotMatch(kn.say, /\p{Script=Latin}/u);
   const en = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "cotton t-shirts", quantity: 500, unit: "pieces", city: "Bangalore" });
   assert.deepEqual([en.requirement.unit, en.requirement.city], ["piece", "Bengaluru"]);
   const mixed = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "कॉटन टीशर्ट", quantity: 500, unit: "पीस", city: "Bengaluru" });
@@ -627,11 +681,10 @@ test("money defaults never pick between several; one deal waits at a time, so a 
   assert.notEqual(next.orderId, order.orderId);
   assert.equal(repo.getApproval(businessId, second.approvalId).status, "consumed");
 
-  // two orders await a link: the payment default refuses to choose
-  await assert.rejects(
-    registry.callTool(ctx, "create_payment_link", {}),
-    (err) => err.code === "AMBIGUOUS" && err.say.includes(order.poNumber) && err.say.includes(next.poNumber),
-  );
+  // two confirmed orders: the payment default is the most recent one (e2e r3 bug 2)
+  stubRazorpayOrders(t);
+  const link = await registry.callTool(ctx, "create_payment_link", {});
+  assert.equal(link.orderId, next.orderId);
 });
 
 test("create_payment_link with no id uses the one order awaiting payment, through the approval gate", async (t) => {
@@ -642,10 +695,25 @@ test("create_payment_link with no id uses the one order awaiting payment, throug
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
   approvals.confirmApproval(businessId, asked.approvalId, { decision: "approve", via: "button" });
   const order = await registry.callTool(ctx, "create_order", {});
-  stubFetch(t, async () => new Response(JSON.stringify({ id: "plink_default", short_url: "https://rzp.io/i/default" }), { status: 200, headers: { "Content-Type": "application/json" } }));
-  const link = await registry.callTool(ctx, "create_payment_link", {});
+
+  // e2e r3 bug 2: a new requirement saved afterwards, in a fresh call, must not hide the order.
+  const fresh = ownerCtx(businessId); // a new session row: a fresh call
+  await registry.callTool(fresh, "save_requirement", { item: "toor dal", quantity: 20, unit: "kg", city: "Mysuru" });
+  const status = await registry.callTool(fresh, "get_order_status", {});
+  assert.equal(status.orders.at(-1).orderId, order.orderId);
+  assert.match(status.say, /payment is pending/);
+
+  stubRazorpayOrders(t);
+  const link = await registry.callTool(fresh, "create_payment_link", {});
   assert.equal(link.orderId, order.orderId);
-  assert.equal(link.url, "https://rzp.io/i/default");
+  assert.match(link.url, /^https:\/\/sahay\.test\/pay\//);
+  const again = await registry.callTool(fresh, "create_payment_link", {});
+  assert.equal(again.url, link.url);
+  assert.equal(again.existing, true);
+
+  // only a cancelled order left: said plainly, nothing is made
+  require("../src/orders").advanceOrder(businessId, order.orderId, "cancelled");
+  await expectToolError(registry.callTool(fresh, "create_payment_link", {}), "NO_PAYABLE_ORDER");
 });
 
 test("get_job_status with no id reports the running or latest job, and says so when there is none", async () => {
@@ -858,4 +926,15 @@ test("review #10: the spoken 'order placed' line names a simulated vendor as suc
   // The narrator's line for an order placed outside a tool call carries the label too.
   assert.equal(narrator.LINES.order_created["en-IN"]({ po: "SAHAY/2026/0001", sim: true }), "The order is placed (simulated vendor), purchase order SAHAY/2026/0001.");
   assert.equal(narrator.LINES.order_created["hi-IN"]({ po: "SAHAY/2026/0001", sim: false }), "ऑर्डर बन गया, खरीद आदेश नंबर SAHAY/2026/0001।");
+});
+
+test("request_approval holds narration before the server speaks the read-back, so nothing comes between it and the answer", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGH" });
+  const { quote } = seedQuote(businessId);
+  const order = [];
+  t.mock.method(narrator, "holdForApproval", (id, approvalId) => order.push(["hold", id, approvalId]));
+  t.mock.method(agent, "speak", async () => order.push(["speak"]));
+  const out = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  assert.deepEqual(order, [["hold", businessId, out.approvalId], ["speak"]]);
 });

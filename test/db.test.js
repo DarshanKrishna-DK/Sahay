@@ -57,7 +57,7 @@ const hasCode = (code) => (err) => err.code === code;
 test("the schema creates every table of the contract", () => {
   const tables = db.getDb().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((r) => r.name);
   assert.deepEqual(tables, [
-    "approval_readbacks", "approvals", "audit_log", "businesses", "followups", "jobs", "link_codes", "negotiations", "orders",
+    "approval_readbacks", "approvals", "audit_log", "businesses", "followups", "jobs", "link_codes", "negotiations", "orders", "payment_checkouts",
     "quotes", "requirements", "sessions", "telegram_links", "vendors",
   ]);
   assert.equal(db.getDb().prepare("PRAGMA user_version").get().user_version, db.SCHEMA_VERSION);

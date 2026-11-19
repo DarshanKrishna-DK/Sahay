@@ -248,6 +248,43 @@ BEGIN
   SELECT RAISE(ABORT, 'the deal on an order cannot be changed');
 END;
 
+-- The pay page of an order (Razorpay Orders API + Standard Checkout, test mode). One per order.
+-- `token_hash` is SHA-256 of the 128-bit token in the page URL (PUBLIC_URL/pay/<token>); the
+-- token is the only thing a payer holds, it names this business and order, and it expires.
+-- A separate table, not columns on orders: an existing database file gets it from
+-- CREATE TABLE IF NOT EXISTS without a migration.
+CREATE TABLE IF NOT EXISTS payment_checkouts (
+  id                  TEXT PRIMARY KEY,
+  business_id         TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  order_id            TEXT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  razorpay_order_id   TEXT NOT NULL,
+  token_hash          TEXT NOT NULL UNIQUE,
+  expires_at          TEXT NOT NULL,
+  created_at          TEXT NOT NULL,
+  paid_at             TEXT,
+  razorpay_payment_id TEXT
+);
+
+CREATE TRIGGER IF NOT EXISTS payment_checkouts_need_own_order
+BEFORE INSERT ON payment_checkouts
+WHEN NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = NEW.order_id AND o.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a checkout is for an order of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS payment_checkouts_order_is_fixed
+BEFORE UPDATE OF business_id, order_id, razorpay_order_id ON payment_checkouts
+BEGIN
+  SELECT RAISE(ABORT, 'the order behind a checkout cannot be changed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS payment_checkouts_paid_once
+BEFORE UPDATE OF paid_at, razorpay_payment_id ON payment_checkouts
+WHEN OLD.paid_at IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'a paid checkout cannot be changed');
+END;
+
 CREATE TABLE IF NOT EXISTS followups (
   id          TEXT PRIMARY KEY,
   business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,

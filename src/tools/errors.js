@@ -86,6 +86,31 @@ const SAY = {
     "kn-IN": "ಪಾವತಿ ಲಿಂಕ್ ಮಾಡಲು ಆಗಲಿಲ್ಲ.",
     "en-IN": "The payment link could not be created.",
   },
+  payment_link_unavailable: {
+    "hi-IN": "भुगतान का यह लिंक अब काम नहीं करता, मुझसे नया लिंक माँगिए।",
+    "kn-IN": "ಈ ಪಾವತಿ ಲಿಂಕ್ ಈಗ ಕೆಲಸ ಮಾಡುವುದಿಲ್ಲ, ನನ್ನಿಂದ ಹೊಸ ಲಿಂಕ್ ಕೇಳಿ.",
+    "en-IN": "That payment link no longer works; ask me for a new one.",
+  },
+  payment_unverified: {
+    "hi-IN": "भुगतान की पुष्टि नहीं हो पाई, इसलिए ऑर्डर अभी भुगतान वाला नहीं माना गया।",
+    "kn-IN": "ಪಾವತಿಯನ್ನು ದೃಢಪಡಿಸಲು ಆಗಲಿಲ್ಲ, ಹಾಗಾಗಿ ಆರ್ಡರ್ ಇನ್ನೂ ಪಾವತಿಯಾಗಿಲ್ಲ.",
+    "en-IN": "The payment could not be verified, so the order is not marked paid.",
+  },
+  already_paid: {
+    "hi-IN": "इस ऑर्डर का भुगतान पहले ही हो चुका है।",
+    "kn-IN": "ಈ ಆರ್ಡರ್‌ಗೆ ಈಗಾಗಲೇ ಪಾವತಿ ಆಗಿದೆ.",
+    "en-IN": "This order is already paid.",
+  },
+  order_step_not_allowed: {
+    "hi-IN": "ऑर्डर अभी इस स्थिति में नहीं जा सकता।",
+    "kn-IN": "ಆರ್ಡರ್ ಈಗ ಈ ಸ್ಥಿತಿಗೆ ಹೋಗಲು ಆಗುವುದಿಲ್ಲ.",
+    "en-IN": "The order cannot move to that status now.",
+  },
+  busy: {
+    "hi-IN": "अभी बहुत लोग इस्तेमाल कर रहे हैं, थोड़ी देर बाद कोशिश कीजिए।",
+    "kn-IN": "ಈಗ ತುಂಬಾ ಜನ ಬಳಸುತ್ತಿದ್ದಾರೆ, ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.",
+    "en-IN": "A lot of people are using Sahay right now; please try again in a little while.",
+  },
   discovery_failed: {
     "hi-IN": "इंडियामार्ट से जानकारी नहीं मिल पाई।",
     "kn-IN": "ಇಂಡಿಯಾಮಾರ್ಟ್‌ನಿಂದ ಮಾಹಿತಿ ಸಿಗಲಿಲ್ಲ.",
@@ -132,11 +157,30 @@ const CODE_MAP = {
   NOT_NEGATIVE: ["not_affirmative", 409],
   EVIDENCE_REQUIRED: ["no_voice_evidence", 409],
   EVIDENCE_TOO_OLD: ["not_affirmative", 409],
+  // The voice-approval gate (approvals.answerToReadback): the yes must answer the read-back the server spoke.
+  READBACK_NOT_SPOKEN: ["no_voice_evidence", 409],
+  READBACK_NOT_HEARD: ["no_voice_evidence", 409],
+  EVIDENCE_UNORDERED: ["no_voice_evidence", 409],
+  NO_ANSWER_YET: ["not_affirmative", 409],
+  ANSWER_DURING_READBACK: ["not_affirmative", 409],
+  READBACK_SUPERSEDED: ["not_affirmative", 409],
+  BUSY: ["busy", 503],
+  ILLEGAL_TRANSITION: ["order_step_not_allowed", 409],
+  PAID_BY_PAYMENT_ONLY: ["order_step_not_allowed", 409],
   PO_NOT_ISSUED: ["po_failed", 502],
   RAZORPAY_REFUSED: ["payment_failed", 502],
   RAZORPAY_BAD_RESPONSE: ["payment_failed", 502],
+  RAZORPAY_UNREACHABLE: ["payment_failed", 502],
+  RAZORPAY_RATE_LIMITED: ["payment_failed", 503],
+  RAZORPAY_NOT_CONFIGURED: ["payment_failed", 503],
+  RAZORPAY_LIVE_KEY: ["payment_failed", 503],
+  PUBLIC_URL_NOT_SET: ["payment_failed", 503],
   ORDER_NOT_PAYABLE: ["payment_failed", 409],
-  NO_PAYMENT_LINK: ["payment_failed", 409],
+  ORDER_ALREADY_PAID: ["already_paid", 409],
+  PAY_LINK_INVALID: ["payment_link_unavailable", 404],
+  PAY_LINK_EXPIRED: ["payment_link_unavailable", 410],
+  PAYMENT_DETAILS_INVALID: ["payment_unverified", 400],
+  PAYMENT_SIGNATURE_INVALID: ["payment_unverified", 400],
 };
 
 /** DiscoveryError and LLMError codes are lower case. */

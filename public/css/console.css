@@ -412,6 +412,10 @@ img { max-width: 100%; display: block; }
 .turn.live .bubble { border-style: dashed; }
 .turn .flag { font-size: 13px; color: var(--text-faint); }
 .turn.cut .flag { color: var(--terra); }
+/* A server event among the spoken turns (a follow-up that fired): centred, not a speaker. */
+.turn.system { align-self: center; justify-items: center; max-width: 94%; }
+.turn.system .who { color: var(--text-muted); }
+.turn.system .bubble { background: var(--amber-tint); border: 1px dashed var(--amber-line); font-size: 15.5px; text-align: center; }
 
 /* ------------------------------------------------------------------ plan */
 .plan { padding: 18px 22px; }

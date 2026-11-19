@@ -531,3 +531,45 @@ test("agentStatus: GET /agents/{id} (agora-findings: Query status) returns the s
   await assert.rejects(agent.agentStatus("GONE"), (err) => err.name === "AgoraError" && err.status === 404);
   await assert.rejects(agent.agentStatus(""), (err) => err.code === "AGENT_REQUIRED");
 });
+
+/* ------------------------------------------- E2E round 3 regressions --- */
+
+test("E2E r3 bug 4: once item, quantity, unit and city are saved, the prompt starts sourcing at once; max price is optional", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const prompt = agent.systemPrompt({ name: "Shree Balaji Stores", city: "Bengaluru", language });
+    assert.match(prompt, /empty missing list, call start_sourcing in the same turn/);
+    assert.match(prompt, /maximum price is optional: never ask for it before the search has started/);
+    assert.match(prompt, /even one said before or in another language, call save_requirement with the item and no id/);
+    // The prompt never makes a price ceiling a precondition of sourcing.
+    assert.doesNotMatch(prompt, /ask for (the )?(maximum|max) price before/i);
+  }
+});
+
+test("E2E r3 bugs 4+5: the prompt keeps every Hindi word in Devanagari and every Kannada word in Kannada script", () => {
+  const prompt = agent.systemPrompt({ name: "Shree Balaji Stores", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /a Hindi reply uses only Devanagari and a Kannada reply only Kannada script/);
+  assert.match(prompt, /Never put a Devanagari word in a Kannada reply or a Kannada word in a Hindi reply/);
+  assert.match(prompt, /बेंगलुरु/);
+  assert.match(prompt, /ಬೆಂಗಳೂರು/);
+  assert.match(prompt, /never a word that joins Latin letters to Devanagari or Kannada letters/);
+  assert.doesNotMatch(prompt, /zoor|Bengaluruಗೆ/, "no bad example for the model to copy");
+  assert.match(prompt, /in the words and script the owner used/);
+  assert.match(prompt, /every vendor name and figure unchanged/);
+});
+
+test("E2E r3 bug 8: every Agora POST logs its status and duration, with the agent id masked and no credential", async (t) => {
+  const lines = [];
+  agent.setTimingLog((line) => lines.push(line));
+  t.after(() => agent.setTimingLog(null));
+  fakeAgora(t, (url) => (url.endsWith("/join") ? { json: { agent_id: "AGENT_SECRETISH_ID", status: "RUNNING" } } : { json: {} }));
+  await agent.startAgent({ name: "n", properties: {} });
+  await agent.speak("AGENT_SECRETISH_ID", "नमस्ते", { priority: "INTERRUPT", interruptable: false });
+  await agent.history("AGENT_SECRETISH_ID").catch(() => {});
+  assert.equal(lines.length, 2, "GET /history is not logged");
+  assert.match(lines[0], /^\[agora\] POST \/join 200 in \d+ ms$/);
+  assert.match(lines[1], /^\[agora\] POST \/agents\/<id>\/speak 200 in \d+ ms$/);
+  for (const line of lines) {
+    assert.ok(!line.includes("AGENT_SECRETISH_ID"));
+    assert.ok(!/test-customer|Basic /.test(line));
+  }
+});

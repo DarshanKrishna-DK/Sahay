@@ -560,6 +560,42 @@ function transitionOrder(businessId, orderId, from, to) {
   return updateRow("orders", businessId, orderId, { status: to }, { status: from });
 }
 
+/* --------------------------------------------------- payment checkouts --- */
+
+/** The pay page of an order (src/orders/payments.js). One per order (UNIQUE order_id). */
+function createCheckout(businessId, { order_id, razorpay_order_id, token_hash, expires_at }) {
+  owned("orders", businessId, order_id, "order");
+  const id = newId("chk");
+  insertRow("payment_checkouts", {
+    id,
+    business_id: tenant(businessId),
+    order_id,
+    razorpay_order_id: requireText(razorpay_order_id, "razorpay_order_id"),
+    token_hash: requireText(token_hash, "token_hash"),
+    expires_at: requireText(expires_at, "expires_at"),
+    created_at: now(),
+  });
+  return getRow("payment_checkouts", businessId, id);
+}
+
+function getCheckoutForOrder(businessId, orderId) {
+  return listRows("payment_checkouts", businessId, { order_id: orderId })[0] ?? null;
+}
+
+/** A new token for an unpaid checkout (the old one stops working). Returns false when it is paid. */
+function renewCheckoutToken(businessId, checkoutId, { token_hash, expires_at }) {
+  return db
+    .prepare("UPDATE payment_checkouts SET token_hash = ?, expires_at = ? WHERE business_id = ? AND id = ? AND paid_at IS NULL")
+    .run(requireText(token_hash, "token_hash"), requireText(expires_at, "expires_at"), tenant(businessId), checkoutId).changes === 1;
+}
+
+/** Record the verified payment once. Returns false when the checkout was already paid. */
+function markCheckoutPaid(businessId, checkoutId, { razorpay_payment_id }) {
+  return db
+    .prepare("UPDATE payment_checkouts SET paid_at = ?, razorpay_payment_id = ? WHERE business_id = ? AND id = ? AND paid_at IS NULL")
+    .run(now(), requireText(razorpay_payment_id, "razorpay_payment_id"), tenant(businessId), checkoutId).changes === 1;
+}
+
 /* ----------------------------------------------------------- followups --- */
 
 function createFollowup(businessId, { order_id, kind, due_at, message }) {
@@ -673,6 +709,15 @@ const system = {
       .map((row) => hydrate("jobs", row));
   },
 
+  /**
+   * The checkout a pay-page token opens, with nothing else of its business. For the public pay
+   * page only: the token (its SHA-256 here) is the payer's whole credential.
+   */
+  findCheckoutByTokenHash(tokenHash) {
+    if (typeof tokenHash !== "string" || tokenHash === "") return null;
+    return db.prepare("SELECT t.* FROM payment_checkouts t WHERE t.token_hash = ?").get(tokenHash) ?? null;
+  },
+
   /** Use a one-time link code. Returns the business it was issued for, or null. */
   redeemLinkCode(code, nowIso = now()) {
     return db.transaction(() => {
@@ -695,6 +740,7 @@ module.exports = {
   createApproval, getApproval, listApprovals, decideApproval, withdrawApproval,
   recordApprovalReadback, listApprovalReadbacks,
   createOrderFromApproval, getOrder, getOrderDocument, listOrders, updateOrder, transitionOrder,
+  createCheckout, getCheckoutForOrder, renewCheckoutToken, markCheckoutPaid,
   createFollowup, getFollowup, listFollowups, settleFollowup,
   appendAudit, listAudit,
   setTelegramLink, getTelegramLink, removeTelegramLink, createLinkCode,

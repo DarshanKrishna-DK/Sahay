@@ -8,13 +8,15 @@
   <link rel="icon" type="image/png" href="/assets/sahay-logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- The Agora SDKs come from here with SRI (CORS mode): open the connection during parse. -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&family=Noto+Sans+Kannada:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/css/console.css">
   <!-- process shim for the Agora toolkit and the saved theme, before first paint. -->
   <script src="/js/boot.js"></script>
-  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins with SRI) are injected in order by
+  <!-- The Agora SDKs (RTC 4.24.3 then RTM 2.2.3, exact pins with SRI) are injected together (parallel download, run in order) by
        js/voice.js right after first paint, so the console renders without waiting for 3 MB.
-       The toolkit ES module is imported lazily; this import map pins its hash (Subresource
+       The toolkit ES module is imported at the same time; this import map pins its hash (Subresource
        Integrity for import()). The server's CSP allows this one inline script by its sha256. -->
   <script type="importmap">{"integrity":{"https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs":"sha384-gKgVIScrXAEj86/qjyYoJrj3lHYPHGhY8vgYBXrlaVhRO95WE68kC6xQW4YN3U+f"}}</script>
   <script type="module" src="/js/app.js"></script>

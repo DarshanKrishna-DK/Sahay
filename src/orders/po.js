@@ -65,12 +65,19 @@ const INDIC_FONTS = [
   },
 ];
 const HELVETICA_TEXT = /^[\n\u0020-\u007E\u00A0-\u00FF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]*$/;
+const HELVETICA_CHAR = /[\n\u0020-\u007E\u00A0-\u00FF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]/;
+/** Characters that belong to whatever run they sit in: spaces, joiners, combining marks, Indic dandas. */
+const RUN_NEUTRAL = /[\s\p{Join_Control}\p{M}\u0964\u0965]/u;
 
 /** Which font can print this text: "Helvetica", or `{ script, source }` for an installed Indic font. */
 function fontFor(text, fonts = INDIC_FONTS) {
   if (HELVETICA_TEXT.test(text)) return "Helvetica";
   const indic = fonts.find((font) => font.pattern.test(text));
   if (!indic) throw new PoError("UNPRINTABLE_TEXT", "The purchase order contains text in a script Sahay cannot print.");
+  return indicFont(indic);
+}
+
+function indicFont(indic) {
   const source = indic.candidates.find(([file]) => fs.existsSync(file));
   if (!source) {
     throw new PoError(
@@ -79,6 +86,30 @@ function fontFor(text, fonts = INDIC_FONTS) {
     );
   }
   return { script: indic.script, source };
+}
+
+/**
+ * Split text into runs that one font each can print, e.g. `As quoted: "बासठ रुपये किलो"` ->
+ * Helvetica `As quoted: "`, Devanagari `बासठ रुपये किलो`, Helvetica `"`. A Noto Indic font has no
+ * Latin letters, so mixed text drawn in it alone prints Latin as empty boxes (e2e r3 PO defect).
+ * Spaces, joiners and combining marks stay in the run they are in. Returns [{ text, font }].
+ */
+function fontRuns(text, fonts = INDIC_FONTS) {
+  const runs = [];
+  for (const char of String(text)) {
+    const last = runs.at(-1);
+    let key;
+    if (last && RUN_NEUTRAL.test(char)) key = last.key;
+    else if (HELVETICA_CHAR.test(char)) key = "Helvetica";
+    else {
+      const indic = fonts.find((font) => font.pattern.test(char));
+      if (!indic) throw new PoError("UNPRINTABLE_TEXT", "The purchase order contains text in a script Sahay cannot print.");
+      key = indic.script;
+    }
+    if (last && last.key === key) last.text += char;
+    else runs.push({ key, text: char });
+  }
+  return runs.map(({ key, text: part }) => ({ text: part, font: key === "Helvetica" ? "Helvetica" : indicFont(fonts.find((font) => font.script === key)) }));
 }
 
 const money = (n) => `Rs. ${Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -142,21 +173,27 @@ function draw(doc, model) {
   const half = width / 2;
   const registered = new Set();
 
-  /** Draw text in a font that can print it; `bold` applies to Latin text only. */
+  /**
+   * Draw text, each run in a font that can print it (fontRuns), continued on one line box so
+   * mixed Latin and Indic text wraps as one paragraph; `bold` applies to Latin runs only.
+   */
   const put = (text, { size, color = INK, bold = false, x, y, ...options } = {}) => {
-    const font = fontFor(text);
-    if (font === "Helvetica") {
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica");
-    } else {
-      if (!registered.has(font.script)) {
-        doc.registerFont(font.script, ...font.source);
-        registered.add(font.script);
-      }
-      doc.font(font.script);
-    }
+    const runs = fontRuns(text);
     doc.fontSize(size).fillColor(color);
-    if (x === undefined) doc.text(text, options);
-    else doc.text(text, x, y, options);
+    runs.forEach((run, i) => {
+      if (run.font === "Helvetica") {
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica");
+      } else {
+        if (!registered.has(run.font.script)) {
+          doc.registerFont(run.font.script, ...run.font.source);
+          registered.add(run.font.script);
+        }
+        doc.font(run.font.script);
+      }
+      const runOptions = { ...options, continued: i < runs.length - 1 };
+      if (i === 0 && x !== undefined) doc.text(run.text, x, y, runOptions);
+      else doc.text(run.text, runOptions);
+    });
   };
 
   put("PURCHASE ORDER", { size: 9, color: ACCENT, characterSpacing: 3 });
@@ -203,10 +240,13 @@ function draw(doc, model) {
   rule(columns.quantity[0]);
   y += 10;
 
+  const LABEL = [columns.quantity[0], 120]; // 245..365
+  const VALUE = [LABEL[0] + LABEL[1] + 15, width + MARGIN - (LABEL[0] + LABEL[1] + 15)]; // 380..545
   const summary = (label, value, options) => {
-    put(label, { x: columns.quantity[0], y, width: 200, align: "right", ...options });
-    put(value, { x: columns.amount[0] - 60, y, width: columns.amount[1] + 60, align: "right", ...options });
-    y = doc.y + 6;
+    put(label, { x: LABEL[0], y, width: LABEL[1], align: "right", ...options });
+    const labelBottom = doc.y;
+    put(value, { x: VALUE[0], y, width: VALUE[1], align: "right", ...options });
+    y = Math.max(labelBottom, doc.y) + 6;
   };
   summary("Freight", model.freight, { size: 10, color: MUTED });
   summary("Total", model.total, { size: 13, bold: true });
@@ -229,7 +269,7 @@ function draw(doc, model) {
 
 /** Refuse before a file is opened if any text on the page has no font that can print it. */
 function assertPrintable(value) {
-  if (typeof value === "string") fontFor(value);
+  if (typeof value === "string") fontRuns(value);
   else if (value && typeof value === "object") Object.values(value).forEach(assertPrintable);
 }
 
@@ -281,4 +321,4 @@ function renderPO(document) {
   });
 }
 
-module.exports = { PoError, renderPO, poModel, poFilePath, fontFor };
+module.exports = { PoError, renderPO, poModel, poFilePath, fontFor, fontRuns };

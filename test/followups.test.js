@@ -150,3 +150,36 @@ test("review #10: every follow-up and Telegram message about a simulated vendor'
   const real = await seedOrder({ language: "en-IN" });
   assert.ok(followups.scheduleForOrder(real.businessId, real.order.id).every((row) => !/simulated/.test(row.message)));
 });
+
+test("e2e r3: a follow-up fires at its due time (its own timer), not on the next 30 s tick", async (t) => {
+  const { businessId, order } = await seedOrder({ language: "en-IN", leadTime: null });
+  const stop = followups.start({ intervalMs: 60 * 60 * 1000 }); // the ticker cannot be what fires it
+  t.after(stop);
+  const due = Date.now() + 250;
+  const [row] = followups.scheduleForOrder(businessId, order.id, { now: due - 24 * HOUR });
+  followups.arm([row]);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const fired = repo.listFollowups(businessId, { order_id: order.id })[0];
+  assert.equal(fired.status, "fired");
+  const lateMs = Date.parse(fired.fired_at) - Date.parse(fired.due_at);
+  assert.ok(lateMs >= 0 && lateMs < 400, `fired ${lateMs} ms after due`);
+  assert.ok(followups.DEMO_TICK_MS <= 5000, "the demo ticker runs at least every 5 s");
+});
+
+test("a verified payment (order.paid) cancels the order's payment reminder at once and tells the owner; other follow-ups stay", async (t) => {
+  const sent = fakeTelegram(t);
+  const { businessId, order } = await seedOrder({ language: "hi-IN", simulated: true });
+  repo.setTelegramLink(businessId, "777");
+  followups.scheduleForOrder(businessId, order.id);
+  await followups.onEvent({ businessId, type: "order.paid", data: { orderId: order.id } });
+  const rows = repo.listFollowups(businessId, { order_id: order.id });
+  assert.equal(rows.find((r) => r.kind === "payment_due").status, "cancelled");
+  assert.equal(rows.find((r) => r.kind === "delivery_check").status, "scheduled");
+  assert.equal(sent.at(-1).body.text, `भुगतान मिल गया (Razorpay टेस्ट मोड): ऑर्डर ${order.po_number} (सिम्युलेटेड विक्रेता), 3250 रुपये।`);
+  assert.equal(followups.cancelPaymentDue(businessId, order.id), 0, "nothing left to cancel");
+  // another business cannot cancel this one's reminders
+  const other = await seedOrder();
+  followups.scheduleForOrder(other.businessId, other.order.id);
+  assert.equal(followups.cancelPaymentDue(businessId, other.order.id), 0);
+  assert.equal(repo.listFollowups(other.businessId, { order_id: other.order.id }).find((r) => r.kind === "payment_due").status, "scheduled");
+});

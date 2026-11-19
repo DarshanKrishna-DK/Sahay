@@ -59,6 +59,18 @@ function setFetch(fn) {
   fetchImpl = fn ?? ((...args) => fetch(...args));
 }
 
+/**
+ * One line per POST (/join, /speak, /update, /leave) with its status and duration, so a slow call
+ * start can be split into its parts from the server log (E2E r3: 10.8 s from Start call to the
+ * disclosure). Method, path with the agent id masked, status and milliseconds only: never a
+ * header, a body or a credential.
+ */
+let timingLog = (line) => console.info(line);
+function setTimingLog(fn) {
+  timingLog = fn ?? ((line) => console.info(line));
+}
+const maskPath = (path) => path.replace(/agents\/[^/]+/, "agents/<id>");
+
 function basicAuth() {
   const { customerId, customerSecret } = config.agora;
   if (!customerId || !customerSecret) throw new AgoraError("AGORA_NOT_CONFIGURED", "AGORA_CUSTOMER_ID and AGORA_CUSTOMER_SECRET are required.");
@@ -79,6 +91,7 @@ async function call(method, path, body, { retry = false } = {}) {
   const attempts = retry ? 2 : 1;
   for (let attempt = 1; ; attempt++) {
     let res;
+    const sentAt = Date.now();
     try {
       res = await fetchImpl(projectPath(path), {
         method,
@@ -92,6 +105,7 @@ async function call(method, path, body, { retry = false } = {}) {
       throw new AgoraError("AGORA_UNREACHABLE", `Agora did not answer: ${err.name === "TimeoutError" ? "timed out" : err.message}`);
     }
     const text = await res.text();
+    if (method !== "GET") timingLog(`[agora] ${method} ${maskPath(path)} ${res.status} in ${Date.now() - sentAt} ms`);
     let json = null;
     if (text) {
       try {
@@ -107,7 +121,7 @@ async function call(method, path, body, { retry = false } = {}) {
     }
     const reason = typeof json?.reason === "string" ? json.reason : null;
     const code = res.status === 404 ? "AGENT_NOT_FOUND" : res.status === 401 ? "AGORA_UNAUTHORIZED" : res.status === 409 ? "AGENT_CONFLICT" : "AGORA_REQUEST_FAILED";
-    throw new AgoraError(code, `Agora ${method} ${path.replace(/agents\/[^/]+/, "agents/<id>")} answered ${res.status}${reason ? ` (${reason})` : ""}`, {
+    throw new AgoraError(code, `Agora ${method} ${maskPath(path)} answered ${res.status}${reason ? ` (${reason})` : ""}`, {
       status: res.status,
       reason,
     });
@@ -169,15 +183,17 @@ function systemPrompt(business, { now = new Date() } = {}) {
     "The system has already told the owner that you are an automated assistant. Do not greet again; answer what the owner says.",
     `Today's date in India is ${todayInIndia(now)}.`,
     "Language: choose the language of every reply, filler included, from the owner's most recent sentence only. An English sentence gets an English reply; a Hindi sentence gets Hindi in Devanagari script; a Kannada sentence gets Kannada in Kannada script. Hindi or Kannada words written in Latin letters count as Hindi or Kannada: answer them in their own script. Code-mixed: reply in the language most of the owner's words are in. Never write Hindi or Kannada in Latin letters.",
+    "Script: a Hindi reply uses only Devanagari and a Kannada reply only Kannada script, for every word: fillers, loanwords, item names and city names (बेंगलुरु in Hindi, ಬೆಂಗಳೂರು in Kannada). Never put a Devanagari word in a Kannada reply or a Kannada word in a Hindi reply, and never a word that joins Latin letters to Devanagari or Kannada letters. Inside Hindi or Kannada the only Latin letters allowed are a vendor's or business's own name, a purchase-order number and the word Razorpay; digits are fine. If a tool's `say` has a city or an item in another script, say that word in the reply's script.",
     `The greeting was spoken in ${LANGUAGE_NAMES[language]} because that is the business's language. That greeting does not decide your reply language, and neither do your earlier replies or the language of tool results. When the owner switches language, switch with them at once.`,
     "Every tool takes reply_language: always set it to the language of the owner's last sentence (hi-IN for Hindi, kn-IN for Kannada, en-IN for English), so the tool's `say` comes back in that language.",
     "Voice: you speak with a woman's voice, so when you speak Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
     "Style: one or two short spoken sentences per turn. No lists, markdown, emoji, URLs, ids or tables. Use Indian number words (lakh, crore) and say units in full (kilograms, pieces, days).",
     `Before every tool call, first say a very short filler in the owner's language, then call the tool: in English "${FILLER["en-IN"]}", in Hindi "${FILLER["hi-IN"]}", in Kannada "${FILLER["kn-IN"]}".`,
     "Never invent a number, price, count, date, vendor or status. They come only from tool results. If a tool has not returned yet, say what is happening and that you will report back.",
-    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total. Never change a figure from a tool. If a `say` is not in the language of the owner's last sentence, say the same thing in the owner's language with every name and figure unchanged.",
+    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total. Never change a figure from a tool. If a `say` is not in the language of the owner's last sentence, say the same thing in the owner's language with every vendor name and figure unchanged.",
     "Ids: never pass an id you did not copy exactly from a tool result in this call, and normally pass none. Every tool works on the current requirement, the best vendor, the best deal, or the one approval or order waiting when its id is left out. To pick a vendor, use vendorRank (1 = best, as get_shortlist ranks them). If a tool answers with several choices, read them to the owner and ask which one.",
-    "To understand a purchase, call save_requirement as soon as you know the item, passing the unit and city as the owner said them. To add details later, call save_requirement again without an id. If its result lists missing fields, ask for them, at most two clarifying questions in total, then continue with what you have.",
+    "To understand a purchase, call save_requirement as soon as you know the item, passing item, unit and city in the words and script the owner used (बासमती चावल, ಬಾಸ್ಮತಿ ಅಕ್ಕಿ, basmati rice). When the owner states a purchase with its quantity, even one said before or in another language, call save_requirement with the item and no id. To add details later, call save_requirement again without item and without an id. If its result lists missing fields, ask for them, at most two clarifying questions in total, then continue with what you have.",
+    "As soon as save_requirement returns an empty missing list, call start_sourcing in the same turn, right after speaking its `say`, without asking anything first. A maximum price is optional: never ask for it before the search has started. If the owner gives one, pass it to save_requirement as max_price_per_unit; otherwise you may ask for it once, after the search has finished and before a negotiation starts.",
     "Sourcing and negotiation take time: start them with start_sourcing or start_negotiation, say that it has started and that you will report back, then stop talking. Progress and results are announced to the owner automatically, so do not call get_job_status or get_shortlist right after starting a job just to report it, and do not repeat an announcement.",
     "Jobs: when the owner asks to search or to negotiate, call start_sourcing or start_negotiation every time, even to try again after a negotiation ended or failed; the tool itself answers if one is still running. Never say a search or negotiation is already running, finished or failed from memory of earlier turns: that comes only from a tool result in this turn or from the latest Call status system message, which the server keeps current.",
     "Sourcing searches real vendors listed on IndiaMART. Never call those vendors, or the search, simulated.",
@@ -518,6 +534,7 @@ function lastUserUtterance(contents) {
 module.exports = {
   AgoraError,
   setFetch,
+  setTimingLog,
   buildJoinBody,
   redactJoinBody,
   systemPrompt,

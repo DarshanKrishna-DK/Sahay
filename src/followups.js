@@ -14,6 +14,11 @@
  * Demo: config.followups.delaySeconds (env FOLLOWUP_DELAY_SECONDS, read in
  * src/config.js) makes payment_due fire that many seconds after the order and
  * delivery_check twice that, instead of the real intervals.
+ *
+ * Timing: every row scheduled while the server runs gets its own timer at its due
+ * time, so it fires on time (e2e r3: a 30 s ticker fired one 20 s late). The ticker
+ * remains for rows due across a restart; it runs every DEMO_TICK_MS in demo mode.
+ * A verified payment (event order.paid) cancels the order's payment_due at once.
  */
 
 const { config } = require("./config");
@@ -23,6 +28,9 @@ const telegram = require("./notify/telegram");
 const { langKey } = require("./tools/errors");
 
 const TICK_MS = 30000;
+const DEMO_TICK_MS = 2000;
+/** Timers further out than this are left to the ticker (setTimeout caps at about 24.8 days). */
+const MAX_TIMER_MS = 6 * 60 * 60 * 1000;
 const PAYMENT_DUE_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PDF_WAIT_MS = 15000;
@@ -51,6 +59,11 @@ const TEXT = {
     "hi-IN": (v) => `भुगतान लिंक (Razorpay टेस्ट मोड), ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""}: ${v.url}`,
     "kn-IN": (v) => `ಪಾವತಿ ಲಿಂಕ್ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್), ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""}: ${v.url}`,
     "en-IN": (v) => `Payment link (Razorpay test mode) for order ${v.po}${v.sim ? SIM["en-IN"] : ""}: ${v.url}`,
+  },
+  payment_received: {
+    "hi-IN": (v) => `भुगतान मिल गया (Razorpay टेस्ट मोड): ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""}, ${v.amount} रुपये।`,
+    "kn-IN": (v) => `ಪಾವತಿ ಬಂದಿದೆ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್): ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""}, ${v.amount} ರೂಪಾಯಿ.`,
+    "en-IN": (v) => `Payment received (Razorpay test mode): order ${v.po}${v.sim ? SIM["en-IN"] : ""}, ${v.amount} rupees.`,
   },
 };
 
@@ -145,10 +158,25 @@ async function pdfPathOf(businessId, orderId, waitMs = PDF_WAIT_MS) {
   }
 }
 
+/** Cancel the order's scheduled payment reminder once a verified payment is in. Returns how many. */
+function cancelPaymentDue(businessId, orderId) {
+  let cancelled = 0;
+  for (const row of repo.listFollowups(businessId, { order_id: orderId, status: "scheduled" })) {
+    if (row.kind === "payment_due" && repo.settleFollowup(businessId, row.id, "cancelled")) cancelled += 1;
+  }
+  return cancelled;
+}
+
+/** The running scheduler (start), so new rows get a timer at their due time. */
+let scheduler = null;
+
+/** Give follow-up rows a timer at their due time (no-op unless start() is running). */
+const arm = (rows) => scheduler?.arm(rows);
+
 async function onEvent(event) {
   const d = event.data ?? {};
   if (event.type === "order.created" && d.orderId) {
-    scheduleForOrder(event.businessId, d.orderId);
+    arm(scheduleForOrder(event.businessId, d.orderId));
     const language = languageOf(event.businessId);
     // The order row, not the event, says whether the vendor is simulated.
     const sim = repo.isSimulated(event.businessId, { orderId: d.orderId });
@@ -159,32 +187,68 @@ async function onEvent(event) {
     const language = languageOf(event.businessId);
     const sim = repo.isSimulated(event.businessId, { orderId: d.orderId });
     await notify(event.businessId, text("payment_link", language, { po: d.poNumber ?? "", url: d.url, sim }));
+  } else if (event.type === "order.paid" && d.orderId) {
+    cancelPaymentDue(event.businessId, d.orderId);
+    const order = repo.getOrder(event.businessId, d.orderId);
+    if (!order) return;
+    const language = languageOf(event.businessId);
+    await notify(event.businessId, text("payment_received", language, { po: order.po_number, amount: money(order.amount), sim: Boolean(order.simulated) }));
   }
 }
 
 /**
- * Start listening for orders and the ticker. Returns stop().
- * @param {{intervalMs?: number}} [options]
+ * Start listening for orders, the per-row timers and the ticker. Returns stop().
+ * @param {{intervalMs?: number, timerSlackMs?: number}} [options]
  */
-function start({ intervalMs = TICK_MS } = {}) {
+function start({ intervalMs = demoDelaySeconds() ? DEMO_TICK_MS : TICK_MS, timerSlackMs = 50 } = {}) {
   const unsubscribe = events.subscribeAll(onEvent);
+  const timers = new Set();
   let running = false;
-  const timer = setInterval(async () => {
-    if (running) return;
+  let again = false;
+
+  // One tick at a time; a timer that lands during a tick makes it run once more right after.
+  async function runTick() {
+    if (running) {
+      again = true;
+      return;
+    }
     running = true;
     try {
-      await tick();
+      do {
+        again = false;
+        await tick();
+      } while (again);
     } catch (err) {
       console.error(`[followups] tick failed: ${err.message}`);
     } finally {
       running = false;
     }
-  }, intervalMs);
-  timer.unref?.();
+  }
+
+  function arm(rows) {
+    for (const row of rows ?? []) {
+      const wait = Date.parse(row.due_at) - Date.now();
+      if (!Number.isFinite(wait) || wait > MAX_TIMER_MS) continue;
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        runTick();
+      }, Math.max(0, wait) + timerSlackMs);
+      timer.unref?.();
+      timers.add(timer);
+    }
+  }
+
+  const interval = setInterval(runTick, intervalMs);
+  interval.unref?.();
+  const own = { arm };
+  scheduler = own;
   return () => {
-    clearInterval(timer);
+    clearInterval(interval);
+    for (const timer of timers) clearTimeout(timer);
+    timers.clear();
+    if (scheduler === own) scheduler = null;
     unsubscribe();
   };
 }
 
-module.exports = { start, tick, scheduleForOrder, onEvent, TEXT };
+module.exports = { start, tick, arm, scheduleForOrder, cancelPaymentDue, onEvent, TEXT, TICK_MS, DEMO_TICK_MS };

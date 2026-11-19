@@ -26,6 +26,7 @@ const repo = require("../db/repo");
 const events = require("../events");
 const approvals = require("../approvals");
 const orders = require("../orders");
+const payments = require("../orders/payments");
 const agent = require("../agora/agent");
 const narrator = require("../agora/narrator");
 const { buildRtcRtmToken } = require("../agora/token");
@@ -47,6 +48,7 @@ const RATE = Object.freeze({
   newBusiness: Object.freeze({ perIp: { max: 5, windowMs: 60 * MINUTE } }),
   voiceToken: Object.freeze({ perBusiness: { max: 20, windowMs: 10 * MINUTE }, perIp: { max: 60, windowMs: 10 * MINUTE } }),
   voiceStart: Object.freeze({ perBusiness: { max: 6, windowMs: 10 * MINUTE }, perIp: { max: 20, windowMs: 10 * MINUTE } }),
+  pay: Object.freeze({ perIp: { max: 60, windowMs: 10 * MINUTE } }),
 });
 /** How often a live owner call's agent is checked with Agora (it may have left on idle_timeout). */
 const AGENT_WATCH_MS = 30 * 1000;
@@ -491,8 +493,11 @@ function createVendorRouter() {
     res.set("Cache-Control", "no-store");
     res.type("html").send(VENDOR_PAGE);
   });
+  // The first answer for a code carries `renewKey`; the page keeps it (sessionStorage) and sends it
+  // back in RENEW_KEY_HEADER to reload or renew its token. Without it a used code gets nothing.
   router.get("/api/vendor/:code/token", (req, res) => {
-    const info = negotiation.humanJoinInfo(req.params.code);
+    const renewKey = req.get(RENEW_KEY_HEADER);
+    const info = negotiation.humanJoinInfo(req.params.code, renewKey ? { renewKey } : {});
     if (!info) return res.status(404).json({ code: "LINK_INVALID", message: "This link is not valid or has expired." });
     res.set("Cache-Control", "no-store").json(info);
   });
@@ -502,6 +507,45 @@ function createVendorRouter() {
       const ok = await negotiation.humanJoined(req.params.code);
       if (!ok) return res.status(404).json({ code: "LINK_INVALID", message: "This link is not valid or has expired." });
       res.json({ ok: true });
+    }),
+  );
+  return router;
+}
+
+/** Header the vendor join page sends its renewKey in (public/js/vendor-join.js). */
+const RENEW_KEY_HEADER = "X-Sahay-Renew-Key";
+
+const PAY_PAGE = path.join(__dirname, "..", "..", "public", "pay.html");
+
+/**
+ * Public pay page (no Sahay session): the 128-bit token in the path is the payer's only
+ * credential, bound to one order of one business (src/orders/payments.js). The page itself is
+ * static; its data comes from GET /api/pay/:token, and Checkout's success handler posts to
+ * /api/pay/:token/verify, where the server checks Razorpay's signature before marking the order paid.
+ */
+function createPayRouter() {
+  const router = express.Router();
+  const json = express.json({ limit: "4kb" });
+  const limitPay = (req) => rateLimit([{ key: `pay:ip:${clientIp(req)}`, ...RATE.pay.perIp }]);
+
+  router.get("/pay/:token", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(PAY_PAGE);
+  });
+  router.get(
+    "/api/pay/:token",
+    wrap(async (req, res) => {
+      limitPay(req);
+      res.set("Cache-Control", "no-store").json(payments.checkoutForToken(req.params.token));
+    }),
+  );
+  router.post(
+    "/api/pay/:token/verify",
+    json,
+    wrap(async (req, res) => {
+      limitPay(req);
+      const { status, poNumber, already } = payments.verifyCheckoutPayment(req.params.token, req.body ?? {});
+      res.set("Cache-Control", "no-store").json({ status, poNumber, already });
     }),
   );
   return router;
@@ -559,6 +603,6 @@ function errorHandler(err, req, res, _next) {
 }
 
 module.exports = {
-  createApiRouter, createVendorRouter, errorHandler, stopAllVoice, checkAgents, clientIp,
-  voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, USER_UID, AGENT_UID,
+  createApiRouter, createVendorRouter, createPayRouter, errorHandler, stopAllVoice, checkAgents, clientIp,
+  voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, RENEW_KEY_HEADER, USER_UID, AGENT_UID,
 };

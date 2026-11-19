@@ -97,8 +97,8 @@ async function issuePurchaseOrder(businessId, orderId) {
 }
 
 /**
- * Move an order to its next status. "paid" is not accepted here: only a
- * confirmed Razorpay payment sets it (payments.refreshPaymentStatus).
+ * Move an order to its next status. "paid" is not accepted here: only a Razorpay
+ * payment whose signature the server verified sets it (payments.verifyCheckoutPayment).
  */
 function advanceOrder(businessId, orderId, to, { sessionId = null, actor = "system" } = {}) {
   const order = repo.getOrder(businessId, orderId);

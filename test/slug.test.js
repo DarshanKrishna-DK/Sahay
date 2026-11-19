@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dns = require('node:dns/promises');
 
-const { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, sameCity, clearSlugCache } = require('../src/discovery/slug');
+const { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, cityIn, sameCity, clearSlugCache } = require('../src/discovery/slug');
 const { DiscoveryError } = require('../src/discovery/indiamart');
 const { LLMError } = require('../src/llm');
 
@@ -347,4 +347,17 @@ test('LIVE IndiaMART: "basmati chawal" in Bangalore resolves to the Bengaluru ba
   assert.equal(resolved.url, cityUrl('bengaluru', 'basmati-rice'));
   assert.equal(resolved.category, 'Basmati Rice');
   assert.ok(resolved.vendors.length >= 3);
+});
+
+test('cityIn: a city in the sentence language\'s own script, English for en-IN, null rather than a romanised name', () => {
+  assert.equal(cityIn('Bengaluru', 'kn-IN'), 'ಬೆಂಗಳೂರು');
+  assert.equal(cityIn('Bangalore', 'hi-IN'), 'बेंगलुरु');
+  assert.equal(cityIn('ಬೆಂಗಳೂರು', 'en-IN'), 'Bengaluru');
+  assert.equal(cityIn('Mysuru', 'kn-IN'), 'ಮೈಸೂರು');
+  assert.equal(cityIn('जयपुर', 'hi-IN'), 'जयपुर', 'already in the script');
+  assert.equal(cityIn('Shivamogga', 'kn-IN'), null, 'no Kannada name known: never "Shivamoggaಗೆ"');
+  assert.equal(cityIn('Mysuru', 'hi-IN'), null);
+  assert.equal(cityIn('ಮೈಸೂರು', 'hi-IN'), null, 'Kannada script is not put into a Hindi sentence');
+  assert.equal(cityIn(null, 'hi-IN'), null);
+  assert.equal(cityIn('', 'kn-IN'), null);
 });

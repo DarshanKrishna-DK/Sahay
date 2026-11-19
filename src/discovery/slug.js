@@ -160,6 +160,25 @@ function cityName(city) {
   return /^[\p{Script=Latin}\s.'-]+$/u.test(first) ? titleCase(first.toLowerCase()) : first;
 }
 
+const SCRIPT_OF = { 'hi-IN': /\p{Script=Devanagari}/u, 'kn-IN': /\p{Script=Kannada}/u };
+
+/**
+ * A city as said in a sentence of `language`: English (cityName) for en-IN; for hi-IN / kn-IN
+ * the city's name in that script ("ಬೆಂಗಳೂರು", "बेंगलुरु"), or the name as given when it is already
+ * in that script. Null when no name in that script is known: a romanised city is never put into
+ * a Hindi or Kannada sentence (CLAUDE.md rule 5).
+ */
+function cityIn(city, language) {
+  if (typeof city !== 'string' || !city.trim()) return null;
+  const script = SCRIPT_OF[language];
+  if (!script) return cityName(city);
+  const first = city.split(',')[0].trim().replace(/\s+/g, ' ');
+  const slug = CITY_SLUG.get(fold(first).replace(/\./g, ''));
+  const native = slug ? [...(CITY_NAMES[slug] ?? []), ...(NATIVE_CITY_NAMES[slug] ?? [])].find((name) => script.test(name)) : null;
+  if (native) return native;
+  return script.test(first) && /^[\p{L}\p{M}\p{Join_Control}\s.'-]+$/u.test(first) && !/\p{Script=Latin}/u.test(first) ? first : null;
+}
+
 /** Whether two city names mean the same city ("Bangalore" and "Bengaluru"). Unknown is never a match. */
 function sameCity(a, b) {
   const slug = citySlug(a);
@@ -336,4 +355,4 @@ async function resolveSlug(item, city = null, { signal } = {}) {
   );
 }
 
-module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, sameCity, clearSlugCache };
+module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, cityIn, sameCity, clearSlugCache };

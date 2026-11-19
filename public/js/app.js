@@ -4,7 +4,7 @@
 
 import * as api from "./api.js";
 import { connectEvents } from "./events.js";
-import { VoiceCall, NegotiationListener, preloadSdks, scriptOf } from "./voice.js";
+import { VoiceCall, NegotiationListener, preloadSdks, scriptOf, withSystemLines, formatTimings } from "./voice.js";
 
 /* ===================================================================== helpers */
 
@@ -197,6 +197,8 @@ const state = {
     error: null, note: null, ended: null, autoplay: false, issues: [], metrics: {}, transcriptLink: true,
   },
   transcript: [],
+  // Server events shown among the spoken turns (a follow-up that fired); cleared with the transcript.
+  systemLines: [],
 };
 
 function resetData() {
@@ -593,6 +595,13 @@ function applyEvent(evt, { live = true } = {}) {
       f.status = "fired";
       f.firedAt = f.firedAt || evt.ts;
       if (f.id !== undefined) merge(state.followups, f);
+      // E2E r3 bug 3: also a line in the live transcript, at the moment it fired.
+      const key = `followup:${f.id ?? evt.id ?? state.systemLines.length}`;
+      const at = toDate(f.firedAt);
+      if (live && !state.systemLines.some((l) => l.key === key)) {
+        state.systemLines.push({ key, role: "system", time: at ? at.getTime() : Date.now(), label: FOLLOWUP_KIND[f.kind] || "Follow-up", text: f.message || "" });
+        invalidate("transcript");
+      }
       invalidate("order", "plan");
       break;
     }
@@ -920,7 +929,7 @@ function issueTitle(source) {
 
 RENDERERS.transcript = () => {
   const box = $("transcript");
-  const turns = state.transcript;
+  const turns = withSystemLines(state.transcript, state.systemLines);
   setCount("transcript-count", turns.length);
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 
@@ -937,6 +946,11 @@ RENDERERS.transcript = () => {
   }
 
   box.replaceChildren(...turns.map((t) => {
+    if (t.role === "system") {
+      return h("div", { class: "turn system", role: "status" },
+        h("div", { class: "who" }, "Follow-up sent", timeEl(t.time)),
+        h("p", { class: "bubble" }, h("strong", { text: t.label }), t.text ? " " : null, t.text ? scripted("span", t.text) : null));
+    }
     const owner = t.role === "owner";
     const flag = t.interrupted ? "Interrupted" : t.live ? (owner ? "Hearing you" : "Speaking") : null;
     return h("div", { class: `turn ${owner ? "owner" : "agent"}${t.live ? " live" : ""}${t.interrupted ? " cut" : ""}` },
@@ -1523,7 +1537,7 @@ const call = new VoiceCall({
       c.ended = detail.unexpected ? { reason: detail.note || null } : null;
     }
     if (status === "error") c.ended = null;
-    if (status === "mic") { c.ended = null; c.error = null; c.note = null; c.issues = []; c.metrics = {}; c.lang = null; c.langSource = null; c.transcriptLink = true; c.muted = false; state.transcript = []; }
+    if (status === "mic") { c.ended = null; c.error = null; c.note = null; c.issues = []; c.metrics = {}; c.lang = null; c.langSource = null; c.transcriptLink = true; c.muted = false; state.transcript = []; state.systemLines = []; }
     if (status === "error" || status === "idle") c.muted = false;
     invalidate("call", "transcript", "plan");
   },
@@ -1560,6 +1574,12 @@ const call = new VoiceCall({
     invalidate("call");
   },
   onTranscriptLink(ok) { state.call.transcriptLink = ok; invalidate("call"); },
+  // Where the time from Start call to Sahay's first words went (E2E r3 bug 8). Milliseconds only.
+  onTimings(marks) {
+    state.call.timings = marks;
+    window.__sahayCallTimings = marks;
+    console.info(`[call] ms since Start call: ${formatTimings(marks)}`);
+  },
 });
 
 $("call-btn").addEventListener("click", () => {

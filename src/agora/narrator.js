@@ -8,6 +8,8 @@
  * Milestones: job.started (unless the tool that started it already said so),
  * the first vendor.found batch (count), job.done for sourcing (top result),
  * job.failed, negotiation.ended, order.created, payment.link, followup.fired.
+ * A follow-up is worded from its order (PO number, amount) in the owner's current language,
+ * never by prefixing the stored message, which is in the business language (E2E r3 bug 3).
  * Rate-limited per business: at most one line every MIN_GAP_MS, a short queue,
  * and repeated milestones of the same kind replace the queued one.
  *
@@ -21,6 +23,14 @@
  * is suppressed per requirement ("sourcing.done:<requirementId>"), even while it waits in the
  * hold window or the queue, so the owner hears "search done" once (E2E r2).
  *
+ * Approval hold: from approval.requested (or holdForApproval) until that approval is decided,
+ * the request fails, or settings.approvalHoldMs passes, nothing is spoken. The server speaks the
+ * read-back and the owner's next words are the answer to it (approvals.answerToReadback); a
+ * progress line between the two would stand between the question and the answer (E2E r3, item 5).
+ *
+ * Every hi/kn line is checked for stray Latin letters and for the other Indic script
+ * (src/agora/script.js) before it is spoken; a violation is logged, never silently sent.
+ *
  * /speak lines are not documented to enter the owner agent's LLM context, so every job
  * milestone is also written to the agent as a "Call status" system message
  * (agent.updateCallStatus). Without it the model answered "already negotiating" after a
@@ -32,8 +42,9 @@ const repo = require("../db/repo");
 const agent = require("./agent");
 const { langKey } = require("../tools/errors");
 const { unitWord } = require("../procurement/units");
+const { scriptProblems } = require("./script");
 
-const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000, holdMs: 6000 };
+const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000, holdMs: 6000, approvalHoldMs: 60000 };
 
 /** businessId -> live narration state for the active owner call */
 const live = new Map();
@@ -95,14 +106,47 @@ const LINES = {
     "kn-IN": () => "ಪಾವತಿಯ ಟೆಸ್ಟ್ ಲಿಂಕ್ ಸಿದ್ಧ, ಪರದೆಯ ಮೇಲಿದೆ.",
     "en-IN": () => "The test-mode payment link is ready on the screen.",
   },
-  followup: {
-    "hi-IN": (v) => `याद दिलाना: ${v.message}`,
-    "kn-IN": (v) => `ನೆನಪಿಸುವಿಕೆ: ${v.message}`,
-    "en-IN": (v) => `Reminder: ${v.message}`,
+  followup_payment_due: {
+    "hi-IN": (v) => `याद दिला दूँ: ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""} का भुगतान बाकी है, ${v.amount} रुपये।`,
+    "kn-IN": (v) => `ನೆನಪಿಸುತ್ತಿದ್ದೇನೆ: ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""} ಪಾವತಿ ಬಾಕಿ ಇದೆ, ${v.amount} ರೂಪಾಯಿ.`,
+    "en-IN": (v) => `A reminder: payment for order ${v.po}${v.sim ? SIM["en-IN"] : ""} is due, ${v.amount} rupees.`,
+  },
+  followup_delivery_check: {
+    "hi-IN": (v) => `याद दिला दूँ: ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""} की डिलीवरी का समय हो गया है, क्या माल पहुँच गया?`,
+    "kn-IN": (v) => `ನೆನಪಿಸುತ್ತಿದ್ದೇನೆ: ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""} ಡೆಲಿವರಿ ಸಮಯ ಬಂದಿದೆ, ಸರಕು ತಲುಪಿದೆಯೇ?`,
+    "en-IN": (v) => `A reminder: order ${v.po}${v.sim ? SIM["en-IN"] : ""} is due for delivery; has it arrived?`,
+  },
+  followup_other: {
+    "hi-IN": () => "एक रिमाइंडर स्क्रीन पर है।",
+    "kn-IN": () => "ಒಂದು ನೆನಪಿನ ಸೂಚನೆ ಪರದೆಯ ಮೇಲಿದೆ.",
+    "en-IN": () => "A reminder is on the screen.",
   },
 };
 
-const line = (key, language, vars = {}) => LINES[key][langKey(language)](vars);
+/** Variables that hold a name or code as written (vendor brand, PO number): allowed in any script. */
+const VERBATIM_VARS = ["name", "vendor", "po"];
+
+/** One spoken line. A hi/kn line with stray Latin or the other Indic script is logged (rule 5). */
+function line(key, language, vars = {}) {
+  const lang = langKey(language);
+  const text = LINES[key][lang](vars);
+  const problems = scriptProblems(text, lang, { allow: VERBATIM_VARS.map((k) => vars[k]) });
+  if (problems.latin.length || problems.foreign) {
+    console.warn(`[narrator] ${key} (${lang}) is not all in its own script: ${[...problems.latin, problems.foreign ? "<other Indic script>" : null].filter(Boolean).join(", ")}`);
+  }
+  return text;
+}
+
+/**
+ * A follow-up as one line in `language`, from its order: the stored message is in the business
+ * language, and prefixing it with a word in the owner's language mixed two scripts in one line.
+ */
+function followupLine(businessId, followup, language) {
+  const key = { payment_due: "followup_payment_due", delivery_check: "followup_delivery_check" }[followup?.kind];
+  const order = followup?.orderId ? repo.getOrder(businessId, followup.orderId) : null;
+  if (!key || !order?.po_number) return line("followup_other", language);
+  return line(key, language, { po: order.po_number, amount: money(Number(order.amount)), sim: Boolean(order.simulated) });
+}
 
 /**
  * Tell the narrator a tool already spoke this milestone, so it is not said twice: a line of
@@ -132,11 +176,22 @@ function enqueue(state, key, text, type = null) {
   pump(state);
 }
 
+/** Milliseconds the approval hold still lasts (0 when none); an expired hold is cleared. */
+function approvalHoldLeft(state) {
+  if (!state.approvalHold) return 0;
+  const left = state.approvalHold.until - Date.now();
+  if (left > 0) return left;
+  state.approvalHold = null;
+  return 0;
+}
+
 function pump(state) {
   if (state.timer || !state.queue.length || state.closed) return;
-  const wait = Math.max(0, state.lastSpokeAt + settings.minGapMs - Date.now());
+  const wait = Math.max(0, state.lastSpokeAt + settings.minGapMs - Date.now(), approvalHoldLeft(state));
   state.timer = setTimeout(async () => {
     state.timer = null;
+    if (state.closed) return;
+    if (approvalHoldLeft(state) > 0) return pump(state);
     const item = state.queue.shift();
     if (!item || state.closed) return;
     state.lastSpokeAt = Date.now();
@@ -182,6 +237,36 @@ function setStatus(state, kind, text) {
       console.warn(`[narrator] call status update failed: ${err.message}`);
     }
   });
+}
+
+/* -------------------------------------------------------- approval hold --- */
+
+/** Hold narration; a line already waiting on its timer re-checks the hold when the timer fires. */
+function startHold(state, approvalId, ms = settings.approvalHoldMs) {
+  state.approvalHold = { approvalId: approvalId ?? state.approvalHold?.approvalId ?? null, until: Date.now() + ms };
+}
+
+function endHold(state) {
+  if (!state.approvalHold) return;
+  state.approvalHold = null;
+  clearTimeout(state.timer);
+  state.timer = null;
+  pump(state);
+}
+
+/**
+ * Hold narration for this business's live call while an approval read-back is spoken and
+ * answered. request_approval should call this before its /speak of the read-back, so even the
+ * moment between that speak and the approval.spoken event is covered.
+ */
+function holdForApproval(businessId, approvalId = null, ms = settings.approvalHoldMs) {
+  const state = live.get(businessId);
+  if (state) startHold(state, approvalId, ms);
+}
+
+function isHeld(businessId) {
+  const state = live.get(businessId);
+  return Boolean(state && approvalHoldLeft(state) > 0);
 }
 
 /* --------------------------------------------------------------- events --- */
@@ -280,7 +365,20 @@ function onEvent(event) {
       enqueue(state, `payment:${d.orderId}`, line("payment_link", lang));
       return;
     case "followup.fired":
-      if (d.message) enqueue(state, `followup:${d.followupId ?? d.orderId}`, line("followup", lang, { message: d.message }));
+      enqueue(state, `followup:${d.followupId ?? d.orderId}`, followupLine(event.businessId, d, lang));
+      return;
+    case "approval.requested":
+    case "approval.spoken":
+      startHold(state, d.approvalId);
+      return;
+    case "approval.decided": {
+      const hold = state.approvalHold;
+      // A deal the system withdrew (it carries a reason) does not answer the read-back being held for.
+      if (hold && (hold.approvalId ? hold.approvalId === d.approvalId : !d.reason)) endHold(state);
+      return;
+    }
+    case "error":
+      if (d.tool === "request_approval") endHold(state);
       return;
     default:
   }
@@ -316,11 +414,12 @@ function attach(businessId, { agentId, sessionId, language }) {
     lastSourcingStartedAt: null,
     callStatus: { sourcing: null, negotiation: null },
     statusChain: Promise.resolve(),
+    approvalHold: null,
     closed: false,
   };
   live.set(businessId, state);
   for (const f of missedFollowups(businessId, sessionId)) {
-    if (f.message) enqueue(state, `followup:${f.id}`, line("followup", state.language, { message: f.message }));
+    enqueue(state, `followup:${f.id}`, followupLine(businessId, { kind: f.kind, orderId: f.order_id }, state.language));
   }
   return state;
 }
@@ -358,13 +457,13 @@ function stop() {
 }
 
 /** Tests: replace the /speak and /update calls and the timing. */
-function configure({ speak, status, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs } = {}) {
+function configure({ speak, status, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs } = {}) {
   if (speak) speakImpl = speak;
   if (status) statusImpl = status;
   Object.assign(
     settings,
-    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs }).filter(([, v]) => v !== undefined)),
+    Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs, approvalHoldMs }).filter(([, v]) => v !== undefined)),
   );
 }
 
-module.exports = { start, stop, attach, detach, isLive, suppress, useLanguage, configure, onEvent, LINES };
+module.exports = { start, stop, attach, detach, isLive, isHeld, holdForApproval, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };

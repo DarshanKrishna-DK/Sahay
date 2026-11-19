@@ -64,23 +64,49 @@ function contentSecurityPolicy() {
   ].join("; ");
 }
 
+/**
+ * Content-Security-Policy of the pay page (/pay/<token>, public/pay.html) only: Razorpay Standard
+ * Checkout. checkout.js comes from https://checkout.razorpay.com/v1/checkout.js (Razorpay docs,
+ * Standard Checkout integration steps) and opens the payment form in an iframe served by
+ * api.razorpay.com. Razorpay publishes no CSP list, so the other origins below are the ones
+ * Checkout was seen to need in a real browser (docs/build/evidence/pay-csp-check.txt): every
+ * one is a razorpay.com host, and only Sahay's own files and Razorpay's script may run.
+ */
+const PAY_CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://checkout.razorpay.com",
+  "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+  "connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self' https://api.razorpay.com",
+  "frame-ancestors 'none'",
+].join("; ");
+
+const isPayPage = (req) => req.method === "GET" && req.path.startsWith("/pay/");
+
 /** Basic security headers without a dependency. The CSP is built once (createApp refreshes it). */
 function securityHeaders(req, res, next) {
   securityHeaders.csp ??= contentSecurityPolicy();
+  const pay = isPayPage(req);
   res.set({
-    "Content-Security-Policy": securityHeaders.csp,
+    "Content-Security-Policy": pay ? PAY_CSP : securityHeaders.csp,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Cross-Origin-Opener-Policy": "same-origin",
-    "Permissions-Policy": "microphone=(self), camera=(), geolocation=()",
+    // Checkout may open a bank or 3-D Secure window that must be able to report back.
+    "Cross-Origin-Opener-Policy": pay ? "same-origin-allow-popups" : "same-origin",
+    "Permissions-Policy": pay ? "microphone=(), camera=(), geolocation=(), payment=(self \"https://api.razorpay.com\")" : "microphone=(self), camera=(), geolocation=()",
   });
   if (req.secure) res.set("Strict-Transport-Security", "max-age=15552000");
   next();
 }
 
 function createApp() {
-  const { createApiRouter, createVendorRouter, errorHandler } = require("./src/routes/api");
+  const { createApiRouter, createVendorRouter, createPayRouter, errorHandler } = require("./src/routes/api");
   const { createMcpRouter } = require("./src/mcp-server");
   const app = express();
   securityHeaders.csp = contentSecurityPolicy();
@@ -91,6 +117,7 @@ function createApp() {
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
   app.use("/mcp", createMcpRouter());
   app.use(createVendorRouter());
+  app.use(createPayRouter());
   app.use(createApiRouter());
   app.use("/api", (_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "No such API route." }));
   app.use(express.static(path.join(__dirname, "public"), { index: "index.html", maxAge: "5m" }));
@@ -175,4 +202,4 @@ function endStaleSessions(now = new Date().toISOString()) {
 
 if (require.main === module) boot();
 
-module.exports = { createApp, securityHeaders, contentSecurityPolicy, inlineScriptHashes, endStaleSessions, CDN_SCRIPTS };
+module.exports = { createApp, securityHeaders, contentSecurityPolicy, inlineScriptHashes, endStaleSessions, CDN_SCRIPTS, PAY_CSP };

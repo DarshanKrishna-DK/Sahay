@@ -5,8 +5,9 @@
 // agora-agent-client-toolkit@2.10.0 dist/index.mjs.
 //
 // Load order: RTC UMD, then RTM UMD (its wrapper reads globalThis.AgoraRTC), both injected
-// below with Subresource Integrity. The toolkit is an ES module imported lazily from the CDN
-// below; its hash is pinned in the import map in index.html. It has no static imports, and
+// below with Subresource Integrity. They download in parallel and run in insertion order
+// (async=false). The toolkit is an ES module imported from the CDN below, fetched at the same
+// time; its hash is pinned in the import map in index.html. It has no static imports, and
 // enableAgoraMetrics stays off so no bare-specifier import is triggered. Every URL here must
 // also be listed in the server's Content-Security-Policy (server.js CDN_SCRIPTS).
 
@@ -40,14 +41,19 @@ function injectScript({ src, integrity }) {
 }
 
 let sdkPromise = null;
-/** Load RTC, then RTM (RTM's UMD wrapper reads globalThis.AgoraRTC). Safe to call repeatedly. */
+/**
+ * Fetch RTC, RTM and the toolkit at once (E2E r3: they were fetched one after another, so a
+ * click soon after page load waited for all three in turn). Both script elements are inserted
+ * together with async=false, so they download in parallel and still run in insertion order:
+ * RTM's UMD wrapper reads globalThis.AgoraRTC. Safe to call repeatedly.
+ */
 export function preloadSdks() {
   if (!sdkPromise) {
-    sdkPromise = (async () => {
-      if (!window.AgoraRTC) await injectScript(RTC_SDK);
-      if (!window.AgoraRTM) await injectScript(RTM_SDK);
-      loadToolkit().catch(() => {}); // warm the module cache; start() reports failures
-    })().catch((err) => { sdkPromise = null; throw err; });
+    loadToolkit().catch(() => {}); // start() reports a toolkit failure
+    sdkPromise = Promise.all([
+      window.AgoraRTC ? null : injectScript(RTC_SDK),
+      window.AgoraRTM ? null : injectScript(RTM_SDK),
+    ]).then(() => undefined, (err) => { sdkPromise = null; throw err; });
   }
   return sdkPromise;
 }
@@ -155,9 +161,34 @@ export function orderTurns(turns) {
 }
 
 /**
+ * System lines (a follow-up that fired, for example) placed among the spoken turns by time:
+ * each goes before the first turn spoken after it; turns without a time keep their place and
+ * lines with no later turn go last. Turns keep their own order (orderTurns).
+ * A line: { key, role: "system", time: ms, ... }.
+ */
+export function withSystemLines(turns, lines) {
+  if (!lines || !lines.length) return turns;
+  const pending = [...lines].sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity));
+  const out = [];
+  for (const turn of turns) {
+    while (pending.length && Number.isFinite(turn.time) && (pending[0].time ?? Infinity) < turn.time) out.push(pending.shift());
+    out.push(turn);
+  }
+  return out.concat(pending);
+}
+
+/** Stages of a call start, in order, for the timing line (E2E r3 bug 8). */
+export const START_STAGES = ["sdk", "mic", "token", "joined", "subscribed", "toolkit", "start_sent", "start_done", "published", "agent_joined", "first_words"];
+
+/** "sdk=12 mic=340 ..." from marks {stage: ms since click}; stages not reached are left out. */
+export function formatTimings(marks) {
+  return START_STAGES.filter((k) => Number.isFinite(marks[k])).map((k) => `${k}=${Math.round(marks[k])}`).join(" ");
+}
+
+/**
  * handlers: onStatus(status, detail), onAgentState(state), onTranscript(turns),
  * onLanguage({ lang, source }), onIssue({ source, message }), onLevels({ mic, agent }),
- * onAutoplay(blocked), onMetric({ stage, ms }), onTranscriptLink(ok)
+ * onAutoplay(blocked), onMetric({ stage, ms }), onTranscriptLink(ok), onTimings(marks)
  * status: idle | mic | connecting | waiting | live | reconnecting | ending | error
  */
 export class VoiceCall {
@@ -187,6 +218,15 @@ export class VoiceCall {
     this.muted = false;
     this.serverStarted = false;
     this.serverStarting = false;
+    this.startedAt = null;
+    this.marks = {};
+  }
+
+  /** Milliseconds since Start call for one stage; reported once the first words arrive. */
+  mark(stage) {
+    if (this.startedAt === null || Number.isFinite(this.marks[stage])) return;
+    this.marks[stage] = performance.now() - this.startedAt;
+    if (stage === "first_words" && this.h.onTimings) this.h.onTimings({ ...this.marks });
   }
 
   get active() {
@@ -199,14 +239,16 @@ export class VoiceCall {
   }
 
   async start() {
-    if (this.active) return;
+    if (this.active || this.preparing) return;
     this.reset();
+    this.startedAt = performance.now();
+    this.preparing = true; // a second click while the SDKs finish loading starts nothing
     try {
       if (!window.isSecureContext) {
         throw new CallError("insecure", "Secure connection needed",
           "Calls need HTTPS or localhost. Open the console from its https:// address.", { retry: false });
       }
-      try { await preloadSdks(); } catch { /* reported just below */ }
+      try { await preloadSdks(); } catch { /* reported just below */ } finally { this.preparing = false; }
       const { AgoraRTC, AgoraRTM } = window;
       if (!AgoraRTC || !AgoraRTM) {
         throw new CallError("sdk_missing", "Voice library did not load",
@@ -219,25 +261,30 @@ export class VoiceCall {
         throw new CallError("toolkit_missing", "Voice library did not load",
           "The Agora agent toolkit could not be downloaded. Check the network and try again.");
       }
+      this.mark("sdk");
 
-      // 1. Microphone first, from the click. If it fails, the agent is never started.
+      // 1. Microphone, from the click. Step one of the server contract (a short-lived RTC+RTM
+      //    token for this business's call channel) is fetched meanwhile; from the moment it
+      //    answers the server holds a call entry, so teardown must stop it. The agent itself is
+      //    started only in step 5, so a microphone failure never starts it.
       this.setStatus("mic");
+      const tokenRequest = api.getVoiceToken().then(
+        (session) => { this.serverStarted = true; return session; },
+        (err) => { throw new CallError("token_failed", "Could not start the call", (err && err.message) || "The server could not prepare the call."); },
+      );
+      tokenRequest.catch(() => {}); // awaited below; a mic failure must not leave it unhandled
       try {
         this.mic = await AgoraRTC.createMicrophoneAudioTrack();
       } catch (err) {
+        await tokenRequest.catch(() => {}); // settle it, so teardown knows whether to stop the server entry
         throw micError(err);
       }
+      this.mark("mic");
 
-      // 2. Step one of the server contract: a short-lived RTC+RTM token for this business's
-      //    call channel. From here the server holds a call entry, so teardown must stop it.
+      // 2. The token.
       this.setStatus("connecting");
-      let s;
-      try {
-        s = await api.getVoiceToken();
-      } catch (err) {
-        throw new CallError("token_failed", "Could not start the call", err.message || "The server could not prepare the call.");
-      }
-      this.serverStarted = true;
+      const s = await tokenRequest;
+      this.mark("token");
       if (!s || !s.appId || !s.channel || s.uid === undefined || s.uid === null || !s.token || s.agentUid === undefined || s.agentUid === null) {
         throw new CallError("bad_session", "Could not start the call", "The server's call details were incomplete.");
       }
@@ -259,13 +306,15 @@ export class VoiceCall {
         else if (st === "DISCONNECTED" || st === "SUSPENDED" || st === "FAILED") this.h.onTranscriptLink(false);
       });
 
+      // RTC join and RTM login+subscribe run side by side; the transcript needs only RTM.
       const joinUid = /^\d+$/.test(uid) ? Number(uid) : uid;
       await Promise.all([
-        rtc.join(s.appId, s.channel, s.token, joinUid),
-        rtm.login({ token: s.token }),
+        rtc.join(s.appId, s.channel, s.token, joinUid).then(() => this.mark("joined")),
+        rtm.login({ token: s.token }).then(() => rtm.subscribe(s.channel, { withMessage: true, withPresence: true })).then(() => this.mark("subscribed")),
       ]);
-      await rtc.publish([this.mic]);
-      await rtm.subscribe(s.channel, { withMessage: true, withPresence: true });
+      // Publishing the microphone overlaps the agent's start (step 5): Sahay speaks first, and it
+      // subscribes to the owner's audio whenever that is published. Never rejects; checked below.
+      const published = rtc.publish([this.mic]).then(() => { this.mark("published"); return null; }, (err) => err || new Error("publish failed"));
 
       // 4. Toolkit: transcripts from RTM messages, agent state from RTM presence.
       const { AgoraVoiceAI, AgoraVoiceAIEvents: E, TranscriptHelperMode } = tk;
@@ -291,6 +340,7 @@ export class VoiceCall {
         if (m && typeof m.e2eLatencyMs === "number") this.h.onMetric({ stage: "turn", ms: m.e2eLatencyMs });
       });
       ai.subscribeMessage(s.channel);
+      this.mark("toolkit");
 
       this.levelTimer = setInterval(() => this.pollLevels(), 100);
 
@@ -298,8 +348,10 @@ export class VoiceCall {
       //    its first sentence (the automated-assistant disclosure) reaches the transcript.
       if (!this.findAgent()) this.setStatus("waiting");
       this.serverStarting = true;
+      this.mark("start_sent");
       try {
         await api.startVoice(s.channel);
+        this.mark("start_done");
       } catch (err) {
         // ALREADY_STARTED: the agent is already in this same channel (for example after a
         // reload within the call); keep the call and wait for it.
@@ -309,6 +361,9 @@ export class VoiceCall {
       } finally {
         this.serverStarting = false;
       }
+      if (this.status === "ending" || !this.active) return;
+      const publishError = await published;
+      if (publishError) throw publishError;
       if (this.status === "ending" || !this.active) return;
 
       if (this.findAgent()) this.setStatus("live");
@@ -344,6 +399,7 @@ export class VoiceCall {
   bindRtc(rtc) {
     rtc.on("user-joined", (user) => {
       if (!this.isAgent(user.uid)) return;
+      this.mark("agent_joined");
       this.agentPresent = true;
       clearTimeout(this.agentTimer);
       if (this.status === "waiting") this.setStatus("live");
@@ -461,6 +517,7 @@ export class VoiceCall {
         language: langFromCode(md.language),
       };
     }).filter((t) => t.text.trim() !== ""));
+    if (turns.some((t) => t.role === "agent")) this.mark("first_words");
     this.h.onTranscript(turns);
 
     for (let i = turns.length - 1; i >= 0; i--) {

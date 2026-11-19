@@ -11,8 +11,8 @@
  * the business language). Errors are ToolErrors with `say`.
  *
  * Voice models relay opaque ids badly, so ids are optional: a missing id means
- * "the current one" (latest requirement, best comparable vendor, best deal, the
- * one approval or order waiting). A default is never a guess between several
+ * "the current one" (latest requirement, best comparable vendor, best deal, the one
+ * approval waiting, the most recent confirmed order). A default is never a guess between several
  * candidates: then the tool refuses with AMBIGUOUS and names the choices.
  *
  * Irreversible steps go through the business modules' own gates:
@@ -28,7 +28,7 @@ const approvals = require("../approvals");
 const orders = require("../orders");
 const payments = require("../orders/payments");
 const { findVendors } = require("../discovery/indiamart");
-const { candidateSlugs, cityName } = require("../discovery/slug");
+const { candidateSlugs, cityName, cityIn } = require("../discovery/slug");
 const { scoreVendor, rankDeals, rankVendors, comparableListedPrice } = require("../procurement/scoring");
 const { canonicalUnit, unitWord, UNIT_CODES } = require("../procurement/units");
 const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
@@ -42,18 +42,8 @@ const HISTORY_ATTEMPTS = 3;
 const HISTORY_RETRY_MS = 600;
 /** Voice evidence that may simply not be in /history yet: looked for again. */
 const VOICE_RETRY = new Set(["NO_ANSWER_YET", "READBACK_NOT_HEARD"]);
-/** Gate refusals of a spoken decision -> what the owner hears (src/tools/errors.js SAY keys). */
-const VOICE_EVIDENCE_SAY = {
-  READBACK_NOT_SPOKEN: "no_voice_evidence",
-  READBACK_NOT_HEARD: "no_voice_evidence",
-  NO_ANSWER_YET: "not_affirmative",
-  EVIDENCE_UNORDERED: "no_voice_evidence",
-  ANSWER_DURING_READBACK: "not_affirmative",
-  READBACK_SUPERSEDED: "not_affirmative",
-  EVIDENCE_REQUIRED: "no_voice_evidence",
-  NOT_AFFIRMATIVE: "not_affirmative",
-  NOT_NEGATIVE: "not_affirmative",
-};
+/** get_order_status without an id speaks the latest and lists at most this many recent orders. */
+const RECENT_ORDERS = 10;
 
 /* -------------------------------------------------------------- speech --- */
 
@@ -70,6 +60,13 @@ const ORDER_STATUS_WORDS = {
   delivered: { "hi-IN": "पहुँच गया", "kn-IN": "ತಲುಪಿದೆ", "en-IN": "delivered" },
   closed: { "hi-IN": "बंद", "kn-IN": "ಮುಗಿದಿದೆ", "en-IN": "closed" },
   cancelled: { "hi-IN": "रद्द", "kn-IN": "ರದ್ದು", "en-IN": "cancelled" },
+};
+
+/** The payment clause of an order status sentence. */
+const PAYMENT_WORDS = {
+  paid: { "hi-IN": "भुगतान हो गया है", "kn-IN": "ಪಾವತಿ ಆಗಿದೆ", "en-IN": "it is paid" },
+  pending_link: { "hi-IN": "भुगतान बाकी है, भुगतान लिंक बन चुका है", "kn-IN": "ಪಾವತಿ ಬಾಕಿ ಇದೆ, ಪಾವತಿ ಲಿಂಕ್ ಸಿದ್ಧವಿದೆ", "en-IN": "payment is pending and the payment link is ready" },
+  pending_no_link: { "hi-IN": "भुगतान बाकी है, लिंक अभी नहीं बना", "kn-IN": "ಪಾವತಿ ಬಾಕಿ ಇದೆ, ಲಿಂಕ್ ಇನ್ನೂ ಮಾಡಿಲ್ಲ", "en-IN": "payment is pending and no payment link has been made yet" },
 };
 
 const MISSING_WORDS = {
@@ -221,11 +218,6 @@ const PHRASES = {
     "kn-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["kn-IN"]})` : ""} ${v.total} ರೂಪಾಯಿ`,
     "en-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["en-IN"]})` : ""} at ${v.total} rupees`,
   },
-  choice_order: {
-    "hi-IN": (v) => `ऑर्डर ${v.po}`,
-    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po}`,
-    "en-IN": (v) => `order ${v.po}`,
-  },
   negotiation_started_simulated: {
     "hi-IN": (v) => `${v.vendor} की लिस्टिंग के भाव पर बने सिम्युलेटेड विक्रेता से मोल-भाव शुरू कर दिया है, नतीजा आते ही बताऊँगी।`,
     "kn-IN": (v) => `${v.vendor} ಅವರ ಪಟ್ಟಿಯ ಬೆಲೆಯ ಆಧಾರದ ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್ ಜೊತೆ ಚೌಕಾಸಿ ಶುರು ಮಾಡಿದ್ದೇನೆ, ಫಲಿತಾಂಶ ಬಂದ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.`,
@@ -257,9 +249,14 @@ const PHRASES = {
     "en-IN": () => "There are quotes, but they cannot be compared; the reasons are on the screen.",
   },
   busy: {
-    "hi-IN": () => "अभी बहुत लोग इस्तेमाल कर रहे हैं, थोड़ी देर बाद कोशिश कीजिए।",
-    "kn-IN": () => "ಈಗ ತುಂಬಾ ಜನ ಬಳಸುತ್ತಿದ್ದಾರೆ, ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.",
-    "en-IN": () => "A lot of people are using Sahay right now; please try again in a little while.",
+    "hi-IN": () => sayFor("busy", "hi-IN"),
+    "kn-IN": () => sayFor("busy", "kn-IN"),
+    "en-IN": () => sayFor("busy", "en-IN"),
+  },
+  deal_offer_approval: {
+    "hi-IN": () => "क्या इस डील को मंज़ूरी के लिए पढ़ूँ?",
+    "kn-IN": () => "ಈ ವ್ಯವಹಾರವನ್ನು ಒಪ್ಪಿಗೆಗಾಗಿ ಓದಲೇ?",
+    "en-IN": () => "Shall I read this deal out for your approval?",
   },
   approval_question: {
     "hi-IN": () => "क्या मैं ऑर्डर कर दूँ?",
@@ -287,9 +284,19 @@ const PHRASES = {
     "en-IN": (v) => `The order is placed${v.sim ? ` with a ${SIM_LABEL["en-IN"]}` : ""}, purchase order number ${v.po}.`,
   },
   payment_link: {
-    "hi-IN": () => "भुगतान का टेस्ट लिंक बन गया है, स्क्रीन पर दिख रहा है।",
-    "kn-IN": () => "ಪಾವತಿಯ ಟೆಸ್ಟ್ ಲಿಂಕ್ ಸಿದ್ಧವಾಗಿದೆ, ಪರದೆಯ ಮೇಲೆ ಕಾಣುತ್ತಿದೆ.",
-    "en-IN": () => "The test-mode payment link is ready and on the screen.",
+    "hi-IN": (v) => `ऑर्डर ${v.po} के भुगतान का टेस्ट लिंक बन गया है, स्क्रीन पर दिख रहा है।`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ಪಾವತಿಯ ಟೆಸ್ಟ್ ಲಿಂಕ್ ಸಿದ್ಧವಾಗಿದೆ, ಪರದೆಯ ಮೇಲೆ ಕಾಣುತ್ತಿದೆ.`,
+    "en-IN": (v) => `The test-mode payment link for order ${v.po} is ready and on the screen.`,
+  },
+  order_already_paid: {
+    "hi-IN": (v) => `ऑर्डर ${v.po} का भुगतान पहले ही हो चुका है।`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ಪಾವತಿ ಈಗಾಗಲೇ ಆಗಿದೆ.`,
+    "en-IN": (v) => `Order ${v.po} is already paid.`,
+  },
+  no_payable_order: {
+    "hi-IN": (v) => `भुगतान के लिए कोई पक्का ऑर्डर बाकी नहीं है; आख़िरी ऑर्डर ${v.po} ${v.status} है।`,
+    "kn-IN": (v) => `ಪಾವತಿಗೆ ಬಾಕಿ ಇರುವ ಖಚಿತ ಆರ್ಡರ್ ಇಲ್ಲ; ಕೊನೆಯ ಆರ್ಡರ್ ${v.po} ${v.status}.`,
+    "en-IN": (v) => `No confirmed order is waiting for payment; the last order, ${v.po}, is ${v.status}.`,
   },
   orders_empty: {
     "hi-IN": () => "अभी कोई ऑर्डर नहीं है।",
@@ -297,9 +304,9 @@ const PHRASES = {
     "en-IN": () => "There are no orders yet.",
   },
   order_status: {
-    "hi-IN": (v) => `ऑर्डर ${v.po} ${v.status} है${v.more ? `, कुल ${v.count} ऑर्डर हैं` : ""}।`,
-    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ${v.status}${v.more ? `, ಒಟ್ಟು ${v.count} ಆರ್ಡರ್‌ಗಳಿವೆ` : ""}.`,
-    "en-IN": (v) => `Order ${v.po} is ${v.status}${v.more ? `; there are ${v.count} orders in all` : ""}.`,
+    "hi-IN": (v) => `ऑर्डर ${v.po} ${v.status} है${v.payment ? `, ${v.payment}` : ""}${v.more ? `; कुल ${v.count} ऑर्डर हैं` : ""}।`,
+    "kn-IN": (v) => `ಆರ್ಡರ್ ${v.po} ${v.status}${v.payment ? `, ${v.payment}` : ""}${v.more ? `; ಒಟ್ಟು ${v.count} ಆರ್ಡರ್‌ಗಳಿವೆ` : ""}.`,
+    "en-IN": (v) => `Order ${v.po} is ${v.status}${v.payment ? `; ${v.payment}` : ""}${v.more ? `; there are ${v.count} orders in all` : ""}.`,
   },
 };
 
@@ -640,13 +647,32 @@ function defaultApprovalForOrder(ctx, language) {
   throw new ToolError("NOT_APPROVED", sayFor("not_approved", language), { status: 409, message: "No approved deal to order." });
 }
 
-/** The order create_payment_link acts on: the one order still awaiting a link, else the latest order. */
+/**
+ * The order create_payment_link acts on: the business's most recent confirmed (unpaid) order,
+ * whatever requirement or call is current (e2e r3 bug 2: a new requirement or a fresh call must
+ * not hide the order that is waiting for payment).
+ */
 function defaultOrderForPayment(ctx, language) {
   const all = repo.listOrders(ctx.businessId);
   if (!all.length) throw new ToolError("NO_ORDER", phrase("orders_empty", language), { status: 409 });
-  const awaiting = all.filter((o) => o.status === orders.INITIAL_STATUS && !o.payment_link_url);
-  if (awaiting.length > 1) throw ambiguous(language, awaiting.map((o) => phrase("choice_order", language, { po: o.po_number })));
-  return (awaiting[0] ?? all.at(-1)).id;
+  const payable = all.filter((o) => o.status === orders.INITIAL_STATUS).at(-1);
+  if (payable) return payable.id;
+  const last = all.at(-1);
+  if (last.status === "paid") throw new ToolError("ORDER_ALREADY_PAID", phrase("order_already_paid", language, { po: last.po_number }), { status: 409 });
+  throw new ToolError("NO_PAYABLE_ORDER", phrase("no_payable_order", language, { po: last.po_number, status: ORDER_STATUS_WORDS[last.status]?.[language] ?? last.status }), { status: 409 });
+}
+
+/** Payment state of an order: "paid" once a verified payment is recorded, else "pending". */
+function paymentOf(businessId, order) {
+  const checkout = repo.getCheckoutForOrder(businessId, order.id);
+  const paid = order.status === "paid" || Boolean(checkout?.paid_at);
+  return { status: paid ? "paid" : "pending", linkExists: Boolean(checkout && order.payment_link_url), url: order.payment_link_url ?? null };
+}
+
+function paymentClause(order, payment, language) {
+  if (order.status === "cancelled" || order.status === "paid") return null; // the status word already says it
+  if (payment.status === "paid") return PAYMENT_WORDS.paid[language];
+  return PAYMENT_WORDS[payment.linkExists ? "pending_link" : "pending_no_link"][language];
 }
 
 /* -------------------------------------------------------------- tools --- */
@@ -663,7 +689,7 @@ const TOOLS = [
     async handler(ctx, args, language) {
       const business = requireRow(repo.getBusiness(ctx.businessId), language);
       const { id, name, owner_name, city, state } = business;
-      return { business: { id, name, owner_name, city, state, language: business.language }, say: phrase("profile", language, { name, city }) };
+      return { business: { id, name, owner_name, city, state, language: business.language }, say: phrase("profile", language, { name, city: cityIn(city, language) }) };
     },
   },
   {
@@ -674,7 +700,7 @@ const TOOLS = [
     inputSchema: ownerObj(
       {
         requirementId: idArg("requirement", "the requirement saved in this call"),
-        item: { type: "string", maxLength: 200, description: "The item as the owner named it, e.g. basmati chawal." },
+        item: { type: "string", maxLength: 200, description: "The item as the owner named it, in the owner's own script, e.g. बासमती चावल / ಬಾಸ್ಮತಿ ಅಕ್ಕಿ / basmati rice." },
         quantity: { type: "number", exclusiveMinimum: 0 },
         unit: { type: "string", maxLength: 40, description: `The unit as the owner said it (किलो, ಕಿಲೋ, kilos, pieces ...). Stored as one of: ${UNIT_CODES.join(", ")}.` },
         city: { type: "string", maxLength: 80, description: "Delivery city as the owner said it." },
@@ -718,7 +744,7 @@ const TOOLS = [
             quantity: money(requirement.quantity),
             unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
             item,
-            city: requirement.city,
+            city: cityIn(requirement.city, language),
           });
       return { requirementId: requirement.id, requirement, missing, say };
     },
@@ -809,7 +835,7 @@ const TOOLS = [
             count: ranked.length,
             comparable: comparable.length,
             name: comparable[0].vendor.name,
-            city: comparable[0].vendor.city,
+            city: cityIn(comparable[0].vendor.city, language),
             price: money(comparable[0].price),
             unit,
           })
@@ -883,25 +909,34 @@ const TOOLS = [
   {
     name: "get_ranked_deals",
     scopes: OWNER,
-    description: "All quotes for the current requirement ranked by landed cost (price x quantity + freight), best first, with reasons.",
+    description:
+      "All quotes for the current requirement ranked by landed cost (price x quantity + freight), best first, with reasons. When approvalCanFollow is true, `say` ends by asking whether to read the deal out for approval; if the owner says yes, call request_approval with no arguments (the server then reads the deal out itself).",
     inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
       const requirement = currentRequirement(ctx, args.requirementId, language);
       const deals = rankedDeals(ctx.businessId, requirement.id);
-      if (!deals.length) return { requirementId: requirement.id, deals, say: noQuotes(ctx.businessId, requirement, language).say };
+      if (!deals.length) return { requirementId: requirement.id, deals, approvalCanFollow: false, say: noQuotes(ctx.businessId, requirement, language).say };
       const best = deals[0];
-      if (best.status === "unrankable") return { requirementId: requirement.id, deals, say: phrase("deal_none_rankable", language) };
+      if (best.status === "unrankable") return { requirementId: requirement.id, deals, approvalCanFollow: false, say: phrase("deal_none_rankable", language) };
+      const sentence = phrase("deal_best", language, {
+        vendor: best.vendorName,
+        sim: best.simulated,
+        price: money(best.unitPrice),
+        unit: unitWord(best.unit, language),
+        landed: best.landedCost != null ? money(best.landedCost) : null,
+        goods: best.goodsCost != null ? money(best.goodsCost) : null,
+      });
+      // Ask only when request_approval with no arguments would put exactly this deal up
+      // (defaultDeal): rankable, not tied for best, and not ordered already.
+      const eligible = deals.filter((d) => d.status === "ranked" || d.status === "freight_unknown");
+      const tied = eligible.filter((d) => d.status === best.status && dealCost(d) === dealCost(best)).length > 1;
+      const ordered = repo.listOrders(ctx.businessId, { quote_id: best.quoteId }).length > 0;
+      const approvalCanFollow = eligible[0] === best && !tied && !ordered;
       return {
         requirementId: requirement.id,
         deals,
-        say: phrase("deal_best", language, {
-          vendor: best.vendorName,
-          sim: best.simulated,
-          price: money(best.unitPrice),
-          unit: unitWord(best.unit, language),
-          landed: best.landedCost != null ? money(best.landedCost) : null,
-          goods: best.goodsCost != null ? money(best.goodsCost) : null,
-        }),
+        approvalCanFollow,
+        say: approvalCanFollow ? `${sentence} ${phrase("deal_offer_approval", language)}` : sentence,
       };
     },
   },
@@ -926,6 +961,8 @@ const TOOLS = [
       // In a call the server speaks the read-back itself, so the yes it later accepts answers exactly
       // these words (security review r1 #2). The model only asks the question.
       const agent = require("../agora/agent");
+      // Nothing else may be narrated between the read-back and the owner's answer to it.
+      require("../agora/narrator").holdForApproval(ctx.businessId, approval.id);
       try {
         await agent.speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
       } catch (err) {
@@ -972,9 +1009,7 @@ const TOOLS = [
             await sleep(HISTORY_RETRY_MS);
             continue;
           }
-          const say = VOICE_EVIDENCE_SAY[err?.code];
-          if (say) throw new ToolError(err.code, sayFor(say, language), { status: 409, message: err.message, cause: err });
-          throw err;
+          throw err; // gate refusals map to a spoken line in errors.js CODE_MAP
         }
       }
       return {
@@ -1016,31 +1051,42 @@ const TOOLS = [
   {
     name: "create_payment_link",
     scopes: OWNER,
-    description: "Creates a Razorpay test-mode payment link for an order that exists and was approved (orderId only if several orders await payment).",
-    inputSchema: ownerObj({ orderId: idArg("order", "the order awaiting payment") }),
+    description:
+      "Makes the Razorpay test-mode payment link (a Sahay pay page) for an order that was approved and placed. Call it whenever the owner asks for a payment link or to pay, with no arguments: it finds the business's most recent confirmed, unpaid order by itself, whatever requirement or call is current. Asking again returns the same link.",
+    inputSchema: ownerObj({ orderId: idArg("order", "the most recent confirmed, unpaid order") }),
     async handler(ctx, args, language) {
       const orderId = args.orderId ?? defaultOrderForPayment(ctx, language);
       require("../agora/narrator").suppress(ctx.businessId, "payment.link");
       // The gate: payments.createPaymentLink -> approvals.assertOrderApproved.
       const link = await payments.createPaymentLink(ctx.businessId, orderId);
-      return { orderId: link.orderId, url: link.url, amount: link.amount, currency: link.currency, testMode: true, say: phrase("payment_link", language) };
+      return {
+        orderId: link.orderId,
+        poNumber: link.poNumber,
+        url: link.url,
+        amount: link.amount,
+        currency: link.currency,
+        testMode: true,
+        existing: link.existing,
+        say: phrase("payment_link", language, { po: link.poNumber }),
+      };
     },
   },
   {
     name: "get_order_status",
     scopes: OWNER,
-    description: "Status of one order, or of all orders of this business when orderId is left out.",
-    inputSchema: ownerObj({ orderId: idArg("order", "all orders") }),
+    description:
+      "Status and payment state (pending or paid, whether a payment link exists) of the business's orders. With no arguments it covers the most recent orders, whatever requirement or call is current; orderId only for one specific order.",
+    inputSchema: ownerObj({ orderId: idArg("order", "the most recent orders") }),
     async handler(ctx, args, language) {
-      const rows = args.orderId ? [requireRow(repo.getOrder(ctx.businessId, args.orderId), language)] : repo.listOrders(ctx.businessId);
-      const list = rows.map((o) => ({
+      const all = args.orderId ? [requireRow(repo.getOrder(ctx.businessId, args.orderId), language)] : repo.listOrders(ctx.businessId);
+      const list = all.slice(-RECENT_ORDERS).map((o) => ({
         orderId: o.id,
         poNumber: o.po_number,
         status: o.status,
         amount: o.amount,
         currency: o.currency,
         simulated: o.simulated,
-        paymentLinkUrl: o.payment_link_url ?? null,
+        payment: paymentOf(ctx.businessId, o),
         pdfUrl: `/api/orders/${encodeURIComponent(o.id)}/po.pdf`,
       }));
       if (!list.length) return { orders: list, say: phrase("orders_empty", language) };
@@ -1050,8 +1096,9 @@ const TOOLS = [
         say: phrase("order_status", language, {
           po: latest.poNumber,
           status: ORDER_STATUS_WORDS[latest.status]?.[language] ?? latest.status,
-          more: list.length > 1,
-          count: list.length,
+          payment: paymentClause(latest, latest.payment, language),
+          more: all.length > 1,
+          count: all.length,
         }),
       };
     },
