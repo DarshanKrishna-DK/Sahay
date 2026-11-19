@@ -185,16 +185,30 @@ export function formatTimings(marks) {
   return START_STAGES.filter((k) => Number.isFinite(marks[k])).map((k) => `${k}=${Math.round(marks[k])}`).join(" ");
 }
 
+/** Same words, ignoring spacing and Unicode normal form (a typed message and its echo). */
+function sameWords(a, b) {
+  const norm = (s) => String(s).normalize("NFC").replace(/\s+/g, " ").trim();
+  return norm(a) === norm(b);
+}
+
+const TEXT_MAX_CHARS = 1000;
+const CONNECTED = ["live", "waiting", "reconnecting"];
+
 /**
  * handlers: onStatus(status, detail), onAgentState(state), onTranscript(turns),
  * onLanguage({ lang, source }), onIssue({ source, message }), onLevels({ mic, agent }),
- * onAutoplay(blocked), onMetric({ stage, ms }), onTranscriptLink(ok), onTimings(marks)
+ * onAutoplay(blocked), onMetric({ stage, ms }), onTranscriptLink(ok), onTimings(marks),
+ * optional onTextReply(turn): the first finished Sahay turn after a typed message.
  * status: idle | mic | connecting | waiting | live | reconnecting | ending | error
+ * Transcript turn: { key, role: "owner"|"agent", via?: "voice"|"text" (owner only), turnNo,
+ * text, live, interrupted, time, language }.
  */
 export class VoiceCall {
   constructor(handlers) {
     this.h = handlers;
     this.status = "idle";
+    this.mode = "voice";
+    this.textSeq = 0;
     this.reset();
     this._onPageHide = () => { if (this.active) api.stopVoiceOnUnload(); };
     this._onOffline = () => { if (this.active) this.h.onIssue({ source: "network", message: "This device went offline. The call will resume when the network is back." }); };
@@ -220,6 +234,13 @@ export class VoiceCall {
     this.serverStarting = false;
     this.startedAt = null;
     this.marks = {};
+    this.tk = null;
+    this.items = [];          // the toolkit's latest full transcript (TRANSCRIPT_UPDATED replaces it)
+    this.typed = [];          // the owner's typed messages: { key, text, time }
+    this.agentSpoke = false;  // Sahay's first sentence (the disclosure) has reached the transcript
+    this.spokeWaiters = [];
+    this.replyAfter = null;   // time of the last typed message still waiting for onTextReply
+    this.openingMic = null;
   }
 
   /** Milliseconds since Start call for one stage; reported once the first words arrive. */
@@ -238,9 +259,16 @@ export class VoiceCall {
     this.h.onStatus(status, detail);
   }
 
-  async start() {
+  /**
+   * mode "voice": the microphone opens from the click and is published. mode "text": no
+   * microphone is opened or published (no permission prompt); the owner types with sendText
+   * and still hears Sahay. setMuted(false) later opens and publishes the microphone.
+   */
+  async start({ mode = "voice" } = {}) {
     if (this.active || this.preparing) return;
     this.reset();
+    this.mode = mode === "text" ? "text" : "voice";
+    this.muted = this.mode === "text";
     this.startedAt = performance.now();
     this.preparing = true; // a second click while the SDKs finish loading starts nothing
     try {
@@ -266,20 +294,22 @@ export class VoiceCall {
       // 1. Microphone, from the click. Step one of the server contract (a short-lived RTC+RTM
       //    token for this business's call channel) is fetched meanwhile; from the moment it
       //    answers the server holds a call entry, so teardown must stop it. The agent itself is
-      //    started only in step 5, so a microphone failure never starts it.
-      this.setStatus("mic");
+      //    started only in step 5, so a microphone failure never starts it. Text mode skips it.
+      if (this.mode === "voice") this.setStatus("mic");
       const tokenRequest = api.getVoiceToken().then(
         (session) => { this.serverStarted = true; return session; },
         (err) => { throw new CallError("token_failed", "Could not start the call", (err && err.message) || "The server could not prepare the call."); },
       );
       tokenRequest.catch(() => {}); // awaited below; a mic failure must not leave it unhandled
-      try {
-        this.mic = await AgoraRTC.createMicrophoneAudioTrack();
-      } catch (err) {
-        await tokenRequest.catch(() => {}); // settle it, so teardown knows whether to stop the server entry
-        throw micError(err);
+      if (this.mode === "voice") {
+        try {
+          this.mic = await AgoraRTC.createMicrophoneAudioTrack();
+        } catch (err) {
+          await tokenRequest.catch(() => {}); // settle it, so teardown knows whether to stop the server entry
+          throw micError(err);
+        }
+        this.mark("mic");
       }
-      this.mark("mic");
 
       // 2. The token.
       this.setStatus("connecting");
@@ -314,12 +344,16 @@ export class VoiceCall {
       ]);
       // Publishing the microphone overlaps the agent's start (step 5): Sahay speaks first, and it
       // subscribes to the owner's audio whenever that is published. Never rejects; checked below.
-      const published = rtc.publish([this.mic]).then(() => { this.mark("published"); return null; }, (err) => err || new Error("publish failed"));
+      // Text mode publishes nothing.
+      const published = !this.mic ? Promise.resolve(null)
+        : rtc.publish([this.mic]).then(() => { this.mark("published"); return null; }, (err) => err || new Error("publish failed"));
 
-      // 4. Toolkit: transcripts from RTM messages, agent state from RTM presence.
+      // 4. Toolkit: transcripts from RTM messages, agent state from RTM presence; typed
+      //    messages go out through it (sendText needs the rtmEngine given here).
       const { AgoraVoiceAI, AgoraVoiceAIEvents: E, TranscriptHelperMode } = tk;
       const ai = await AgoraVoiceAI.init({ rtcEngine: rtc, rtmEngine: rtm, renderMode: TranscriptHelperMode.TEXT });
       this.ai = ai;
+      this.tk = tk;
       ai.on(E.TRANSCRIPT_UPDATED, (items) => this.onTranscript(items));
       ai.on(E.AGENT_STATE_CHANGED, (_uid, ev) => {
         if (ev && typeof ev.state === "string") this.h.onAgentState(ev.state);
@@ -481,7 +515,7 @@ export class VoiceCall {
       const uid = String(s.uid);
       await this.rtc.leave();
       await this.rtc.join(s.appId, s.channel, r.token, /^\d+$/.test(uid) ? Number(uid) : uid);
-      await this.rtc.publish([this.mic]);
+      if (this.mic) await this.rtc.publish([this.mic]); // text mode without a microphone: nothing
       await this.rtm.renewToken(r.token);
       this.setStatus(this.findAgent() ? "live" : "waiting");
     } catch {
@@ -498,7 +532,17 @@ export class VoiceCall {
 
   onTranscript(items) {
     if (!Array.isArray(items)) return;
-    const turns = orderTurns(items.map((it) => {
+    this.items = items;
+    this.emitTranscript();
+  }
+
+  /**
+   * The toolkit's turns plus the owner's typed messages. A typed message is shown from the
+   * moment it is sent; if the agent echoes it back as a user transcription (an owner turn with
+   * the same words that arrived after it was sent), that turn takes its place, marked via text.
+   */
+  emitTranscript() {
+    const spoken = orderTurns(this.items.map((it) => {
       const md = it.metadata || {};
       const owner = String(it.uid) === "0";
       const turnId = it.turn_id !== undefined ? String(it.turn_id) : "";
@@ -509,6 +553,7 @@ export class VoiceCall {
       return {
         key: `${turnId}:${it.stream_id ?? ""}:${it.uid}`,
         role: owner ? "owner" : "agent",
+        ...(owner ? { via: "voice" } : {}),
         turnNo,
         text: typeof it.text === "string" ? it.text : "",
         live: Boolean(live),
@@ -517,8 +562,35 @@ export class VoiceCall {
         language: langFromCode(md.language),
       };
     }).filter((t) => t.text.trim() !== ""));
-    if (turns.some((t) => t.role === "agent")) this.mark("first_words");
+
+    const shown = [];
+    const echoes = new Set();
+    for (const typed of this.typed) {
+      const echo = spoken.find((t) => t.role === "owner" && !echoes.has(t) && Number.isFinite(t.time) && t.time >= typed.time && sameWords(t.text, typed.text));
+      if (echo) { echoes.add(echo); echo.via = "text"; continue; }
+      shown.push({ key: typed.key, role: "owner", via: "text", turnNo: null, text: typed.text, live: false, interrupted: false, time: typed.time, language: null });
+    }
+    const turns = withSystemLines(spoken, shown);
+
+    if (spoken.some((t) => t.role === "agent")) {
+      this.mark("first_words");
+      if (!this.agentSpoke) {
+        this.agentSpoke = true;
+        for (const w of this.spokeWaiters.splice(0)) w.resolve();
+      }
+    }
     this.h.onTranscript(turns);
+
+    if (this.replyAfter !== null) {
+      const { time, turnNo } = this.replyAfter;
+      const reply = spoken.find((t) => t.role === "agent" && !t.live && !t.interrupted
+        && Number.isFinite(t.time) && t.time >= time
+        && !(Number.isFinite(turnNo) && Number.isFinite(t.turnNo) && t.turnNo <= turnNo));
+      if (reply) {
+        this.replyAfter = null;
+        if (this.h.onTextReply) this.h.onTextReply(reply);
+      }
+    }
 
     for (let i = turns.length - 1; i >= 0; i--) {
       const t = turns[i];
@@ -538,8 +610,99 @@ export class VoiceCall {
     this.h.onLevels({ mic, agent });
   }
 
+  /**
+   * Send the owner's typed message to Sahay over the live session (RTM peer message through
+   * the toolkit's sendText; shape in docs/build/agora-findings.md, "Typed owner message").
+   * It shows in the transcript at once as { role: "owner", via: "text" }. Until Sahay's first
+   * sentence (the automated-assistant disclosure) has arrived, the message is held so it can
+   * never cut that sentence off. Resolves once RTM accepted it (not when Sahay answered).
+   * A typed "yes" is never an approval: the server counts only spoken (asr) turns.
+   */
+  async sendText(text) {
+    if (!this.ai || !this.agentUid || !CONNECTED.includes(this.status)) {
+      throw new CallError("NOT_CONNECTED", "Not connected", "Sahay is not on a call. Start a call, then type again.");
+    }
+    const body = typeof text === "string" ? text.trim() : "";
+    if (!body) throw new CallError("EMPTY_TEXT", "Nothing to send", "Type a message first.");
+    if (body.length > TEXT_MAX_CHARS) {
+      throw new CallError("TEXT_TOO_LONG", "Message too long", `Keep a message under ${TEXT_MAX_CHARS} characters.`);
+    }
+    const typed = { key: `text:${++this.textSeq}`, text: body, time: Date.now() };
+    const { ai, agentUid, tk } = this;
+    this.typed.push(typed);
+    this.emitTranscript();
+    const unsend = () => {
+      const i = this.typed.indexOf(typed);
+      if (i >= 0) { this.typed.splice(i, 1); this.emitTranscript(); }
+    };
+    if (!this.agentSpoke) {
+      try {
+        await new Promise((resolve, reject) => this.spokeWaiters.push({ resolve, reject }));
+      } catch (err) {
+        unsend();
+        throw err;
+      }
+      typed.time = Date.now(); // Sahay hears it now, after its first sentence; show it there
+      this.emitTranscript();
+    }
+    if (this.ai !== ai || !CONNECTED.includes(this.status)) {
+      unsend();
+      throw new CallError("NOT_CONNECTED", "Not connected", "The call ended before the message was sent.");
+    }
+    const lastAgentTurn = Math.max(-Infinity, ...this.items.filter((it) => String(it.uid) !== "0").map((it) => Number(it.turn_id)).filter(Number.isFinite));
+    this.replyAfter = { time: typed.time, turnNo: Number.isFinite(lastAgentTurn) ? lastAgentTurn : null };
+    try {
+      await ai.sendText(agentUid, {
+        messageType: tk.ChatMessageType.TEXT,
+        text: body,
+        priority: tk.ChatMessagePriority.INTERRUPTED,
+        responseInterruptable: true,
+      });
+    } catch (err) {
+      this.replyAfter = null;
+      unsend();
+      throw new CallError("SEND_FAILED", "Message not sent",
+        `The message did not reach Sahay${err && err.message ? ` (${err.message})` : ""}. Try again.`);
+    }
+  }
+
+  openMic() {
+    if (this.openingMic) return this.openingMic;
+    const rtc = this.rtc;
+    this.openingMic = (async () => {
+      let track;
+      try {
+        track = await window.AgoraRTC.createMicrophoneAudioTrack();
+      } catch (err) {
+        this.h.onIssue({ source: "mic", message: micError(err).message });
+        return this.muted;
+      }
+      try {
+        if (this.rtc !== rtc || !this.active) throw new Error("call ended");
+        await rtc.publish([track]);
+        if (this.rtc !== rtc || !this.active) throw new Error("call ended");
+      } catch (err) {
+        try { track.stop(); track.close(); } catch { /* ignore */ }
+        if (this.rtc === rtc && this.active) this.h.onIssue({ source: "mic", message: "Could not send your voice to Sahay. Keep typing, or try again." });
+        return this.muted;
+      }
+      this.mic = track;
+      this.muted = false;
+      this.mark("published");
+      return false;
+    })().finally(() => { this.openingMic = null; });
+    return this.openingMic;
+  }
+
+  /**
+   * Mute or unmute. In a text-mode call without a microphone, unmuting opens the microphone
+   * and publishes it (the owner switched from typing to talking).
+   */
   async setMuted(muted) {
-    if (!this.mic) return this.muted;
+    if (!this.mic) {
+      if (muted || !this.rtc || !CONNECTED.includes(this.status)) return this.muted;
+      return this.openMic();
+    }
     try {
       await this.mic.setEnabled(!muted);
       this.muted = muted;
@@ -589,6 +752,8 @@ export class VoiceCall {
     clearTimeout(this.agentTimer);
     this.h.onLevels({ mic: 0, agent: 0 });
     this.h.onAutoplay(false);
+    const ended = new CallError("NOT_CONNECTED", "Not connected", "The call ended before the message was sent.");
+    for (const w of this.spokeWaiters.splice(0)) w.reject(ended);
     const { rtc, rtm, ai, mic, session } = this;
     try { if (mic) { mic.stop(); mic.close(); } } catch { /* ignore */ }
     try { if (rtc && mic) await rtc.unpublish([mic]); } catch { /* ignore */ }
