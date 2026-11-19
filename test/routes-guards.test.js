@@ -169,6 +169,16 @@ test("clientIp trusts CF-Connecting-IP only from the loopback tunnel, else the s
   assert.equal(api.clientIp(req("127.0.0.1")), "127.0.0.1");
 });
 
+test("behind a trusted hosting proxy (opt-in), clientIp takes the right-most public X-Forwarded-For entry", () => {
+  const req = (remoteAddress, xff) => ({ socket: { remoteAddress }, headers: xff === undefined ? {} : { "x-forwarded-for": xff } });
+  const trust = { trustForwardedFor: true };
+  assert.equal(api.clientIp(req("10.0.3.7", "203.0.113.9"), trust), "203.0.113.9");
+  assert.equal(api.clientIp(req("10.0.3.7", "6.6.6.6, 203.0.113.9, 10.1.1.1"), trust), "203.0.113.9", "spoofed left entries and inner proxies are skipped");
+  assert.equal(api.clientIp(req("10.0.3.7", "junk"), trust), "10.0.3.7", "garbage falls back to the socket");
+  assert.equal(api.clientIp(req("10.0.3.7", "203.0.113.9")), "10.0.3.7", "off by default");
+  assert.equal(api.clientIp(req("198.51.100.4", "203.0.113.9"), trust), "198.51.100.4", "only a private-network peer is a proxy");
+});
+
 /* ------------------------------------------------------ business details --- */
 
 test("business name: letters and marks of any script, digits, space and . , & ' - ( ), at most 80", async () => {

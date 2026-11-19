@@ -139,6 +139,8 @@ function loadConfig(env = process.env) {
       port,
       // Loopback by default: the tunnel (cloudflared) runs on this machine. A host such as Render needs HOST=0.0.0.0.
       host: read("HOST") ?? "127.0.0.1",
+      // Behind a hosting proxy on a private network (Hugging Face Spaces): trust its X-Forwarded-For.
+      trustForwardedFor: read("TRUST_FORWARDED_FOR") === "1",
       publicUrl,
       dbFile,
       poDir: path.join(dataDir, "po"),

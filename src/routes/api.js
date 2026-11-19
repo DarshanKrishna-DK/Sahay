@@ -99,8 +99,20 @@ class HttpError extends Error {
  */
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 const IP_TEXT = /^[0-9A-Fa-f:.]{2,45}$/;
-function clientIp(req) {
+const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|::ffff:(10|127|192\.168)\.|f[cd][0-9a-f]{2}:|fe80:)/i;
+
+/**
+ * The caller's address for rate limits. Behind the local cloudflared tunnel: CF-Connecting-IP from
+ * loopback. Behind a hosting proxy (opt-in, TRUST_FORWARDED_FOR=1, e.g. Hugging Face Spaces): the
+ * right-most public X-Forwarded-For entry, which the proxy appended and the client cannot forge.
+ */
+function clientIp(req, { trustForwardedFor = config.trustForwardedFor } = {}) {
   const peer = req.socket?.remoteAddress ?? "unknown";
+  if (trustForwardedFor && PRIVATE_IP.test(peer)) {
+    const hops = String(req.headers["x-forwarded-for"] ?? "").split(",").map((h) => h.trim()).reverse();
+    const client = hops.find((h) => IP_TEXT.test(h) && !PRIVATE_IP.test(h));
+    if (client) return client;
+  }
   if (LOOPBACK.has(peer)) {
     const forwarded = req.headers["cf-connecting-ip"];
     if (typeof forwarded === "string" && IP_TEXT.test(forwarded.trim())) return forwarded.trim();
