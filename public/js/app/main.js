@@ -14,6 +14,7 @@ import { startCall, endCall, setMode, serverEnded, preload } from "./call.js";
 import { SCREENS, ALIASES } from "./screens.js";
 import "./store-sell.js";
 import { createWelcome } from "./welcome.js";
+import { createAuth } from "./auth.js";
 import { createYesLayer } from "./yes-card.js";
 import { agentState } from "./activity.js";
 
@@ -28,6 +29,15 @@ app.append(top, banner, main, nav, edge.el, yes.el);
 const screens = new Map();
 let route = null;
 let welcome = null;
+let authView = null;
+
+function authMode() {
+  if (/^#\/login/.test(location.hash)) return "login";
+  if (/^#\/signup/.test(location.hash)) return "signup";
+  let had = false;
+  try { had = localStorage.getItem("sahay-had-account") === "1"; } catch { /* storage blocked */ }
+  return had ? "login" : "signup";
+}
 
 function currentRoute() {
   const m = /^#\/([a-z]+)/.exec(location.hash || "");
@@ -85,12 +95,21 @@ function renderBoot() {
   $(".skip-link").textContent = t("skip");
   if (state.boot === "ready") {
     if (welcome) { welcome.el.remove(); welcome = null; }
+    if (authView) { authView.el.remove(); authView.destroy(); authView = null; }
+    if (/^#\/(signup|login)/.test(location.hash)) history.replaceState(null, "", "#/talk");
     for (const el of main.querySelectorAll(":scope > .boot-view")) el.remove();
     go();
     return;
   }
   for (const s of screens.values()) s.el.hidden = true;
   for (const el of main.querySelectorAll(":scope > .boot-view")) el.remove();
+  if (state.boot === "auth") {
+    if (welcome) { welcome.el.remove(); welcome = null; }
+    if (!authView) { authView = createAuth({ mode: authMode() }); app.append(authView.el); history.replaceState(null, "", `#/${authMode()}`); }
+    authView.update();
+    return;
+  }
+  if (authView) { authView.el.remove(); authView.destroy(); authView = null; }
   if (state.boot === "welcome") {
     if (!welcome) { welcome = createWelcome(); app.append(welcome.el); }
     welcome.update();
@@ -149,6 +168,7 @@ store.subscribe((s, parts) => {
     // Language changed: rebuild every mounted screen in the new language.
     for (const sc of screens.values()) sc.update(s, new Set(["all"]));
     if (welcome) welcome.update();
+    if (authView) authView.update();
     renderBoot();
   }
   if (state.boot === "ready") {
@@ -162,6 +182,7 @@ store.subscribe((s, parts) => {
 });
 
 window.addEventListener("hashchange", () => {
+  if (state.boot === "auth" && authView) { if (/^#\/(signup|login)/.test(location.hash)) authView.show(authMode()); return; }
   go();
   // A screen that was hidden missed partial updates: refresh it whole.
   const s = screens.get(route);

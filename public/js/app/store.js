@@ -7,7 +7,7 @@ import { connectEvents } from "../events.js";
 import { pick, num, parseMaybeJson, asArray } from "./dom.js";
 
 export const state = {
-  boot: "loading", // loading | welcome | ready | error
+  boot: "loading", // loading | auth | welcome | ready | error
   bootError: null,
   config: { accessCodeRequired: false },
   business: null,
@@ -506,12 +506,27 @@ export async function boot({ session } = {}) {
     try {
       let s = session;
       if (!s) {
+        // Signed in with an account? (404 = this server has no accounts yet: device sessions only.)
+        try {
+          const me = await agentRequest("GET", "/api/auth/me");
+          state.account = me.account || null;
+          state.accounts = "ready";
+          if (me.business) s = { business: me.business };
+        } catch (err) {
+          state.account = null;
+          if (err.status === 404) state.accounts = "missing";
+          else if (err.status === 401) state.accounts = "ready";
+          else throw err;
+        }
+      }
+      if (!s) {
         try {
           s = await api.openSession();
         } catch (err) {
           if (err.code === "BUSINESS_DETAILS_REQUIRED") {
             try { state.config.accessCodeRequired = Boolean((await api.getConfig()).accessCodeRequired); } catch { /* the server's ACCESS_CODE_REQUIRED answer reveals it */ }
-            state.boot = "welcome";
+            // No shop on this device: Sign up / Log in (or the old welcome when accounts are off).
+            state.boot = state.accounts === "missing" ? "welcome" : "auth";
             state.stream = "closed";
             touch("boot");
             return;
@@ -621,4 +636,12 @@ export async function dismissRequirement(requirementId) {
 /** Business language, overridden by the agent profile. */
 export function ownerLanguage() {
   return (state.agent.profile && state.agent.profile.language) || (state.business && state.business.language) || null;
+}
+
+/** POST /api/auth/logout, then back to Log in with nothing of the shop left in memory. */
+export async function logout() {
+  await agentRequest("POST", "/api/auth/logout", {}).catch((err) => { if (err.status !== 204) throw err; });
+  try { localStorage.setItem("sahay-had-account", "1"); } catch { /* storage blocked */ }
+  location.replace(`${location.pathname}#/login`);
+  location.reload();
 }
