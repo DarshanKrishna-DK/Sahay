@@ -111,6 +111,12 @@ export function renderRiver(model, { vertical, onStation, freshVendorIds = new S
     svgEl("path", { d, class: "river-base", pathLength: 1, "vector-effect": "non-scaling-stroke" }),
     svgEl("path", { d, class: "river-glow", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }),
     svgEl("path", { d, class: "river-flow", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }));
+  // The leg Sahay is working on right now (a station is active): marching dashes from that
+  // station towards the next one, like the journey arrows on Wahlet. Still under reduced motion.
+  const activeAt = stations.findIndex((s) => s.status === "active");
+  if (activeAt !== -1 && activeAt < stations.length - 1) {
+    svg.append(svgEl("path", { d: curve([pts[activeAt], pts[activeAt + 1]], W, H, vertical), class: "river-signal", "vector-effect": "non-scaling-stroke" }));
+  }
 
   const list = h("ol", { class: "river-stations", "aria-label": t("work.stations") });
   stations.forEach((s, i) => {
@@ -146,15 +152,19 @@ export function renderRiver(model, { vertical, onStation, freshVendorIds = new S
   return h("div", { class: `river${vertical ? " river-v" : ""}` }, svg, list, vendors.length ? sellers : null);
 }
 
-const HONORIFIC = new Set(["m/s", "ms", "m/s.", "shri", "shree", "sri", "sree", "the", "new", "श्री", "ಶ್ರೀ"]);
-
-/** A short, readable seller name: the first real word, at most 10 characters. */
+/**
+ * The seller's name as given, short but whole: whole words up to about 18 characters, never a
+ * cut word or initials (QA: "BS" alone read as nothing). One very long first word stays whole.
+ */
 export function shortName(name) {
-  const words = String(name || "").split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")).filter(Boolean);
-  const word = words.find((w, i) => i === words.length - 1 || !HONORIFIC.has(w.toLowerCase())) || "";
-  if (!word) return "?";
-  const chars = [...word];
-  return chars.length > 10 ? `${chars.slice(0, 9).join("")}…` : word;
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  let out = words[0];
+  for (const w of words.slice(1)) {
+    if ([...`${out} ${w}`].length > 18) return `${out}…`;
+    out = `${out} ${w}`;
+  }
+  return out;
 }
 
 function stateIcon(status) {

@@ -90,7 +90,9 @@ export function createAuth({ mode: startMode = "signup" } = {}) {
     state.accounts = "ready";
     if (res.business) state.business = res.business;
     try { localStorage.setItem("sahay-had-account", "1"); } catch { /* storage blocked */ }
-    if (finger && res.account && !res.skipOffer) { mode = "offer"; busy = false; error = null; render(true); return; }
+    let offered = false;
+    try { offered = localStorage.getItem("sahay-finger-offered") === "1"; localStorage.setItem("sahay-finger-offered", "1"); } catch { /* storage blocked */ }
+    if (finger && res.account && !res.skipOffer && !offered) { mode = "offer"; busy = false; error = null; render(true); return; }
     enterApp(res.business);
   }
 
@@ -245,6 +247,7 @@ export function createAuth({ mode: startMode = "signup" } = {}) {
 
   /** The answers so far as small icon chips, so the owner sees what Sahay has. */
   function answers() {
+    if (mode === "offer") return null;
     const chips = [];
     if (data.phone && steps()[step] !== "phone") chips.push(["phone", `+91 ${fmtPhone(data.phone)}`, "phone"]);
     if (mode === "signup" && data.name && step > signupSteps().indexOf("name")) chips.push(["store", data.name, "name"]);

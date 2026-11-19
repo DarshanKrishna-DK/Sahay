@@ -7,6 +7,8 @@ import { h, icon } from "./dom.js";
 import { t, lang } from "./i18n.js";
 import { pendingApprovals } from "./store.js";
 import { call, inCall, textSupported } from "./call.js";
+import { createThinkingOrb } from "./thinking-orb.js";
+import { agentState } from "./activity.js";
 
 const ITEMS = [
   { id: "talk", icon: "mic", word: "edge.talk", aria: "edge.talk" },
@@ -23,6 +25,8 @@ export function createEdgeOrb({ onAction }) {
   const trigger = h("button", {
     class: "edge-trigger", type: "button", "aria-expanded": "false", "aria-controls": fanId,
   }, h("span", { class: "edge-core", "aria-hidden": "true" }), h("span", { class: "edge-count", hidden: true, "aria-hidden": "true" }));
+  const coreOrb = createThinkingOrb({ size: 36, state: "idle" });
+  trigger.querySelector(".edge-core").append(coreOrb.el);
   const bubbles = ITEMS.map((it, i) => {
     const b = h("button", { class: "edge-bubble", type: "button", dataset: { id: it.id }, style: `--a:${ANGLES[i]}deg;--i:${i}` },
       h("span", { class: "eb-ico" }, icon(it.icon, 26), it.id === "approve" ? h("span", { class: "eb-badge", hidden: true }) : null),
@@ -116,6 +120,7 @@ export function createEdgeOrb({ onAction }) {
     trigger.setAttribute("aria-label", open ? t("edge.close") : (pending ? `${t("edge.open")}, ${t("yes.pending", { n: pending })}` : t("edge.open")));
     trigger.dataset.tip = open ? t("edge.close") : t("edge.open");
     root.dataset.call = call.status;
+    coreOrb.set(agentState());
     for (const b of bubbles) {
       const it = ITEMS.find((x) => x.id === b.dataset.id);
       b.querySelector(".eb-word").textContent = t(it.word);

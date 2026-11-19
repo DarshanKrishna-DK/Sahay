@@ -7,7 +7,7 @@ import { t } from "./i18n.js";
 import { state } from "./store.js";
 import { call, inCall, startCall, endCall, setMuted, setMode, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { createOrb } from "./orb.js";
-import { nowLine, runningJobs } from "./activity.js";
+import { nowLine, runningJobs, agentState } from "./activity.js";
 import { speakButton } from "./speak.js";
 
 const YES_WORDS = /^\s*(yes|yeah|ok|okay|haan|han|ha|हाँ|हां|जी हाँ|ठीक है|ಹೌದು|ಸರಿ)\s*[.!]?\s*$/i;
@@ -51,6 +51,7 @@ export function createTalk() {
     render(new Set(["call"]));
   });
 
+  for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
   document.addEventListener("sahay:focus-type", () => requestAnimationFrame(() => input.focus()));
   document.addEventListener("sahay:hint", (e) => { hintKey = e.detail && e.detail.key; render(new Set(["call"])); });
 
@@ -85,7 +86,7 @@ export function createTalk() {
   function renderOrb() {
     const [st, label, tone] = orbView();
     const ends = inCall() || call.status === "mic" || call.status === "connecting";
-    orb.set(st, ends ? `${label}. ${t("talk.end")}` : label, runningJobs().length > 0);
+    orb.set(st, ends ? `${label}. ${t("talk.end")}` : label, runningJobs().length > 0, agentState());
     orb.el.disabled = false;
     orbLabel.textContent = label;
     orbLabel.dataset.state = st;
@@ -108,11 +109,14 @@ export function createTalk() {
     if (call.status === "error" && call.error && call.error.retry !== false) {
       items.push(h("button", { class: "btn btn-ghost", type: "button", on: { click: () => startCall(call.mode) } }, icon("refresh", 20), h("span", { text: t("retry") })));
     }
-    if (call.status === "idle" && call.ended && (call.ended.reason === "offline" || call.ended.reason === "stuck")) {
-      items.push(h("div", { class: "issue issue-bad issue-line", role: "status" }, icon(call.ended.reason === "offline" ? "alert" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
+    // "No internet" only while the device really is offline (QA: the chip stayed after recovery).
+    const offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
+    if (call.status === "idle" && call.ended && ((call.ended.reason === "offline" && offline) || call.ended.reason === "stuck")) {
+      items.push(h("div", { class: "issue issue-bad issue-line", role: "status" }, icon(call.ended.reason === "offline" ? "wifi" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
     }
     if ((call.status === "idle" || call.status === "error") && state.voiceServer && state.voiceServer.active) {
-      items.push(h("div", { class: "issue issue-warn" }, icon("alert", 22), h("span", { text: t("talk.otherTab") }),
+      // Right after this screen lost its own call, the open call is almost always that one.
+      items.push(h("div", { class: "issue issue-info" }, icon("info", 22), h("span", { text: t(call.ended ? "talk.oldCall" : "talk.otherScreen") }),
         h("button", { class: "btn btn-ghost btn-sm", type: "button", disabled: call.endingOther ? true : undefined, on: { click: endServerCall } },
           call.endingOther ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("phoneOff", 20), h("span", { text: t("talk.endThat") }))));
     }

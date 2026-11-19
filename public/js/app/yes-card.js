@@ -15,6 +15,9 @@ export function createYesLayer() {
   const live = h("div", { class: "sr-only", role: "status", "aria-live": "polite" });
   const ui = new Map();     // approvalId -> { busy: "approve"|"reject", error }
   const later = new Set();  // approvals the owner put aside with "Later"
+  // Approved here by button and waiting for order.created: approvalId -> { at, slow }. The card
+  // turns into a small "order is being made" line until the order exists (or a while has passed).
+  const placing = new Map();
   let index = 0;
   let lastKey = "";
   let announced = new Set();
@@ -30,6 +33,10 @@ export function createYesLayer() {
       const a = state.approvals.get(String(id));
       if (a) { a.status = (res && res.status) || (decision === "approve" ? "approved" : "rejected"); a.decidedVia = "button"; }
       ui.delete(id);
+      if (decision === "approve") {
+        placing.set(String(id), { at: Date.now(), slow: false });
+        setTimeout(() => { const p = placing.get(String(id)); if (p) { p.slow = true; render(true); } }, 45000);
+      }
       touch("approvals", "work");
     } catch (err) {
       if (err.status === 409) {
@@ -88,20 +95,36 @@ export function createYesLayer() {
     for (const id of [...ui.keys()]) if (!pending.some((a) => String(a.id) === id)) ui.delete(id);
     const shown = pending.filter((a) => !later.has(String(a.id)));
     if (index >= shown.length) index = 0;
-    const key = JSON.stringify([state.boot, shown.map((a) => [a.id, a.readback, a.totalAmount]), [...ui.entries()], later.size, pending.length, index, document.documentElement.lang, state.quotes.size]);
+    const key = JSON.stringify([placing.size, state.orders.size, state.boot, shown.map((a) => [a.id, a.readback, a.totalAmount]), [...ui.entries()], later.size, pending.length, index, document.documentElement.lang, state.quotes.size]);
     if (!force && key === lastKey) return;
     lastKey = key;
     for (const a of pending) {
       if (!announced.has(String(a.id))) { announced.add(String(a.id)); live.textContent = t("yes.title"); }
     }
-    if (state.boot !== "ready" || pending.length === 0) { fill(body); el.dataset.mode = "none"; return; }
+    // An order for an approval we are placing ends the "being made" line.
+    for (const [id] of placing) {
+      if ([...state.orders.values()].some((o) => String(o.approvalId) === id)) placing.delete(id);
+    }
+    if (state.boot === "ready" && pending.length === 0 && placing.size) {
+      el.dataset.mode = "mini";
+      document.body.dataset.yes = "mini";
+      const slow = [...placing.values()].some((p) => p.slow);
+      fill(body, h("p", { class: "yes-mini yes-placing", role: "status" },
+        slow ? icon("alert", 22) : h("span", { class: "spinner", "aria-hidden": "true" }),
+        h("span", { text: t(slow ? "yes.placingSlow" : "yes.placing") }),
+        slow ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: () => { placing.clear(); render(true); } } }, icon("x", 18), h("span", { text: t("close") })) : null));
+      return;
+    }
+    if (state.boot !== "ready" || pending.length === 0) { fill(body); el.dataset.mode = "none"; document.body.dataset.yes = "none"; return; }
     if (shown.length === 0) {
       el.dataset.mode = "mini";
+      document.body.dataset.yes = "mini";
       fill(body, h("button", { class: "yes-mini", type: "button", on: { click: () => { later.clear(); render(); focusCard(); } } },
         h("span", { class: "yes-pulse", "aria-hidden": "true" }), icon("check", 22), h("span", { text: t("yes.pending", { n: pending.length }) })));
       return;
     }
     el.dataset.mode = "card";
+    document.body.dataset.yes = "card";
     const v = approvalView(shown[index]);
     fill(body, card(v, index + 1, shown.length));
   }
@@ -113,7 +136,7 @@ export function createYesLayer() {
   return {
     el,
     update(parts) {
-      if (parts.has("approvals") || parts.has("work") || parts.has("boot") || parts.has("lang") || parts.has("all")) render(parts.has("lang"));
+      if (parts.has("approvals") || parts.has("work") || parts.has("orders") || parts.has("boot") || parts.has("lang") || parts.has("all")) render(parts.has("lang") || (placing.size > 0 && parts.has("orders")));
     },
     openFirst() { later.clear(); index = 0; render(true); focusCard(); },
   };

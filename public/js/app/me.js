@@ -4,8 +4,21 @@
 // keeps a rule. "Teach me" opens Talk with the teaching hint; History is one tap away.
 
 import { h, icon, patch, scripted } from "./dom.js";
-import { t, LANGS, cityWord } from "./i18n.js";
-import { state, loadAgent, updateProfile, decideRule, ownerLanguage } from "./store.js";
+import { t, LANGS, cityWord, addStrings } from "./i18n.js";
+import { state, loadAgent, updateProfile, decideRule, ownerLanguage, logout } from "./store.js";
+import { createThinkingOrb } from "./thinking-orb.js";
+import { passkeyAvailable, addPasskey, cancelled } from "./passkey.js";
+
+addStrings({
+  "me.account": ["Your account", "आपका खाता", "ನಿಮ್ಮ ಖಾತೆ"],
+  "me.noAccount": ["This shop has no account yet. Make one to open Sahay on any phone.", "इस दुकान का अभी खाता नहीं है। खाता बनाइए, फिर किसी भी फ़ोन पर सहाय खोलें।", "ಈ ಅಂಗಡಿಗೆ ಇನ್ನೂ ಖಾತೆ ಇಲ್ಲ. ಖಾತೆ ಮಾಡಿ, ಯಾವುದೇ ಫೋನ್‌ನಲ್ಲಿ ಸಹಾಯ್ ತೆರೆಯಿರಿ."],
+  "me.makeAccount": ["Make an account", "खाता बनाएँ", "ಖಾತೆ ಮಾಡಿ"],
+  "me.addFinger": ["Add fingerprint", "उँगली जोड़ें", "ಬೆರಳಚ್ಚು ಸೇರಿಸಿ"],
+  "me.fingerAdded": ["Fingerprint added", "उँगली जुड़ गई", "ಬೆರಳಚ್ಚು ಸೇರಿತು"],
+  "me.fingerFail": ["Could not add the fingerprint. Try again.", "उँगली नहीं जुड़ी। फिर कोशिश करें।", "ಬೆರಳಚ್ಚು ಸೇರಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
+  "me.logout": ["Log out", "लॉग आउट", "ಲಾಗ್ ಔಟ್"],
+  "me.logoutFail": ["Could not log out. Try again.", "लॉग आउट नहीं हुआ। फिर कोशिश करें।", "ಲಾಗ್ ಔಟ್ ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
+});
 import { stateView, loadingView } from "./empty.js";
 import { speakButton } from "./speak.js";
 import { openSheet, closeSheet } from "./sheet.js";
@@ -19,7 +32,11 @@ export function createMe() {
   const profileBox = h("div", { class: "me-profile" });
   const starsBox = h("div", { class: "me-stars" });
   const actions = h("div", { class: "me-actions" });
-  el.append(head, profileBox, starsBox, actions);
+  const accountBox = h("div", { class: "me-account" });
+  el.append(head, profileBox, starsBox, actions, accountBox);
+  const meOrb = createThinkingOrb({ size: 72, state: "idle" });
+  const acct = { finger: null, busy: null, note: null, error: null };
+  passkeyAvailable().then((ok) => { acct.finger = ok; renderAccount(); });
   const saving = { field: null, error: null, ok: null };
   const ruleUi = new Map(); // ruleId -> { busy, error }
   const seen = new Set();
@@ -47,7 +64,7 @@ export function createMe() {
   function renderHead() {
     const b = state.business || {};
     patch(head, JSON.stringify([b.name, b.city, document.documentElement.lang]), () => [
-      h("span", { class: "me-orb", "aria-hidden": "true" }),
+      h("span", { class: "me-orb", "aria-hidden": "true" }, meOrb.el),
       h("div", { class: "me-who" },
         h("h1", { class: "screen-title", id: "me-title", text: t("me.title") }),
         b.name ? scripted("p", [b.name, b.city ? cityWord(b.city) : null].filter(Boolean).join(", "), { class: "me-shop" }) : null),
@@ -193,8 +210,55 @@ export function createMe() {
     ]);
   }
 
+  async function onAddFinger() {
+    acct.busy = "finger"; acct.note = null; acct.error = null; renderAccount();
+    try { await addPasskey(); acct.note = t("me.fingerAdded"); }
+    catch (err) { if (!cancelled(err)) acct.error = err.say || t("me.fingerFail"); }
+    acct.busy = null; renderAccount();
+  }
+
+  async function onLogout() {
+    acct.busy = "logout"; acct.error = null; renderAccount();
+    try { await logout(); } catch (err) { acct.busy = null; acct.error = err.say || t("me.logoutFail"); renderAccount(); }
+  }
+
+  function renderAccount() {
+    const a = state.account;
+    const key = JSON.stringify([a, state.accounts, acct, document.documentElement.lang]);
+    patch(accountBox, key, () => {
+      if (state.accounts === "missing") return [];
+      const body = [h("h2", { class: "section-title", text: t("me.account") })];
+      if (!a) {
+        body.push(h("p", { class: "me-account-line" }, icon("info", 22), h("span", { text: t("me.noAccount") })),
+          h("div", { class: "me-account-actions" },
+            h("a", { class: "keycap keycap-marigold keycap-md", href: "#/signup", on: { click: (e) => { e.preventDefault(); onLogoutToSignup(); } } }, icon("key", 22), h("span", { text: t("me.makeAccount") }))));
+        return body;
+      }
+      const phone = String(a.phone || "").replace(/^\+91(\d{5})(\d{5})$/, "+91 $1 $2");
+      body.push(
+        h("p", { class: "me-account-line" }, icon("phone", 22), h("span", { class: "me-phone", text: phone })),
+        a.phone_verified ? null : h("p", { class: "auth-honest", role: "note" }, icon("info", 20), h("span", {}, h("strong", { text: t("auth.notVerified") }))),
+        h("div", { class: "me-account-actions" },
+          acct.finger ? h("button", { class: "keycap keycap-ghost keycap-md", type: "button", disabled: acct.busy ? true : undefined, on: { click: onAddFinger } },
+            acct.busy === "finger" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("fingerprint", 22), h("span", { text: t("me.addFinger") })) : null,
+          h("button", { class: "keycap keycap-ghost keycap-md", type: "button", disabled: acct.busy ? true : undefined, on: { click: onLogout } },
+            acct.busy === "logout" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("logout", 22), h("span", { text: t("me.logout") }))),
+        acct.note ? h("p", { class: "me-account-ok", role: "status" }, icon("checkCircle", 22), h("span", { text: acct.note })) : null,
+        acct.error ? h("p", { class: "yes-error", role: "alert" }, icon("alert", 20), h("span", { text: acct.error })) : null);
+      return body;
+    });
+  }
+
+  // A device-only shop makes its account through Sign up, which claims this shop (contract ACC).
+  function onLogoutToSignup() {
+    state.boot = "auth";
+    history.replaceState(null, "", "#/signup");
+    import("./store.js").then((m) => m.touch("boot"));
+  }
+
   function render(parts) {
     const all = parts.has("all") || parts.has("lang");
+    if (all || parts.has("business") || parts.has("boot")) renderAccount();
     if (all || parts.has("business")) renderHead();
     if (all || parts.has("agent")) { renderProfile(); renderStars(); }
     if (all) renderActions();

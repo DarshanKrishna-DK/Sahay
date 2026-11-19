@@ -4,7 +4,7 @@
 // the browser has them (nav and edge orb stay put), a short fade otherwise.
 
 import { h, $, fill } from "./dom.js";
-import { t, setLang } from "./i18n.js";
+import { t, setLang, onLang } from "./i18n.js";
 import * as store from "./store.js";
 import { state } from "./store.js";
 import { createNav } from "./nav.js";
@@ -189,7 +189,11 @@ window.addEventListener("hashchange", () => {
   if (s) s.update(state, new Set(["all"]));
 });
 
-setLang(navigator.language || "en-IN");
+// The last language this device used (so Log in speaks it), else the browser's.
+let savedLang = null;
+try { savedLang = localStorage.getItem("sahay-lang"); } catch { /* storage blocked */ }
+setLang(savedLang || navigator.language || "en-IN");
+onLang((l) => { try { localStorage.setItem("sahay-lang", l); } catch { /* storage blocked */ } });
 updateNav(currentRoute());
 edge.update();
 renderBoot();

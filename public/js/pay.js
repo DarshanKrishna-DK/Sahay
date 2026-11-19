@@ -12,6 +12,13 @@
   var statusEl = document.getElementById("status");
   var order = null;
 
+  // Razorpay Checkout leaves history entries behind (QA: the browser Back hung after it), so the
+  // way home is a plain link to the Buy screen, always on the page and repeated after checkout.
+  function showBack() {
+    var b = document.getElementById("done-back");
+    if (b) b.hidden = false;
+  }
+
   function show(text, kind) {
     statusEl.textContent = text;
     statusEl.className = kind || "";
@@ -86,10 +93,12 @@
         show(body.status === "paid"
           ? "Paid and verified (Razorpay test mode). Order " + order.poNumber + " is marked paid."
           : "The payment was recorded, but order " + order.poNumber + " is " + body.status + ".", body.status === "paid" ? "ok" : "bad");
+        showBack();
       })
       .catch(function (e) {
         payBtn.disabled = false;
         show(e.message, "bad");
+        showBack();
       });
   }
 
@@ -115,6 +124,7 @@
         ondismiss: function () {
           payBtn.disabled = false;
           show("Checkout closed. Nothing was paid.");
+          showBack();
         },
       },
     });

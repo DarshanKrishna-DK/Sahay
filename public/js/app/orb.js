@@ -1,23 +1,30 @@
 // The agent orb: the biggest thing on the Talk screen. A button (tap = start or end the call)
-// whose look follows the agent: idle, connecting, listening (breathes with your voice),
-// thinking (an arc turns), speaking (ripples with Sahay's voice), working (satellites orbit
-// while sourcing or bargaining runs), error. Levels come straight from the call, not the store.
+// holding a thinking orb (thinking-orbs 0.3.2 via thinking-orb.js) whose animation follows the
+// agent: breathing when idle, a rolling wave while it listens, scrambling bands while it thinks,
+// a scanning globe while it finds sellers, plaited strands while it bargains, a sash while it
+// composes a bill, a wiring constellation while connecting. A thin ring and voice ripples sit
+// around it; the ring swells with the live voice level (mic or Sahay), straight from the call.
 
-import { h, svgEl } from "./dom.js";
+import { h } from "./dom.js";
 import { onLevels } from "./call.js";
+import { createThinkingOrb } from "./thinking-orb.js";
 
 export function createOrb({ onPress }) {
-  const ring = svgEl("svg", { class: "orb-arc", viewBox: "0 0 200 200", "aria-hidden": "true" });
-  ring.append(svgEl("circle", { cx: 100, cy: 100, r: 94, fill: "none", "stroke-width": 3, "stroke-linecap": "round", "stroke-dasharray": "120 470" }));
-  const el = h("button", { class: "orb", type: "button", dataset: { state: "idle" } },
+  const torb = createThinkingOrb({ size: 240, state: "idle" });
+  const el = h("button", { class: "orb", type: "button", dataset: { state: "idle", agent: "idle" } },
+    h("span", { class: "orb-halo", "aria-hidden": "true" }),
     h("span", { class: "orb-ripple r1", "aria-hidden": "true" }),
     h("span", { class: "orb-ripple r2", "aria-hidden": "true" }),
-    h("span", { class: "orb-ripple r3", "aria-hidden": "true" }),
-    h("span", { class: "orb-halo", "aria-hidden": "true" }),
-    ring,
-    h("span", { class: "orb-core", "aria-hidden": "true" }, h("span", { class: "orb-shine" })),
-    h("span", { class: "orb-sats", "aria-hidden": "true" }, h("i"), h("i"), h("i")));
+    h("span", { class: "orb-ring", "aria-hidden": "true" }),
+    h("span", { class: "orb-canvas", "aria-hidden": "true" }, torb.el));
   el.addEventListener("click", () => onPress());
+
+  // The canvas follows the button's size (set in CSS with clamp()).
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
+    const px = Math.round(el.clientWidth * 0.8);
+    if (px > 0) torb.setSize(px);
+  }) : null;
+  if (ro) ro.observe(el);
 
   let level = 0;
   let raf = 0;
@@ -34,12 +41,14 @@ export function createOrb({ onPress }) {
 
   return {
     el,
-    /** set(state, label, working) */
-    set(state, label, working) {
+    /** set(callState, label, working, agentState) */
+    set(state, label, working, agentState) {
       el.dataset.state = state;
       el.dataset.working = working ? "true" : "false";
+      el.dataset.agent = agentState || "idle";
       el.setAttribute("aria-label", label);
+      torb.set(state === "error" ? "idle" : agentState || "idle");
     },
-    destroy() { off(); },
+    destroy() { off(); if (ro) ro.disconnect(); torb.destroy(); },
   };
 }
