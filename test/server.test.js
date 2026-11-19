@@ -27,12 +27,16 @@ const { loadConfig } = require("../src/config");
 const { VENDOR_PAGE } = require("../src/routes/api");
 
 const PUBLIC = path.join(__dirname, "..", "public");
-const indexHtml = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
+const readPage = (name) => (fs.existsSync(path.join(PUBLIC, name)) ? fs.readFileSync(path.join(PUBLIC, name), "utf8") : "");
+const indexHtml = readPage("index.html");
+const appHtml = readPage("app.html");
+// The page that loads the voice client holds the toolkit's import map: app.html (index.html until the app lands).
+const voicePageHtml = /<script type="importmap">/.test(appHtml) ? appHtml : indexHtml;
 const voiceJs = fs.readFileSync(path.join(PUBLIC, "js", "voice.js"), "utf8");
 
-async function withApp(run) {
+async function withApp(run, options) {
   const s = await new Promise((resolve) => {
-    const x = server.createApp().listen(0, "127.0.0.1", () => resolve(x));
+    const x = server.createApp(options).listen(0, "127.0.0.1", () => resolve(x));
   });
   try {
     await run(`http://127.0.0.1:${s.address().port}`);
@@ -77,8 +81,8 @@ test("SRI: every CDN script the console and the vendor page load is pinned, inte
   assert.match(voiceJs, /\.integrity = /);
 
   // The toolkit ES module is checked through the import map's integrity section.
-  const map = /<script type="importmap">([\s\S]*?)<\/script>/.exec(indexHtml);
-  assert.ok(map, "index.html has an import map");
+  const map = /<script type="importmap">([\s\S]*?)<\/script>/.exec(voicePageHtml);
+  assert.ok(map, "the voice page has an import map");
   const integrity = JSON.parse(map[1]).integrity;
   const toolkit = /const TOOLKIT_URL = "([^"]+)"/.exec(voiceJs)[1];
   assert.match(integrity[toolkit], /^sha384-/);
@@ -94,17 +98,70 @@ test("SRI: every CDN script the console and the vendor page load is pinned, inte
     assert.ok(scriptSrc.includes(url), `script-src allows exactly ${url}`);
   }
   // Every https script URL anywhere in public/ is one of those.
-  const all = new Set([...(indexHtml + voiceJs).matchAll(/https:\/\/[^"'\s)]+\.m?js\b/g)].map((m) => m[0]));
+  const all = new Set([...(indexHtml + appHtml + voiceJs).matchAll(/https:\/\/[^"'\s)]+\.m?js\b/g)].map((m) => m[0]));
   for (const url of all) assert.ok(scriptSrc.includes(url), `${url} is allowed by script-src`);
 });
 
-test("the only inline script in index.html is the import map, allowed by its sha256 hash", () => {
-  const inline = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
+test("the only inline script of the voice page is the import map, allowed by its sha256 hash", () => {
+  const inline = [...voicePageHtml.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
   assert.equal(inline.length, 1);
   assert.match(inline[0][1], /type="importmap"/);
   const hash = `'sha256-${crypto.createHash("sha256").update(inline[0][2]).digest("base64")}'`;
   assert.ok(directives(server.contentSecurityPolicy())["script-src"].includes(hash));
   assert.deepEqual(server.inlineScriptHashes("<script>a\r\nb</script>"), server.inlineScriptHashes("<script>a\nb</script>"), "CRLF hashed as the HTML parser sees it");
+});
+
+test("/app serves app.html and / the landing page; the CSP hashes inline scripts of both pages", async () => {
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "sahay-public-"));
+  const map = '{"integrity":{"https://cdn.jsdelivr.net/npm/x@1.0.0/x.mjs":"sha384-abc"}}';
+  fs.writeFileSync(path.join(dir, "index.html"), "<!doctype html><title>landing page</title>");
+  fs.writeFileSync(path.join(dir, "app.html"), `<!doctype html><title>app page</title><script type="importmap">${map}</script>`);
+  try {
+    await withApp(async (base) => {
+      for (const [p, title] of [["/", "landing page"], ["/app", "app page"], ["/app/", "app page"]]) {
+        const res = await fetch(base + p);
+        assert.equal(res.status, 200, p);
+        assert.match(res.headers.get("content-type"), /^text\/html/, p);
+        assert.match(await res.text(), new RegExp(`<title>${title}</title>`), p);
+        const scriptSrc = directives(res.headers.get("content-security-policy"))["script-src"];
+        assert.ok(scriptSrc.includes(`'sha256-${crypto.createHash("sha256").update(map).digest("base64")}'`), `import map hash on ${p}`);
+      }
+      assert.equal((await fetch(base + "/app/nothing-here")).status, 404);
+    }, { publicDir: dir });
+  } finally {
+    server.createApp(); // back to the real public/ CSP for the other tests
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a missing app.html is a 404, not a crash", async () => {
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "sahay-public-"));
+  fs.writeFileSync(path.join(dir, "index.html"), "<!doctype html><title>landing page</title>");
+  try {
+    await withApp(async (base) => {
+      assert.equal((await fetch(base + "/app")).status, 404);
+      assert.equal((await fetch(base + "/")).status, 200);
+    }, { publicDir: dir });
+  } finally {
+    server.createApp();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("script-src allows exactly the pinned GSAP 3.13.0, ScrollTrigger and Lenis files, each with a sha384", () => {
+  const scriptSrc = directives(server.contentSecurityPolicy())["script-src"];
+  const expected = [
+    "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js",
+    "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js",
+    "https://cdn.jsdelivr.net/npm/lenis@1.3.27/dist/lenis.min.js",
+  ];
+  assert.deepEqual(Object.keys(server.LANDING_SCRIPTS), expected);
+  for (const url of expected) {
+    assert.ok(scriptSrc.includes(url), `script-src lists ${url}`);
+    assert.ok(server.CDN_SCRIPTS.includes(url));
+    assert.match(server.LANDING_SCRIPTS[url], /^sha384-[A-Za-z0-9+/]{64}$/);
+  }
+  assert.ok(!scriptSrc.some((s) => /gsap@3\.13\.0\/?$|lenis@1\.3\.27\/?$|\/dist\/$/.test(s)), "files, never package folders");
 });
 
 test("boot ends every session a previous process left open, and returns their agents to stop", () => {

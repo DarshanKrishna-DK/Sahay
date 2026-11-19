@@ -16,17 +16,33 @@ const { config, missingKeys } = require("./src/config");
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 /**
+ * The landing page's motion libraries: GSAP 3.13.0 core + ScrollTrigger and Lenis 1.3.27, exact
+ * jsDelivr files. Each sha384 was computed from the downloaded file (openssl dgst -sha384 -binary).
+ * public/index.html carries the same values in its integrity attributes (test/server.test.js).
+ */
+const LANDING_SCRIPTS = {
+  "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js": "sha384-HOvlOYPIs/zjoIkWUGXkVmXsjr8GuZLV+Q+rcPwmJOVZVpvTSXQChiN4t9Euv9Vc",
+  "https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js": "sha384-P8VzCVnT9NBUkMrpcIZrJbA7EBjJvh/fJS6PmP+4nLIM284DtsImIv8D0fFjIkeh",
+  "https://cdn.jsdelivr.net/npm/lenis@1.3.27/dist/lenis.min.js": "sha384-R18XzqnxvVLEF+BYfhpmDx30v7eP83fAckyfoRzK7/Uf6nGqufcmsk0eAKo7S3RU",
+};
+
+/**
  * Third-party scripts, each an exact pinned file that the page also checks with Subresource
- * Integrity (public/js/voice.js, the import map in public/index.html, the vendor page).
+ * Integrity (public/js/voice.js, the import map in public/app.html, the vendor page, and the
+ * landing page's <script> tags in public/index.html).
  */
 const CDN_SCRIPTS = [
   "https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.3/AgoraRTC_N-production.js",
   "https://cdn.jsdelivr.net/npm/agora-rtm@2.2.3/agora-rtm.js",
   "https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs",
+  ...Object.keys(LANDING_SCRIPTS),
 ];
 
+/** HTML pages whose inline scripts (import maps) the CSP allows by hash. Missing files are skipped. */
+const HTML_PAGES = ["index.html", "app.html"];
+
 /**
- * 'sha256-...' sources for the inline <script> blocks of an HTML file (the console's import map).
+ * 'sha256-...' sources for the inline <script> blocks of an HTML file (the app's import map).
  * The HTML parser turns CRLF and CR into LF before the browser hashes a script, so this does too.
  */
 function inlineScriptHashes(html) {
@@ -38,7 +54,7 @@ function inlineScriptHashes(html) {
 
 /**
  * Content-Security-Policy for every response (security review r1 #11).
- * - script-src: our files, the three pinned CDN files, the import map by hash, and
+ * - script-src: our files, the pinned CDN files, the app's import map by hash, and
  *   'wasm-unsafe-eval' because the Agora RTM SDK instantiates WebAssembly.
  *   No 'unsafe-eval' (E2E r4: 2 CSP reports from agora-rtm@2.2.3/agora-rtm.js). The bundle's only
  *   eval is protobufjs's @protobufjs/inquire, `eval("quire".replace(/^/,"re"))(name)`, called twice:
@@ -51,11 +67,15 @@ function inlineScriptHashes(html) {
  * - style-src 'unsafe-inline': the console sets a few style attributes and the vendor page has a
  *   <style> block; fonts come from Google Fonts.
  */
-function contentSecurityPolicy() {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+function contentSecurityPolicy(publicDir = PUBLIC_DIR) {
+  const hashes = new Set();
+  for (const page of HTML_PAGES) {
+    const file = path.join(publicDir, page);
+    if (fs.existsSync(file)) for (const h of inlineScriptHashes(fs.readFileSync(file, "utf8"))) hashes.add(h);
+  }
   return [
     "default-src 'self'",
-    `script-src 'self' ${CDN_SCRIPTS.join(" ")} ${inlineScriptHashes(html).join(" ")} 'wasm-unsafe-eval'`,
+    `script-src 'self' ${CDN_SCRIPTS.join(" ")}${hashes.size ? ` ${[...hashes].join(" ")}` : ""} 'wasm-unsafe-eval'`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
@@ -110,11 +130,15 @@ function securityHeaders(req, res, next) {
   next();
 }
 
-function createApp() {
+/**
+ * `publicDir` is only for tests (a scratch folder with its own pages); the server uses public/.
+ * Routes: `/` is the landing page (public/index.html, served by express.static), `/app` the app.
+ */
+function createApp({ publicDir = PUBLIC_DIR } = {}) {
   const { createApiRouter, createVendorRouter, createPayRouter, errorHandler } = require("./src/routes/api");
   const { createMcpRouter } = require("./src/mcp-server");
   const app = express();
-  securityHeaders.csp = contentSecurityPolicy();
+  securityHeaders.csp = contentSecurityPolicy(publicDir);
   app.disable("x-powered-by");
   app.set("trust proxy", "loopback"); // cloudflared runs on this machine and sets X-Forwarded-*
   app.use(securityHeaders);
@@ -125,7 +149,9 @@ function createApp() {
   app.use(createPayRouter());
   app.use(createApiRouter());
   app.use("/api", (_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "No such API route." }));
-  app.use(express.static(path.join(__dirname, "public"), { index: "index.html", maxAge: "5m" }));
+  const sendApp = (_req, res, next) => res.sendFile(path.join(publicDir, "app.html"), { maxAge: "5m" }, (err) => err && next(err.status === 404 ? undefined : err));
+  app.get(["/app", "/app/"], sendApp);
+  app.use(express.static(publicDir, { index: "index.html", maxAge: "5m" }));
   app.use(errorHandler);
   return app;
 }
@@ -207,4 +233,4 @@ function endStaleSessions(now = new Date().toISOString()) {
 
 if (require.main === module) boot();
 
-module.exports = { createApp, securityHeaders, contentSecurityPolicy, inlineScriptHashes, endStaleSessions, CDN_SCRIPTS, PAY_CSP };
+module.exports = { createApp, securityHeaders, contentSecurityPolicy, inlineScriptHashes, endStaleSessions, CDN_SCRIPTS, LANDING_SCRIPTS, PAY_CSP };
