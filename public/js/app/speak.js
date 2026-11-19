@@ -76,7 +76,7 @@ export async function speak(key) {
 }
 
 /**
- * A round 🔊 button for any card. States: idle -> loading -> playing | spoken | error (message
+ * A round read-aloud (speaker icon) button for any card. States: idle -> loading -> playing | spoken | error (message
  * under the button, announced politely). Tap while playing stops.
  */
 export function speakButton(key, { size = "md", label } = {}) {

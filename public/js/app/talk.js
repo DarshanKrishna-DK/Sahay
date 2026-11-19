@@ -1,4 +1,4 @@
-// Talk (home): the agent orb, one line of what Sahay is doing now (🔊), the disclosure as the
+// Talk (home): the agent orb, one line of what Sahay is doing now (read-aloud), the disclosure as the
 // first bubble, the latest three turns, and a Call / Type toggle. Voice and typed text are the
 // same agent session and transcript (VoiceCall start({ mode }) / sendText).
 

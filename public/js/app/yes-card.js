@@ -1,5 +1,5 @@
 // The Yes card: floats over any screen while an approval is pending. Giant numbers, the
-// seller (with "simulated vendor" when true), 🔊 (server readback via speak("approval:<id>")),
+// seller (with "simulated vendor" when true), read-aloud (server readback via speak("approval:<id>")),
 // and two big round buttons: the button path of the approval gate,
 // POST /api/approvals/:id/decision. It leaves on approval.decided from SSE, so a decision in
 // another tab (or by voice) closes it here too.

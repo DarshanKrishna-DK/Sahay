@@ -1,5 +1,7 @@
-// Sahay app shell: boot (session -> state -> live events), hash router (#/talk default,
-// #/work, #/orders, #/me, #/history), floating pill nav, edge orb and the floating layers.
+// Sahay app shell: boot (account -> session -> state -> live events), hash router (#/talk default,
+// #/buy, #/sell, #/stock, #/money, #/me, #/history; #/signup and #/login before a shop exists),
+// floating pill nav, edge orb and the floating layers. Screen switches use View Transitions where
+// the browser has them (nav and edge orb stay put), a short fade otherwise.
 
 import { h, $, fill } from "./dom.js";
 import { t, setLang } from "./i18n.js";
@@ -9,14 +11,16 @@ import { createNav } from "./nav.js";
 import { createEdgeOrb } from "./edge-orb.js";
 import { stateView, loadingView } from "./empty.js";
 import { startCall, endCall, setMode, serverEnded, preload } from "./call.js";
-import { SCREENS } from "./screens.js";
+import { SCREENS, ALIASES } from "./screens.js";
+import "./store-sell.js";
 import { createWelcome } from "./welcome.js";
 import { createYesLayer } from "./yes-card.js";
+import { agentState } from "./activity.js";
 
 const app = $("#app");
 const main = h("main", { id: "main", tabindex: "-1" });
 const banner = h("div", { class: "banner-slot", "aria-live": "polite" });
-const { nav, top, update: updateNav } = createNav();
+const { nav, top, update: updateNav, setAgent } = createNav();
 const edge = createEdgeOrb({ onAction: edgeAction });
 const yes = createYesLayer();
 app.append(top, banner, main, nav, edge.el, yes.el);
@@ -27,8 +31,16 @@ let welcome = null;
 
 function currentRoute() {
   const m = /^#\/([a-z]+)/.exec(location.hash || "");
-  const id = m ? m[1] : "talk";
+  const raw = m ? m[1] : "talk";
+  const id = ALIASES[raw] || raw;
   return SCREENS[id] ? id : "talk";
+}
+
+/** Run a DOM swap inside a view transition when the browser supports it and motion is welcome. */
+function transition(swap) {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reduce || document.visibilityState !== "visible") { swap(); return; }
+  try { document.startViewTransition(swap); } catch { swap(); }
 }
 
 function screen(id) {
@@ -50,15 +62,20 @@ function go() {
   if (next === route && screens.has(next) && !screens.get(next).el.hidden) return;
   const prev = route && screens.get(route);
   const s = screen(next);
-  if (prev && prev !== s) { prev.el.hidden = true; if (prev.leave) prev.leave(); }
-  s.el.hidden = false;
-  s.el.classList.remove("screen-in");
-  void s.el.offsetWidth; // restart the entrance
-  s.el.classList.add("screen-in");
+  const swap = () => {
+    if (prev && prev !== s) { prev.el.hidden = true; if (prev.leave) prev.leave(); }
+    s.el.hidden = false;
+    if (!document.startViewTransition) {
+      s.el.classList.remove("screen-in");
+      void s.el.offsetWidth; // restart the entrance
+      s.el.classList.add("screen-in");
+    }
+  };
+  if (prev && prev !== s) transition(swap); else swap();
   route = next;
   if (s.enter) s.enter();
   updateNav(route);
-  document.title = `${t(`nav.${next === "history" ? "history" : next}`)} · ${t("app.name")}`;
+  document.title = `${t(`nav.${next}`)} | ${t("app.name")}`;
   if (prev && prev !== s) main.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
 }
@@ -139,6 +156,7 @@ store.subscribe((s, parts) => {
     for (const [id, sc] of screens) if (!sc.el.hidden || id === route) sc.update(s, parts);
   }
   edge.update();
+  setAgent(agentState());
   yes.update(parts);
   if (parts.has("stream") || parts.has("boot") || parts.has("lang")) renderBanner();
 });

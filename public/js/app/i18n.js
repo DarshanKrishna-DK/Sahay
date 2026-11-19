@@ -17,6 +17,12 @@ const T = {
   "nav.work": ["Work", "काम", "ಕೆಲಸ"],
   "nav.orders": ["Orders", "ऑर्डर", "ಆರ್ಡರ್"],
   "nav.me": ["My Sahay", "मेरा सहाय", "ನನ್ನ ಸಹಾಯ್"],
+  "nav.buy": ["Buy", "खरीदें", "ಖರೀದಿ"],
+  "nav.sell": ["Sell", "बेचें", "ಮಾರಾಟ"],
+  "nav.stock": ["Stock", "माल", "ಸ್ಟಾಕ್"],
+  "nav.money": ["Money", "पैसा", "ಹಣ"],
+  "nav.signup": ["Make my Sahay", "मेरा सहाय बनाएँ", "ನನ್ನ ಸಹಾಯ್ ಮಾಡಿ"],
+  "nav.login": ["Log in", "लॉग इन", "ಲಾಗಿನ್"],
   "nav.history": ["History", "इतिहास", "ಇತಿಹಾಸ"],
   "live.open": ["Live", "चालू", "ಲೈವ್"],
   "live.connecting": ["Connecting", "जुड़ रहा है", "ಸಂಪರ್ಕಿಸುತ್ತಿದೆ"],
@@ -230,7 +236,7 @@ const T = {
   "me.saveFail": ["Not saved. Try again.", "सहेजा नहीं गया। फिर कोशिश करें।", "ಉಳಿಸಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
   "me.saved": ["Saved", "सहेज लिया", "ಉಳಿಸಲಾಗಿದೆ"],
   "me.rulesTitle": ["Rules and memory", "नियम और याद", "ನಿಯಮಗಳು ಮತ್ತು ನೆನಪು"],
-  "me.voiceSays": ["Only your spoken yes or the ✓ button keeps a rule.", "नियम सिर्फ़ आपकी बोली हुई हाँ या ✓ बटन से रखा जाता है।", "ನಿಮ್ಮ ಮಾತಿನ ಹೌದು ಅಥವಾ ✓ ಬಟನ್ ಮಾತ್ರ ನಿಯಮ ಉಳಿಸುತ್ತದೆ."],
+  "me.voiceSays": ["Only your spoken yes or the green yes button keeps a rule.", "नियम सिर्फ़ आपकी बोली हुई हाँ या हरे हाँ बटन से रखा जाता है।", "ನಿಮ್ಮ ಮಾತಿನ ಹೌದು ಅಥವಾ ಹಸಿರು ಹೌದು ಬಟನ್ ಮಾತ್ರ ನಿಯಮ ಉಳಿಸುತ್ತದೆ."],
 
   "hist.title": ["History", "इतिहास", "ಇತಿಹಾಸ"],
   "hist.requirement.saved": ["Heard your need", "आपकी ज़रूरत सुनी", "ನಿಮ್ಮ ಅಗತ್ಯ ಕೇಳಿತು"],
@@ -369,6 +375,18 @@ export function cityWord(city, inLang = current) {
 }
 
 export function has(key) { return Object.prototype.hasOwnProperty.call(T, key); }
+
+/**
+ * Screen modules register their own strings: addStrings({ "sell.title": [en, hi, kn] }).
+ * Native script only (Devanagari, Kannada). A key that already exists is not overwritten, so two
+ * modules can never silently change each other's words.
+ */
+export function addStrings(rows) {
+  for (const [k, v] of Object.entries(rows || {})) {
+    if (Object.prototype.hasOwnProperty.call(T, k)) { console.warn(`i18n: duplicate key ${k}`); continue; }
+    if (Array.isArray(v) && v.length === 3) T[k] = v;
+  }
+}
 
 /** Dates for the owner, in their language. */
 export function when(d, opts = { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) {

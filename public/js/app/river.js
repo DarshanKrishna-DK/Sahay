@@ -169,7 +169,7 @@ export function initials(name) {
 
 /* ---------------------------------------------------------- details -- */
 
-/** Body of a station's sheet: plain facts from the store, with a 🔊 where a key exists. */
+/** Body of a station's sheet: plain facts from the store, with a read-aloud button where a key exists. */
 export function stationDetail(s, model, req, speakButton, extra = {}) {
   const rows = [];
   const fact = (ic, text) => text ? h("p", { class: "fact" }, icon(ic, 22), scripted("span", String(text))) : null;

@@ -1,11 +1,10 @@
 // Orders as receipts: amount, seller, paid / not paid (icon + word), the order paper (PO PDF),
-// Pay (our /pay page), the next reminder on a clock arc, 🔊 per order, and Telegram updates.
+// Pay (our /pay page), the next reminder on a clock arc, read-aloud per order, and Telegram updates.
 
 import { h, icon, patch, scripted, rupees, svgEl, safeUrl, toDate } from "./dom.js";
 import { t, when } from "./i18n.js";
 import * as api from "../api.js";
 import { state } from "./store.js";
-import { stateView, talkAction } from "./empty.js";
 import { speakButton } from "./speak.js";
 
 const PAID = ["paid", "in_transit", "delivered", "closed"];
@@ -61,7 +60,7 @@ function receipt(o) {
 
 export function createOrders() {
   const el = h("section", { class: "orders", "aria-labelledby": "orders-title" });
-  const title = h("h1", { class: "screen-title", id: "orders-title" });
+  const title = h("h2", { class: "section-title", id: "orders-title" });
   const list = h("div", { class: "orders-body" });
   const tg = h("div", { class: "telegram" });
   el.append(title, list, tg);
@@ -105,9 +104,10 @@ export function createOrders() {
     title.textContent = t("orders.title");
     const orders = [...state.orders.values()].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     const key = JSON.stringify([document.documentElement.lang, orders, [...state.followups.values()], state.quotes.size]);
-    patch(list, key, () => orders.length
-      ? h("ol", { class: "receipts" }, ...orders.map(receipt))
-      : stateView({ kind: "empty", icon: "receipt", title: t("empty.orders.title"), text: t("empty.orders.text"), action: talkAction() }));
+    // Inside Buy the need's empty state already offers "Talk to Sahay": with no orders this
+    // section stays out of the way instead of showing a second empty view.
+    el.hidden = orders.length === 0;
+    patch(list, key, () => orders.length ? h("ol", { class: "receipts" }, ...orders.map(receipt)) : []);
     tg.hidden = !orders.length && !state.telegramLinked;
     renderTg(false);
   }

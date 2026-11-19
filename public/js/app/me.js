@@ -1,6 +1,6 @@
 // My Sahay: the owner's own agent. Profile (speaking speed, bargaining dial, language) via
 // PUT /api/agent/profile; the constellation of rules and memories; a suggested rule opens a
-// sheet with its sentence, why, 🔊 and ✓ keep / ✕ forget (the button path). Typed text never
+// sheet with its sentence, why, read-aloud and the yes (keep) / no (forget) buttons (the button path). Typed text never
 // keeps a rule. "Teach me" opens Talk with the teaching hint; History is one tap away.
 
 import { h, icon, patch, scripted } from "./dom.js";

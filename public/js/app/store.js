@@ -11,6 +11,8 @@ export const state = {
   bootError: null,
   config: { accessCodeRequired: false },
   business: null,
+  account: null,      // { id, phone, phone_verified } once signed in (ACC); null for a device-only shop
+  accounts: "unknown", // unknown | ready | missing (the server has no /api/auth routes yet)
   stream: "connecting",
   requirement: null,
   requirements: [],
@@ -254,6 +256,15 @@ function scheduleResync() {
 }
 
 const eventListeners = new Set();
+const reducers = new Set();
+const snapshotListeners = new Set();
+/**
+ * Extra reducers for other screen modules (store-sell.js): fn(evt, { live }) runs for every
+ * event, replayed or live, after the built-in reducer. Call touch(part) from inside to re-render.
+ */
+export function registerReducer(fn) { reducers.add(fn); return () => reducers.delete(fn); }
+/** fn(snapshot) after every GET /api/state (boot, reconnect, resync): the moment to refetch your own data. */
+export function registerSnapshot(fn) { snapshotListeners.add(fn); return () => snapshotListeners.delete(fn); }
 /** Raw live events for components that react to moments (vendor bubble pop-ins, ended calls). */
 export function onEvent(fn) { eventListeners.add(fn); return () => eventListeners.delete(fn); }
 
@@ -398,6 +409,8 @@ export function applyEvent(evt, { live = true } = {}) {
       break;
   }
 
+  for (const fn of reducers) { try { fn(evt, { live }); } catch (err) { console.error("reducer failed", err); } }
+
   const key = evt.id !== null && evt.id !== undefined ? String(evt.id) : `local-${state.audit.size}-${type}`;
   if (!state.audit.has(key)) {
     state.audit.set(key, { id: key, ts: evt.ts, actor: evt.actor || "system", type, data: d });
@@ -442,6 +455,7 @@ export function applySnapshot(snap) {
   state.voiceServer = snap.voice && typeof snap.voice === "object" ? snap.voice : null;
   state.telegramLinked = snap.telegramLinked === true;
   touch("work", "approvals", "orders", "history", "call", "business");
+  for (const fn of snapshotListeners) { try { fn(snap); } catch (err) { console.error("snapshot listener failed", err); } }
 }
 
 /* ------------------------------------------------------------- queries -- */
@@ -597,7 +611,7 @@ export async function decideRule(ruleId, decision) {
   return r.rule;
 }
 
-/** The ✕ on an earlier need: POST /api/requirements/:id/dismiss. Throws ApiError (409 REQUIREMENT_BUSY / _ORDERED). */
+/** The no (cross) button on an earlier need: POST /api/requirements/:id/dismiss. Throws ApiError (409 REQUIREMENT_BUSY / _ORDERED). */
 export async function dismissRequirement(requirementId) {
   const r = await agentRequest("POST", `/api/requirements/${encodeURIComponent(requirementId)}/dismiss`, {});
   if (r.requirement) applyEvent({ type: "requirement.saved", data: r.requirement });

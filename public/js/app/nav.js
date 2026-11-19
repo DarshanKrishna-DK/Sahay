@@ -1,16 +1,21 @@
-// Floating pill nav (top centre on wide screens, bottom pill on phones) and the top strip
+// Floating pill nav (top centre on wide screens, bottom pill on phones): Talk, Buy, Sell, Stock,
+// Money, with My Sahay behind the avatar orb. The top strip
 // that always shows the "automated assistant" notice, live status and the theme switch.
 
 import { h, icon, fill } from "./dom.js";
 import { t } from "./i18n.js";
 import { state, pendingApprovals } from "./store.js";
+import { createThinkingOrb } from "./thinking-orb.js";
 
 export const ROUTES = [
   { id: "talk", icon: "talk", key: "nav.talk" },
-  { id: "work", icon: "river", key: "nav.work" },
-  { id: "orders", icon: "receipt", key: "nav.orders" },
-  { id: "me", icon: "spark", key: "nav.me" },
+  { id: "buy", icon: "cart", key: "nav.buy" },
+  { id: "sell", icon: "receipt", key: "nav.sell" },
+  { id: "stock", icon: "jar", key: "nav.stock" },
+  { id: "money", icon: "wallet", key: "nav.money" },
 ];
+/** Routes that light up a nav item other than their own. */
+const PARENT = { history: "me" };
 
 function liveDot(cls) {
   return h("span", { class: `live ${cls}`, role: "status", "aria-live": "polite" },
@@ -24,8 +29,14 @@ export function createNav() {
       h("span", { class: "nav-word" }));
     return a;
   });
+  // My Sahay lives behind the avatar orb (a small breathing thinking orb), in the nav on wide
+  // screens and in the top strip on phones.
+  const avatarOrb = createThinkingOrb({ size: 40, state: "idle" });
+  const avatar = h("a", { class: "nav-avatar", href: "#/me", dataset: { tip: t("nav.me") } }, h("span", { class: "avatar-ring", "aria-hidden": "true" }, avatarOrb.el));
+  const avatarTopOrb = createThinkingOrb({ size: 36, state: "idle" });
+  const avatarTop = h("a", { class: "top-avatar tip-below", href: "#/me", dataset: { tip: t("nav.me") } }, h("span", { class: "avatar-ring", "aria-hidden": "true" }, avatarTopOrb.el));
   const nav = h("nav", { class: "pillnav", "aria-label": t("nav.label") },
-    h("a", { class: "nav-logo", href: "#/talk", "aria-label": t("app.name") }, h("span", { class: "logo-orb", "aria-hidden": "true" })),
+    avatar,
     h("div", { class: "nav-links" }, ...links),
     liveDot("live-in-nav"));
 
@@ -56,22 +67,28 @@ export function createNav() {
   const top = h("header", { class: "topstrip" },
     h("span", { class: "top-brand" }, h("span", { class: "logo-orb", "aria-hidden": "true" }), shop),
     notice,
-    h("span", { class: "top-right" }, liveDot("live-in-top"), themeBtn));
+    h("span", { class: "top-right" }, liveDot("live-in-top"), themeBtn, avatarTop));
 
   function update(route) {
     nav.setAttribute("aria-label", t("nav.label"));
-    nav.querySelector(".nav-logo").setAttribute("aria-label", t("app.name"));
+    const lit = PARENT[route] || route;
+    for (const a of [avatar, avatarTop]) {
+      a.setAttribute("aria-label", t("nav.me"));
+      a.dataset.tip = t("nav.me");
+      if (lit === "me") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    }
     for (const a of links) {
       const r = ROUTES.find((x) => x.id === a.dataset.route);
       a.querySelector(".nav-word").textContent = t(r.key);
-      const current = route === r.id || (route === "history" && r.id === "me");
-      if (current) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+      if (lit === r.id) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     }
+    // Waiting yeses are buying decisions: the badge sits on Buy.
     const pending = pendingApprovals().length;
-    const badge = links[1].querySelector(".nav-badge");
+    const buy = links[1];
+    const badge = buy.querySelector(".nav-badge");
     badge.hidden = pending === 0;
     badge.textContent = pending ? String(pending) : "";
-    links[1].setAttribute("aria-label", pending ? `${t("nav.work")}, ${t("yes.pending", { n: pending })}` : t("nav.work"));
+    buy.setAttribute("aria-label", pending ? `${t("nav.buy")}, ${t("yes.pending", { n: pending })}` : t("nav.buy"));
 
     for (const el of [nav, top]) {
       const lv = el.querySelector(".live");
@@ -85,5 +102,8 @@ export function createNav() {
     syncTheme();
   }
 
-  return { nav, top, update };
+  /** The avatar orbs follow the agent (idle / listening / thinking ...), like the big orb on Talk. */
+  function setAgent(agentState) { avatarOrb.set(agentState); avatarTopOrb.set(agentState); }
+
+  return { nav, top, update, setAgent };
 }

@@ -119,7 +119,7 @@ export function createWork() {
     patch(ladderBox, key, () => ladderFor(model) || []);
   }
 
-  // Earlier needs, each with a small ✕ (only when no work is running for it) that asks first.
+  // Earlier needs, each with a small cross button (only when no work is running for it) that asks first.
   const dismissUi = new Map(); // need id -> { busy, error }
   let dismissSheet = null;
 
@@ -191,7 +191,7 @@ export function createWork() {
     for (const b of [head, riverBox, listenBox, ladderBox]) b.hidden = !has;
     if (!has) {
       patch(empty, `empty|${document.documentElement.lang}`, () => [
-        h("h1", { class: "screen-title", id: "work-title", text: t("nav.work") }),
+        h("h1", { class: "screen-title", id: "work-title", text: t("nav.buy") }),
         stateView({ kind: "empty", icon: "river", title: t("empty.work.title"), text: t("empty.work.text"), action: talkAction() }),
       ]);
       renderEarlier(null);

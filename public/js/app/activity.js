@@ -2,6 +2,7 @@
 // screen and the orb's working state.
 
 import { state, pendingApprovals, vendorName } from "./store.js";
+import { call } from "./call.js";
 
 export function runningJobs() {
   return [...state.jobs.values()].filter((j) => j.status === "running" || j.status === "queued");
@@ -30,4 +31,26 @@ export function nowLine() {
   if (req && state.vendors.size) return { key: "now.found", vars: { n: state.vendors.size, item }, tone: "calm" };
   if (req && item) return { key: "now.heard", vars: { item }, tone: "calm" };
   return { key: "now.idle", vars: {}, tone: "calm" };
+}
+
+/**
+ * One word for what the agent is doing, for the thinking orbs (thinking-orb.js maps it to an orb
+ * state): connecting | listening | thinking | speaking | bargaining | searching | composing |
+ * working | idle. Call states win (they answer the owner now); then running work.
+ */
+export function agentState() {
+  const s = call.status;
+  if (s === "mic" || s === "connecting" || s === "waiting" || s === "reconnecting" || s === "ending") return "connecting";
+  if (s === "live") {
+    const a = call.agentState;
+    if (a === "thinking") return "thinking";
+    if (a === "speaking") return "speaking";
+    if (a === "listening") return "listening";
+  }
+  const running = runningJobs();
+  if (running.some((j) => j.kind === "negotiation")) return "bargaining";
+  if (running.some((j) => j.kind === "sourcing")) return "searching";
+  if (running.some((j) => /invoice/.test(String(j.kind || "")))) return "composing";
+  if (running.length) return "working";
+  return s === "live" ? "listening" : "idle";
 }
