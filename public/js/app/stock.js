@@ -12,6 +12,8 @@ import { paper, perforation, pill, keycapButton, yesNo } from "./ui.js";
 import { stock, loadStock, openOrders, markDelivered, decideReorder } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
 import { ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, agentAction, sectionHead, buttonError, ask, alignNotches } from "./sell-kit.js";
+import { notifyReorder, notifyNotNow, notifyNeedSaved } from "./moments.js";
+import { notify } from "./toast.js";
 
 /* ------------------------------------------------------------------ jar -- */
 
@@ -75,9 +77,7 @@ function itemCard(it, asks, onAnswer) {
       h("p", { class: "sb-level" },
         h("span", { class: "sb-level-swatch", "aria-hidden": "true" }),
         h("span", { text: levelQ ? st("stock.reorderAt", { q: levelQ }) : st("stock.noLevel") })),
-      a.done ? h("p", { class: "sb-ok", role: "status" }, icon("checkCircle", 20), h("span", { text: a.done === "yes" ? st("stock.searching") : st("stock.notNow") }),
-        a.done === "yes" ? h("a", { class: "btn btn-ghost btn-sm", href: "#/buy" }, icon("cart", 20), h("span", { text: t("nav.buy") })) : null) : null,
-      prop && !a.done ? h("div", { class: "sb-proposal" },
+      prop ? h("div", { class: "sb-proposal" },
         h("p", { class: "sb-proposal-q" }, icon("spark", 20),
           h("span", { text: st("stock.proposed", { q: prop.quantity ? qtyText(prop.quantity, prop.unit || it.unit) : name }) })),
         h("p", { class: "sb-proposal-why", text: st("stock.proposedWhy") }),
@@ -87,7 +87,7 @@ function itemCard(it, asks, onAnswer) {
             yesLabel: st("stock.proposedYes", { item: name }), noLabel: st("stock.proposedNo"),
             onYes: () => onAnswer(it.id, "yes"), onNo: () => onAnswer(it.id, "no") })
           : keycapButton({ icon: "mic", word: st("stock.answer"), tone: "marigold", size: "md", onClick: () => ask({ hint: st("stock.buyHint", { item: name }) }) })) : null,
-      prop && !a.done ? null : h("div", { class: "sb-item-acts" },
+      prop ? null : h("div", { class: "sb-item-acts" },
         keycapButton({ icon: "cart", word: st("stock.buyMore"), label: st("stock.buyMoreLong", { item: name }), tone: low ? "marigold" : "ghost", size: "md", onClick: buy }))));
 }
 
@@ -133,15 +133,20 @@ export function createStock() {
   const body = h("div", { class: "sb-body" });
   el.append(h("header", { class: "sb-top" }, title, topAct), body);
   const ui = new Map(); // orderId -> { busy, error, done }
-  const asks = new Map(); // itemId -> { busy: "yes" | "no", error, done: "yes" | "no" }
+  const asks = new Map(); // itemId -> { busy: "yes" | "no", error }
 
   async function answer(itemId, decision) {
     asks.set(itemId, { busy: decision });
     render(true);
     try {
-      await decideReorder(itemId, decision);
-      asks.set(itemId, { done: decision });
-      setTimeout(() => { asks.delete(itemId); render(true); }, 6000);
+      const proposalId = (stock.proposals.get(itemId) || {}).id;
+      const r = await decideReorder(itemId, decision);
+      // The answer is confirmed by a toast (same id as the live event), the card goes back to normal.
+      asks.delete(itemId);
+      if (decision !== "yes") notifyNotNow({ proposalId });
+      else if (r.sourcingStarted) notifyReorder({ proposalId, itemId, requirementId: r.requirementId });
+      else if (r.sourcingError) notify({ id: `reorder:${proposalId}`, tone: "error", icon: "alert", title: t("toast.search.failed"), body: r.sourcingError.say || t("toast.search.failedBody") });
+      else notifyNeedSaved({ proposalId, itemId });
     } catch (err) {
       asks.set(itemId, { error: buttonError(err) });
     }

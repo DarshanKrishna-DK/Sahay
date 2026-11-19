@@ -13,6 +13,7 @@ import { stateView, loadingView } from "./empty.js";
 import { startCall, endCall, setMode, serverEnded, preload } from "./call.js";
 import { SCREENS, ALIASES } from "./screens.js";
 import "./store-sell.js";
+import "./moments.js";
 import { createWelcome } from "./welcome.js";
 import { createAuth } from "./auth.js";
 import { createYesLayer } from "./yes-card.js";

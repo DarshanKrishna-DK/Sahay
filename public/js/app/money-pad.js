@@ -1,6 +1,7 @@
 // "Got paid": a number pad in a bottom sheet. Big amount, one tap for the full amount owed, cash or
 // UPI as two big tiles, Save -> POST /api/receipts (the owner's own button press is the yes; the
-// voice path reads back first). Physical keyboard digits work too.
+// voice path reads back first), then the sheet closes and a toast confirms. Physical keyboard
+// digits work too.
 
 import { h, icon, rupees } from "./dom.js";
 import { openSheet, closeSheet } from "./sheet.js";
@@ -8,6 +9,7 @@ import { keycapButton } from "./ui.js";
 import { recordReceipt } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
 import { buttonError } from "./sell-kit.js";
+import { notifyPaid } from "./moments.js";
 
 const MAX_DIGITS = 8;
 
@@ -45,10 +47,11 @@ export function openPayPad({ customerId, name, owed, opener }) {
     if (!amt) { err.hidden = false; err.textContent = st("mpad.needAmount"); return; }
     busy = true; err.hidden = true; sync();
     try {
-      await recordReceipt({ customerId, amount: amt, mode });
+      const rec = await recordReceipt({ customerId, amount: amt, mode });
       busy = false;
-      saveSlot.replaceChildren(h("p", { class: "sb-ok mpad-done", role: "status" }, icon("checkCircle", 26), h("span", { text: `${st("mpad.saved")}: ${rupees(amt)}` })));
-      setTimeout(() => closeSheet(), 1100);
+      // Saved: the sheet closes and the "Payment recorded" toast says it (same id as the live event).
+      closeSheet();
+      notifyPaid({ receiptId: rec && rec.id, customerId, name, amount: amt });
     } catch (e) {
       busy = false;
       err.hidden = false;
@@ -63,10 +66,8 @@ export function openPayPad({ customerId, name, owed, opener }) {
     shown.classList.toggle("is-zero", !amt);
     for (const b of modes.querySelectorAll(".mpad-mode")) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
     for (const b of keys.querySelectorAll("button")) b.disabled = busy;
-    if (!saveSlot.querySelector(".mpad-done")) {
-      const label = amt ? st("mpad.saveLong", { amt: rupees(amt), name }) : st("mpad.save");
-      saveSlot.replaceChildren(keycapButton({ icon: "check", word: st("mpad.save"), label, tone: "leaf", size: "lg", busy, onClick: save }));
-    }
+    const label = amt ? st("mpad.saveLong", { amt: rupees(amt), name }) : st("mpad.save");
+    saveSlot.replaceChildren(keycapButton({ icon: "check", word: st("mpad.save"), label, tone: "leaf", size: "lg", busy, onClick: save }));
   }
 
   const body = h("div", { class: "mpad" },
