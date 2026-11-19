@@ -74,9 +74,6 @@ function pendingFor(businessId, agentId) {
     .get(businessId, agentId) ?? null;
 }
 
-/** Every item tax read-back of the business (for the cross-subject check of the invoice gate). */
-const spokenTexts = (businessId) => db.prepare("SELECT id, spoken_text FROM item_tax_readbacks WHERE business_id = ?").all(businessId);
-
 /**
  * The owner's spoken yes to the pending read-back (answerAfterSpoken: after it, in order, not over
  * it, nothing else read out in between, a typed reply never counts). Writes the item and marks the
@@ -86,8 +83,6 @@ function confirm(businessId, { agentId, history, sessionId = null }) {
   const pending = agentId ? pendingFor(businessId, agentId) : null;
   if (!pending) throw new SellError("READBACK_NOT_SPOKEN", "No item tax was read out in this call.", { status: 409 });
   const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: [pending.spoken_text], subject: {} });
-  const spoken = require("./spoken");
-  spoken.assertNothingBetween(history, [pending.spoken_text], spoken.otherSpoken(businessId, { itemTaxId: pending.id }));
   if (approvals.classifyUtterance(text) !== "affirmative") {
     throw new SellError("NOT_AFFIRMATIVE", "The owner's reply was not a clear yes; the item's tax is not saved.", { status: 409 });
   }
@@ -117,4 +112,4 @@ function confirmedTax(businessId, item) {
   return row ? { hsn: item.hsn, gstRate: item.gst_rate } : null;
 }
 
-module.exports = { readback, validate, recordSpoken, get, pendingFor, spokenTexts, confirm, confirmedTax, hsnSpoken };
+module.exports = { readback, validate, recordSpoken, get, pendingFor, confirm, confirmedTax, hsnSpoken };

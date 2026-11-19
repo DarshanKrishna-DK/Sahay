@@ -6,8 +6,8 @@
  * It mirrors the purchase gate (src/approvals.js) on its own tables and reuses its spoken-consent
  * check (approvals.answerAfterSpoken) unchanged:
  * - by voice: a clear yes in the owner's own ASR turn after the server-spoken read-back, with no
- *   other read-back spoken in between (purchase, rule, invoice, item tax or reorder); a typed
- *   message never counts;
+ *   other question spoken in between (approvals.answerAfterSpoken checks every *_readbacks table:
+ *   purchase, rule, reorder, invoice, item tax); a typed message never counts;
  * - by button: the ✓ on the invoice's Yes card, where the read-back is on screen.
  * Approving issues at once, in one transaction: the approval is consumed, the next number of the
  * financial year is taken, the invoice becomes issued (the database refuses that without the
@@ -23,7 +23,6 @@ const gst = require("./gst");
 const settings = require("./settings");
 const customers = require("./customers");
 const invoices = require("./invoices");
-const spoken = require("./spoken");
 const { SellError } = require("./errors");
 const { unitWord } = require("../procurement/units");
 const { itemIn } = require("../discovery/slug");
@@ -257,7 +256,6 @@ function classifyReply(text) {
 function spokenAnswer(businessId, approval, history, agentId) {
   const own = agentId ? readbacksOf(businessId, approval.id, agentId) : [];
   const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: own, subject: {} });
-  spoken.assertNothingBetween(history, own, spoken.otherSpoken(businessId, { invoiceApprovalId: approval.id }));
   return text;
 }
 
