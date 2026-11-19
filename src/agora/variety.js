@@ -21,20 +21,23 @@ const MAX_SCOPES = 5000;
 
 const offsetOf = (text, n) => crypto.createHash("sha256").update(String(text)).digest().readUInt32BE(0) % n;
 
-/** Index of the variant the next `pick` of `key` in `scope` returns, without using it up. */
-function variantIndex(n, scope, key) {
+/**
+ * Index of the variant the next `pick` of `key` in `scope` returns, without using it up.
+ * `fromStart` begins every scope at the first variant (the canonical wording) instead of a hashed one.
+ */
+function variantIndex(n, scope, key, { fromStart = false } = {}) {
   const id = `${scope}|${key}`;
-  return (offsetOf(id, n) + (said.get(id) ?? 0)) % n;
+  return ((fromStart ? 0 : offsetOf(id, n)) + (said.get(id) ?? 0)) % n;
 }
 
 /**
  * The next of `variants` for this line in this scope. `variants` is an array of strings or of
  * functions of `vars`; a single variant is always itself.
  */
-function pick(variants, { scope = "", key = "", vars } = {}) {
+function pick(variants, { scope = "", key = "", vars, fromStart = false } = {}) {
   const list = Array.isArray(variants) ? variants : [variants];
   if (!list.length) throw new Error("pick needs at least one variant.");
-  const index = list.length === 1 ? 0 : variantIndex(list.length, scope, key);
+  const index = list.length === 1 ? 0 : variantIndex(list.length, scope, key, { fromStart });
   if (list.length > 1) {
     const id = `${scope}|${key}`;
     if (!said.has(id) && said.size >= MAX_SCOPES) said.delete(said.keys().next().value);

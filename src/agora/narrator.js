@@ -44,6 +44,7 @@ const agent = require("./agent");
 const { langKey } = require("../tools/errors");
 const { unitWord } = require("../procurement/units");
 const { scriptProblems } = require("./script");
+const variety = require("./variety");
 
 const settings = { minGapMs: 5000, vendorDebounceMs: 2500, queueLimit: 3, suppressMs: 20000, holdMs: 6000, approvalHoldMs: 60000 };
 
@@ -125,13 +126,92 @@ const LINES = {
   },
 };
 
+/**
+ * More ways to say the same milestone (Track POLISH: a person does not announce every result in
+ * the same words). Same variables as LINES, so the figures, names and the simulated-vendor label
+ * are identical; LINES stays the first wording of each, and a business hears them in turn.
+ */
+const VARIANTS = {
+  sourcing_started: {
+    "hi-IN": [() => "ठीक है, विक्रेता ढूँढना शुरू कर दिया है।"],
+    "kn-IN": [() => "ಸರಿ, ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕಲು ಶುರು ಮಾಡಿದೆ."],
+    "en-IN": [() => "Okay, I've started looking for vendors."],
+  },
+  negotiation_started: {
+    "hi-IN": [() => "चलिए, मोल-भाव शुरू कर दिया है।"],
+    "kn-IN": [() => "ಸರಿ, ಚೌಕಾಸಿ ಶುರು ಮಾಡಿದೆ."],
+    "en-IN": [() => "Alright, the bargaining has begun."],
+  },
+  vendors_found: {
+    "hi-IN": [(v) => `अब तक ${v.count} विक्रेता मिले हैं, ज़रा उनको देख रही हूँ।`],
+    "kn-IN": [(v) => `ಇಲ್ಲಿಯವರೆಗೆ ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ಒಮ್ಮೆ ನೋಡ್ತಿದ್ದೀನಿ.`],
+    "en-IN": [(v) => `So far ${v.count} vendors; I'm going through them now.`],
+  },
+  sourcing_done: {
+    "hi-IN": [
+      (v) => `लीजिए, खोज हो गई! ${v.count} विक्रेता मिले हैं; सबसे अच्छे ${v.name} हैं${v.price ? `, ${v.price} रुपये प्रति ${v.unit}` : ""}।`,
+      (v) => `अच्छी ख़बर, ${v.count} विक्रेता मिल गए; सबसे बढ़िया ${v.name}${v.price ? `, ${v.price} रुपये प्रति ${v.unit} पर` : ""}।`,
+    ],
+    "kn-IN": [(v) => `ಸರಿ, ಹುಡುಕಾಟ ಆಯ್ತು! ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ; ಉತ್ತಮರು ${v.name}${v.price ? `, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ` : ""}.`],
+    "en-IN": [
+      (v) => `Good news, I found ${v.count} vendors; the best is ${v.name}${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
+      (v) => `Okay, the search is done: ${v.count} vendors, and ${v.name} looks best${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
+    ],
+  },
+  job_failed: {
+    "hi-IN": [(v) => (v.kind === "negotiation" ? "अरे, मोल-भाव बीच में रुक गया; कारण स्क्रीन पर है।" : "अरे, विक्रेताओं की खोज पूरी नहीं हो पाई; कारण स्क्रीन पर लिखा है।")],
+    "kn-IN": [(v) => (v.kind === "negotiation" ? "ಅಯ್ಯೋ, ಚೌಕಾಸಿ ಮಧ್ಯದಲ್ಲೇ ನಿಂತಿತು; ಕಾರಣ ಪರದೆಯ ಮೇಲಿದೆ." : "ಅಯ್ಯೋ, ಹುಡುಕಾಟ ಮುಗಿಸಲು ಆಗಲಿಲ್ಲ; ಕಾರಣ ಪರದೆಯ ಮೇಲಿದೆ.")],
+    "en-IN": [(v) => (v.kind === "negotiation" ? "Hmm, the negotiation stopped partway; the reason is on the screen." : "Hmm, the vendor search didn't finish; the reason is on the screen.")],
+  },
+  negotiation_agreed: {
+    "hi-IN": [
+      (v) => `बढ़िया! ${v.vendor}${v.sim ? SIM["hi-IN"] : ""} से ${v.price} रुपये प्रति ${v.unit} पर बात बन गई।`,
+      (v) => `अच्छी ख़बर, ${v.vendor}${v.sim ? SIM["hi-IN"] : ""} ${v.price} रुपये प्रति ${v.unit} पर मान गए।`,
+    ],
+    "kn-IN": [(v) => `ಒಳ್ಳೇದು! ${v.vendor}${v.sim ? SIM["kn-IN"] : ""} ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿಗೆ ಒಪ್ಪಿದ್ದಾರೆ.`],
+    "en-IN": [
+      (v) => `Nice! ${v.vendor}${v.sim ? SIM["en-IN"] : ""} agreed to ${v.price} rupees per ${v.unit}.`,
+      (v) => `Good news: ${v.vendor}${v.sim ? SIM["en-IN"] : ""} came down to ${v.price} rupees per ${v.unit}.`,
+    ],
+  },
+  negotiation_no_deal: {
+    "hi-IN": [(v) => `अरे, ${v.vendor}${v.sim ? SIM["hi-IN"] : ""} से इस बार बात नहीं बनी।`],
+    "kn-IN": [(v) => `ಅಯ್ಯೋ, ${v.vendor}${v.sim ? SIM["kn-IN"] : ""} ಜೊತೆ ಈ ಸಲ ವ್ಯವಹಾರ ಆಗಲಿಲ್ಲ.`],
+    "en-IN": [(v) => `Ah, ${v.vendor}${v.sim ? SIM["en-IN"] : ""} would not come down far enough, so no deal this time.`],
+  },
+  order_created: {
+    "hi-IN": [(v) => `हो गया! ऑर्डर बन गया${v.sim ? SIM["hi-IN"] : ""}, खरीद आदेश नंबर ${v.po}।`],
+    "kn-IN": [(v) => `ಆಯ್ತು! ಆರ್ಡರ್ ಆಗಿದೆ${v.sim ? SIM["kn-IN"] : ""}, ಖರೀದಿ ಆದೇಶ ಸಂಖ್ಯೆ ${v.po}.`],
+    "en-IN": [(v) => `Done! The order is placed${v.sim ? SIM["en-IN"] : ""}, purchase order ${v.po}.`],
+  },
+  payment_link: {
+    "hi-IN": [() => "लीजिए, भुगतान का टेस्ट लिंक तैयार है, स्क्रीन पर देखिए।"],
+    "kn-IN": [() => "ಪಾವತಿಯ ಟೆಸ್ಟ್ ಲಿಂಕ್ ರೆಡಿ, ಪರದೆಯ ಮೇಲೆ ನೋಡಿ."],
+    "en-IN": [() => "Here you go, the test-mode payment link is on the screen."],
+  },
+  followup_payment_due: {
+    "hi-IN": [(v) => `एक बात याद दिला दूँ, ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""} का भुगतान अभी बाकी है, ${v.amount} रुपये।`],
+    "kn-IN": [(v) => `ಒಂದು ವಿಷಯ ನೆನಪಿಸ್ತೀನಿ, ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""} ಪಾವತಿ ಇನ್ನೂ ಬಾಕಿ ಇದೆ, ${v.amount} ರೂಪಾಯಿ.`],
+    "en-IN": [(v) => `Just a reminder, payment for order ${v.po}${v.sim ? SIM["en-IN"] : ""} is still due, ${v.amount} rupees.`],
+  },
+  followup_delivery_check: {
+    "hi-IN": [(v) => `एक बात पूछनी थी, ऑर्डर ${v.po}${v.sim ? SIM["hi-IN"] : ""} की डिलीवरी का समय हो गया है, माल पहुँच गया क्या?`],
+    "kn-IN": [(v) => `ಒಂದು ವಿಷಯ, ಆರ್ಡರ್ ${v.po}${v.sim ? SIM["kn-IN"] : ""} ಡೆಲಿವರಿ ಸಮಯ ಆಯ್ತು, ಸರಕು ಬಂತಾ?`],
+    "en-IN": [(v) => `Quick check, order ${v.po}${v.sim ? SIM["en-IN"] : ""} was due for delivery; did it arrive?`],
+  },
+};
+
 /** Variables that hold a name or code as written (vendor brand, PO number): allowed in any script. */
 const VERBATIM_VARS = ["name", "vendor", "po"];
 
-/** One spoken line. A hi/kn line with stray Latin or the other Indic script is logged (rule 5). */
-function line(key, language, vars = {}) {
+/**
+ * One spoken line, in one of its wordings: `scope` (the business) walks them in turn, starting at
+ * the LINES wording. A hi/kn line with stray Latin or the other Indic script is logged (rule 5).
+ */
+function line(key, language, vars = {}, scope = null) {
   const lang = langKey(language);
-  const text = LINES[key][lang](vars);
+  const wordings = [LINES[key][lang], ...(VARIANTS[key]?.[lang] ?? [])];
+  const text = scope == null ? LINES[key][lang](vars) : variety.pick(wordings, { scope, key, vars, fromStart: true });
   const problems = scriptProblems(text, lang, { allow: VERBATIM_VARS.map((k) => vars[k]) });
   if (problems.latin.length || problems.foreign) {
     console.warn(`[narrator] ${key} (${lang}) is not all in its own script: ${[...problems.latin, problems.foreign ? "<other Indic script>" : null].filter(Boolean).join(", ")}`);
@@ -146,8 +226,8 @@ function line(key, language, vars = {}) {
 function followupLine(businessId, followup, language) {
   const key = { payment_due: "followup_payment_due", delivery_check: "followup_delivery_check" }[followup?.kind];
   const order = followup?.orderId ? repo.getOrder(businessId, followup.orderId) : null;
-  if (!key || !order?.po_number) return line("followup_other", language);
-  return line(key, language, { po: order.po_number, amount: money(Number(order.amount)), sim: Boolean(order.simulated) });
+  if (!key || !order?.po_number) return line("followup_other", language, {}, businessId);
+  return line(key, language, { po: order.po_number, amount: money(Number(order.amount)), sim: Boolean(order.simulated) }, businessId);
 }
 
 /**
@@ -318,7 +398,7 @@ function onEvent(event) {
       if (d.kind === "negotiation") setStatus(state, "negotiation", STATUS.negotiationRunning());
       else if (d.kind === "sourcing") setStatus(state, "sourcing", STATUS.sourcingRunning());
       if (isSuppressed(event.businessId, "job.started")) return;
-      enqueue(state, "job.started", line(d.kind === "negotiation" ? "negotiation_started" : "sourcing_started", lang));
+      enqueue(state, "job.started", line(d.kind === "negotiation" ? "negotiation_started" : "sourcing_started", lang, {}, event.businessId));
       return;
     case "vendor.found": {
       const requirementId = d.requirementId;
@@ -329,7 +409,7 @@ function onEvent(event) {
       if (!batch.timer) {
         batch.timer = setTimeout(() => {
           state.vendorBatches.set(requirementId, "spoken");
-          enqueue(state, `vendors:${requirementId}`, line("vendors_found", state.language, { count: batch.count }), `sourcing.done:${requirementId}`);
+          enqueue(state, `vendors:${requirementId}`, line("vendors_found", state.language, { count: batch.count }, event.businessId), `sourcing.done:${requirementId}`);
         }, Math.max(settings.vendorDebounceMs, holdLeft(state, null)));
         batch.timer.unref?.();
       }
@@ -353,14 +433,14 @@ function onEvent(event) {
       later(state, holdLeft(state, d.jobId), () => {
         // get_job_status or get_shortlist already said this result: say it once.
         if (isSuppressed(event.businessId, type)) return;
-        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, { count: result.count, name: top.name, price, unit: unitWord(result.unit, state.language) }), type);
+        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, { count: result.count, name: top.name, price, unit: unitWord(result.unit, state.language) }, event.businessId), type);
       });
       return;
     }
     case "job.failed":
       if (d.kind === "negotiation") setStatus(state, "negotiation", STATUS.negotiationFailed());
       else setStatus(state, "sourcing", STATUS.sourcingFailed());
-      later(state, holdLeft(state, d.jobId), () => enqueue(state, `failed:${d.jobId}`, line("job_failed", state.language, { kind: d.kind })));
+      later(state, holdLeft(state, d.jobId), () => enqueue(state, `failed:${d.jobId}`, line("job_failed", state.language, { kind: d.kind }, event.businessId)));
       return;
     case "negotiation.ended": {
       const o = d.outcome ?? {};
@@ -371,17 +451,17 @@ function onEvent(event) {
         price: o.agreed ? vars.price : null,
         unit: o.unit ? unitWord(o.unit, "en-IN") : "unit",
       }));
-      enqueue(state, `negotiation:${d.negotiationId}`, line(o.agreed && vars.price ? "negotiation_agreed" : "negotiation_no_deal", lang, vars));
+      enqueue(state, `negotiation:${d.negotiationId}`, line(o.agreed && vars.price ? "negotiation_agreed" : "negotiation_no_deal", lang, vars, event.businessId));
       return;
     }
     case "order.created":
       setStatus(state, "order", STATUS.orderPlaced({ po: d.poNumber ?? d.po_number }));
       if (isSuppressed(event.businessId, "order.created")) return;
-      enqueue(state, `order:${d.orderId}`, line("order_created", lang, { po: d.poNumber ?? d.po_number, sim: Boolean(d.simulated) }));
+      enqueue(state, `order:${d.orderId}`, line("order_created", lang, { po: d.poNumber ?? d.po_number, sim: Boolean(d.simulated) }, event.businessId));
       return;
     case "payment.link":
       if (isSuppressed(event.businessId, "payment.link")) return;
-      enqueue(state, `payment:${d.orderId}`, line("payment_link", lang));
+      enqueue(state, `payment:${d.orderId}`, line("payment_link", lang, {}, event.businessId));
       return;
     case "followup.fired":
       enqueue(state, `followup:${d.followupId ?? d.orderId}`, followupLine(event.businessId, d, lang));
@@ -526,4 +606,4 @@ function configure({ speak, status, rules, minGapMs, vendorDebounceMs, queueLimi
   );
 }
 
-module.exports = { start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };
+module.exports = { VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };

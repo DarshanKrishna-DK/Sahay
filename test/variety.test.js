@@ -33,3 +33,9 @@ test("different scopes start at different variants, so two negotiations do not s
   for (let i = 0; i < 20; i++) starts.add(variety.variantIndex(4, `neg_${i}`, "ask"));
   assert.ok(starts.size > 1);
 });
+
+test("fromStart begins a scope at the first (canonical) wording, then walks on", () => {
+  variety.reset();
+  const lines = ["first", "second", "third"];
+  assert.deepEqual([0, 1, 2, 3].map(() => variety.pick(lines, { scope: "biz_x", key: "k", fromStart: true })), ["first", "second", "third", "first"]);
+});
