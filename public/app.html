@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sahay</title>
+  <meta name="description" content="Talk to Sahay, an automated buying assistant for your shop. It finds sellers, bargains and orders only after your yes.">
+  <meta name="theme-color" content="#0B0E14">
+  <link rel="icon" type="image/png" href="/assets/sahay-logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=Noto+Sans+Devanagari:wght@400..700&family=Noto+Sans+Kannada:wght@400..700&display=swap">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <!-- process shim for the Agora toolkit and the saved theme, before first paint. -->
+  <script src="/js/boot.js"></script>
+  <!-- Pins the Agora toolkit ES module's hash (Subresource Integrity for import()); byte-identical to
+       the console's import map so the server's CSP allows it by the same sha256. -->
+  <script type="importmap">{"integrity":{"https://cdn.jsdelivr.net/npm/agora-agent-client-toolkit@2.10.0/dist/index.mjs":"sha384-gKgVIScrXAEj86/qjyYoJrj3lHYPHGhY8vgYBXrlaVhRO95WE68kC6xQW4YN3U+f"}}</script>
+  <script type="module" src="/js/app/main.js"></script>
+</head>
+<body data-boot="loading">
+  <a class="skip-link" href="#main">Skip to main screen</a>
+  <div class="aurora" aria-hidden="true"></div>
+  <div id="app"></div>
+  <noscript><p class="noscript">Sahay needs JavaScript to run. सहाय को चलाने के लिए JavaScript चाहिए। ಸಹಾಯ ಚಲಾಯಿಸಲು JavaScript ಬೇಕು.</p></noscript>
+</body>
+</html>
