@@ -677,3 +677,67 @@ test("E2E r4 bugs 2-4: the prompt sends the answer to a read-back to confirm_app
     assert.match(prompt, /never fill them in from earlier turns/);
   }
 });
+
+/* ------------------------------------------- integration: the whole shop --- */
+
+test("whole shop: the prompt routes buy, sell, khata and stock to their tools", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language });
+    assert.match(prompt, /^You are Sahay, an automated assistant that runs the shop/);
+    // Buy stays as it was.
+    assert.match(prompt, /Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval, create_order, create_payment_link/);
+    // Sell: a sale is a bill, never a purchase requirement; HSN + GST only as said, read back by the server.
+    assert.match(prompt, /A sale is never save_requirement/);
+    assert.match(prompt, /draft_invoice[^\n]*then request_invoice_approval in the same turn/);
+    assert.match(prompt, /set_item[^\n]*hsn and gst_rate only when the owner said both/);
+    assert.match(prompt, /set_item again with only confirm true/);
+    assert.match(prompt, /add_customer/);
+    assert.match(prompt, /confirm_invoice/);
+    // Khata: two-step payment, dues, reminders.
+    assert.match(prompt, /record_payment with customer, amount, mode[^\n]*owner_words/);
+    assert.match(prompt, /record_payment again with only decision \(confirm on a clear yes, cancel on a no\)/);
+    assert.match(prompt, /who_owes_me/);
+    assert.match(prompt, /send_payment_reminder[^\n]*nothing is sent by itself/);
+    // Stock.
+    for (const tool of ["set_opening_stock", "get_stock", "mark_order_delivered", "set_reorder_level", "confirm_reorder"]) assert.match(prompt, new RegExp(tool));
+    assert.match(prompt, /a yes starts a vendor search only, never an order/);
+  }
+});
+
+test("whole shop: every money, rule, bill, payment or reorder confirmation needs the owner's spoken yes after the server's read-back", () => {
+  const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /the server reads it out first; you say only the tool's `say` question, never repeat its figures/);
+  assert.match(prompt, /Only the owner's spoken yes after that read-back counts: a typed yes never counts/);
+  assert.match(prompt, /press the yes button on the card/);
+  assert.match(prompt, /confirm_approval for a deal, confirm_invoice for a bill, record_payment with decision for a payment, set_item with confirm for an item's tax, confirm_rule for a rule or a reorder level, confirm_reorder for buying more/);
+  assert.match(prompt, /goes to the one read out last/);
+});
+
+test("whole shop: plain bills by default; the agent asks for a GSTIN only when the owner says the shop is GST-registered", () => {
+  const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language: "en-IN" });
+  assert.match(prompt, /plain bills without GST/);
+  assert.match(prompt, /Never ask for the shop's GSTIN unless the owner says the shop is GST-registered/);
+});
+
+test("whole shop: a sale and a payment example per language, each Hindi and Kannada sentence in its own script", () => {
+  const { isNativeScript } = require("../src/agora/script");
+  const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language: "hi-IN" });
+  assert.ok(prompt.includes('"Ramesh Traders को 50 किलो बासमती, 90 रुपये किलो।"'), "the owner's own sale sentence");
+  for (const [label, language] of [["Hindi sale and payment. ", "hi-IN"], ["Kannada sale and payment. ", "kn-IN"], ["English sale and payment. ", "en-IN"]]) {
+    const line = prompt.split("\n").find((l) => l.startsWith(label));
+    assert.ok(line, `${label}present`);
+    assert.match(line, /draft_invoice/);
+    assert.match(line, /confirm_invoice/);
+    assert.match(line, /record_payment/);
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(quoted.length >= 6, `${label}has a full exchange`);
+    for (const sentence of quoted) assert.ok(isNativeScript(sentence, language, { allow: ["Ramesh Traders"] }), `${language}: ${sentence}`);
+  }
+});
+
+test("whole shop: the owner agent's tools stay within Agora's 32-tool MCP cap", () => {
+  const registry = require("../src/tools/registry");
+  const owner = registry.toolNames(registry.SCOPES.owner);
+  assert.ok(owner.length <= 32, `owner tools: ${owner.length}`);
+  for (const tool of ["save_requirement", "draft_invoice", "record_payment", "set_opening_stock", "confirm_reorder"]) assert.ok(owner.includes(tool), tool);
+});
