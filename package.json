@@ -16,6 +16,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "agora-token": "2.0.6",
     "express": "^4.19.2",
-    "pdfkit": "^0.15.0"
+    "pdfkit": "^0.15.0",
+    "thinking-orbs": "0.3.2"
   }
 }
