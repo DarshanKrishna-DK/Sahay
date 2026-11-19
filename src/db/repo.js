@@ -699,6 +699,149 @@ function createLinkCode(businessId, { code, expires_at }) {
   insertRow("link_codes", { code: requireText(code, "code"), business_id: tenant(businessId), expires_at: requireText(expires_at, "expires_at") });
 }
 
+/* --------------------------------------------------------------- agent --- */
+
+/** The stored profile row, or null when the business still has the defaults. */
+function getAgentProfile(businessId) {
+  const row = db.prepare("SELECT * FROM agent_profiles WHERE business_id = ?").get(tenant(businessId));
+  return row ? { ...row } : null;
+}
+
+function saveAgentProfile(businessId, { voice_speed, bargain_style }) {
+  db.prepare(
+    "INSERT INTO agent_profiles (business_id, voice_speed, bargain_style, updated_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT (business_id) DO UPDATE SET voice_speed = excluded.voice_speed, bargain_style = excluded.bargain_style, updated_at = excluded.updated_at",
+  ).run(tenant(businessId), voice_speed, bargain_style, now());
+  return getAgentProfile(businessId);
+}
+
+/** Rule rows keep `params` as JSON text; callers get it parsed. */
+const hydrateRule = (row) => (row ? { ...row, params: JSON.parse(row.params) } : null);
+
+/** Insert a suggested rule. Sentences and params are built and checked by src/agent/rules.js. */
+function createRule(businessId, { kind, scope_key, params, sentence, why, source }) {
+  const id = newId("rul");
+  insertRow("agent_rules", {
+    id,
+    business_id: tenant(businessId),
+    kind,
+    scope_key: requireText(scope_key, "scope_key"),
+    params: JSON.stringify(params),
+    sentence_hi: requireText(sentence["hi-IN"], "sentence"),
+    sentence_kn: requireText(sentence["kn-IN"], "sentence"),
+    sentence_en: requireText(sentence["en-IN"], "sentence"),
+    why_hi: why?.["hi-IN"] ?? null,
+    why_kn: why?.["kn-IN"] ?? null,
+    why_en: why?.["en-IN"] ?? null,
+    status: "suggested",
+    source,
+    created_at: now(),
+  });
+  return getRule(businessId, id);
+}
+
+function getRule(businessId, ruleId) {
+  if (typeof ruleId !== "string" || ruleId === "") return null;
+  return hydrateRule(db.prepare("SELECT * FROM agent_rules WHERE business_id = ? AND id = ?").get(tenant(businessId), ruleId));
+}
+
+/** Oldest first; narrowed by status, kind or scope. */
+function listRules(businessId, { status, kind, scope_key } = {}, { limit = 500 } = {}) {
+  const where = ["business_id = ?"];
+  const params = [tenant(businessId)];
+  for (const [column, value] of Object.entries({ status, kind, scope_key })) {
+    if (value === undefined) continue;
+    where.push(`${column} = ?`);
+    params.push(value);
+  }
+  params.push(number(limit, "limit", { positive: true, optional: false, integer: true }));
+  return db
+    .prepare(`SELECT * FROM agent_rules WHERE ${where.join(" AND ")} ORDER BY created_at, rowid LIMIT ?`)
+    .all(...params)
+    .map(hydrateRule);
+}
+
+/** Move a rule from one status to another. Returns false when it was not in `from`. */
+function transitionRule(businessId, ruleId, from, to, { decided_via = null } = {}) {
+  return (
+    db
+      .prepare("UPDATE agent_rules SET status = ?, decided_via = COALESCE(?, decided_via), decided_at = ? WHERE business_id = ? AND id = ? AND status = ?")
+      .run(to, decided_via, now(), tenant(businessId), ruleId, from).changes === 1
+  );
+}
+
+/** Record that the server spoke this rule's sentence into the call of `agent_id` (suggested rules only). */
+function recordRuleReadback(businessId, ruleId, { agent_id, spoken_text }) {
+  const id = newId("rrb");
+  insertRow("rule_readbacks", {
+    id,
+    business_id: tenant(businessId),
+    rule_id: requireText(ruleId, "rule_id"),
+    agent_id: requireText(agent_id, "agent_id"),
+    spoken_text: requireText(spoken_text, "spoken_text"),
+    spoken_at: now(),
+  });
+  return { ...db.prepare("SELECT * FROM rule_readbacks WHERE id = ?").get(id) };
+}
+
+function listRuleReadbacks(businessId, { rule_id, agent_id } = {}) {
+  return listRows("rule_readbacks", businessId, { rule_id, agent_id }, { orderBy: "t.spoken_at, t.rowid" });
+}
+
+const hydrateMemory = (row) => (row ? { ...row, data: JSON.parse(row.data) } : null);
+
+function listMemories(businessId) {
+  return db
+    .prepare("SELECT * FROM agent_memories WHERE business_id = ? ORDER BY kind, key")
+    .all(tenant(businessId))
+    .map(hydrateMemory);
+}
+
+/**
+ * Insert or replace the memory of (kind, key). Returns `{ memory, changed }`: `changed` is false
+ * when the stored data and sentences were already exactly these.
+ */
+function saveMemory(businessId, { kind, key, data, sentence }) {
+  const row = {
+    data: JSON.stringify(data),
+    sentence_hi: requireText(sentence["hi-IN"], "sentence"),
+    sentence_kn: requireText(sentence["kn-IN"], "sentence"),
+    sentence_en: requireText(sentence["en-IN"], "sentence"),
+  };
+  const existing = db.prepare("SELECT * FROM agent_memories WHERE business_id = ? AND kind = ? AND key = ?").get(tenant(businessId), kind, key);
+  if (existing && Object.keys(row).every((column) => existing[column] === row[column])) {
+    return { memory: hydrateMemory(existing), changed: false };
+  }
+  const id = existing?.id ?? newId("mem");
+  db.prepare(
+    "INSERT INTO agent_memories (id, business_id, kind, key, data, sentence_hi, sentence_kn, sentence_en, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT (business_id, kind, key) DO UPDATE SET data = excluded.data, sentence_hi = excluded.sentence_hi, " +
+      "sentence_kn = excluded.sentence_kn, sentence_en = excluded.sentence_en, updated_at = excluded.updated_at",
+  ).run(id, businessId, kind, requireText(key, "key"), row.data, row.sentence_hi, row.sentence_kn, row.sentence_en, now());
+  return { memory: hydrateMemory(db.prepare("SELECT * FROM agent_memories WHERE id = ?").get(id)), changed: true };
+}
+
+function deleteMemory(businessId, memoryId) {
+  return db.prepare("DELETE FROM agent_memories WHERE business_id = ? AND id = ?").run(tenant(businessId), memoryId).changes === 1;
+}
+
+/**
+ * Everything memories are derived from: each order that is not cancelled, with the item, unit and
+ * quantity it was for and the vendor and price it was at. Oldest first.
+ */
+function listOrderFacts(businessId) {
+  return db
+    .prepare(
+      "SELECT o.id AS order_id, o.created_at, o.status, r.item, r.unit, r.quantity, q.unit_price, q.simulated, v.name AS vendor_name " +
+        "FROM orders o JOIN quotes q ON q.id = o.quote_id AND q.business_id = o.business_id " +
+        "JOIN requirements r ON r.id = q.requirement_id AND r.business_id = o.business_id " +
+        "JOIN vendors v ON v.id = q.vendor_id AND v.business_id = o.business_id " +
+        "WHERE o.business_id = ? AND o.status <> 'cancelled' ORDER BY o.created_at, o.rowid",
+    )
+    .all(tenant(businessId))
+    .map((row) => ({ ...row, simulated: row.simulated === 1 }));
+}
+
 /* ------------------------------------------------------ simulated flag --- */
 
 /**
@@ -769,6 +912,9 @@ module.exports = {
   createFollowup, getFollowup, listFollowups, settleFollowup,
   appendAudit, listAudit,
   setTelegramLink, getTelegramLink, removeTelegramLink, createLinkCode,
+  getAgentProfile, saveAgentProfile,
+  createRule, getRule, listRules, transitionRule, recordRuleReadback, listRuleReadbacks,
+  listMemories, saveMemory, deleteMemory, listOrderFacts,
   isSimulated,
   system,
 };

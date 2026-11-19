@@ -319,3 +319,111 @@ CREATE TABLE IF NOT EXISTS link_codes (
   business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
   expires_at  TEXT NOT NULL
 );
+
+-- "My Sahay": how the owner wants their agent to behave (docs/superpowers/specs/2026-11-19-sahay-frontend-design.md).
+-- The language lives on businesses; a profile row holds only what has no other home. No row means the defaults.
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  business_id   TEXT PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
+  voice_speed   TEXT NOT NULL CHECK (voice_speed IN ('slow', 'normal')),
+  bargain_style TEXT NOT NULL CHECK (bargain_style IN ('gentle', 'balanced', 'tough')),
+  updated_at    TEXT NOT NULL
+);
+
+-- Rules the owner taught or Sahay suggested. Structured kinds only, and each can only narrow what
+-- Sahay does; no rule can place an order, accept a rate or stand in for the owner's yes.
+-- `scope_key` names what a rule is about ("max_price:rice", "vendor:lakshmi traders"): one active rule per scope.
+CREATE TABLE IF NOT EXISTS agent_rules (
+  id           TEXT PRIMARY KEY,
+  business_id  TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('max_price', 'prefer_vendor', 'avoid_vendor', 'usual_quantity', 'reply_language', 'bargain_style')),
+  scope_key    TEXT NOT NULL,
+  params       TEXT NOT NULL,
+  sentence_hi  TEXT NOT NULL,
+  sentence_kn  TEXT NOT NULL,
+  sentence_en  TEXT NOT NULL,
+  why_hi       TEXT,
+  why_kn       TEXT,
+  why_en       TEXT,
+  status       TEXT NOT NULL CHECK (status IN ('suggested', 'active', 'off')),
+  source       TEXT NOT NULL CHECK (source IN ('owner_said', 'learned')),
+  decided_via  TEXT CHECK (decided_via IN ('voice', 'button') OR decided_via IS NULL),
+  created_at   TEXT NOT NULL,
+  decided_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS agent_rules_by_business ON agent_rules (business_id, status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS agent_rules_one_active ON agent_rules (business_id, scope_key) WHERE status = 'active';
+
+CREATE TRIGGER IF NOT EXISTS agent_rules_start_suggested
+BEFORE INSERT ON agent_rules
+WHEN NEW.status <> 'suggested'
+BEGIN
+  SELECT RAISE(ABORT, 'a rule must start as suggested');
+END;
+
+CREATE TRIGGER IF NOT EXISTS agent_rules_status_flow
+BEFORE UPDATE OF status ON agent_rules
+WHEN NOT (
+  (OLD.status = 'suggested' AND NEW.status IN ('active', 'off'))
+  OR (OLD.status = 'active' AND NEW.status = 'off')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'illegal rule status change');
+END;
+
+CREATE TRIGGER IF NOT EXISTS agent_rules_are_fixed
+BEFORE UPDATE OF business_id, kind, scope_key, params, sentence_hi, sentence_kn, sentence_en, source ON agent_rules
+BEGIN
+  SELECT RAISE(ABORT, 'what a rule says cannot be changed; propose a new one');
+END;
+
+-- Every time the server itself spoke a rule into a live call: a suggested rule's sentence (a spoken yes
+-- can keep only a rule the server read out, approvals.answerAfterSpoken), or an active usual_quantity
+-- rule's offer (the quantity is filled only on a spoken yes to it).
+CREATE TABLE IF NOT EXISTS rule_readbacks (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  rule_id     TEXT NOT NULL REFERENCES agent_rules(id) ON DELETE CASCADE,
+  agent_id    TEXT NOT NULL,
+  spoken_text TEXT NOT NULL,
+  spoken_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rule_readbacks_by_rule ON rule_readbacks (business_id, rule_id, spoken_at);
+
+CREATE TRIGGER IF NOT EXISTS rule_readbacks_need_suggested
+BEFORE INSERT ON rule_readbacks
+WHEN NOT EXISTS (
+  SELECT 1 FROM agent_rules r WHERE r.id = NEW.rule_id AND r.business_id = NEW.business_id
+    AND (r.status = 'suggested' OR (r.status = 'active' AND r.kind = 'usual_quantity'))
+)
+BEGIN
+  SELECT RAISE(ABORT, 'a rule read-back is recorded only for a suggested rule (or an active usual quantity) of the same business');
+END;
+
+CREATE TRIGGER IF NOT EXISTS rule_readbacks_are_fixed
+BEFORE UPDATE ON rule_readbacks
+BEGIN
+  SELECT RAISE(ABORT, 'a recorded rule read-back cannot be changed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS agent_rules_voice_needs_spoken_readback
+BEFORE UPDATE OF status ON agent_rules
+WHEN NEW.status = 'active' AND NEW.decided_via = 'voice'
+  AND NOT EXISTS (SELECT 1 FROM rule_readbacks r WHERE r.rule_id = NEW.id AND r.business_id = NEW.business_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a rule kept by voice needs its sentence spoken by the server');
+END;
+
+-- What Sahay remembers about how this business buys. Derived in code from orders (src/agent/memories.js),
+-- never from vendor text or a model. One row per (kind, key).
+CREATE TABLE IF NOT EXISTS agent_memories (
+  id          TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL CHECK (kind IN ('usual_item', 'liked_vendor', 'last_price')),
+  key         TEXT NOT NULL,
+  data        TEXT NOT NULL,
+  sentence_hi TEXT NOT NULL,
+  sentence_kn TEXT NOT NULL,
+  sentence_en TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  UNIQUE (business_id, kind, key)
+);

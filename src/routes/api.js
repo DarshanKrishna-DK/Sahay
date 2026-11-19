@@ -35,6 +35,9 @@ const scoring = require("../procurement/scoring");
 const negotiation = require("../negotiation/session");
 const telegram = require("../notify/telegram");
 const { ToolError, toToolError } = require("../tools/errors");
+const agentProfile = require("../agent/profile");
+const agentRules = require("../agent/rules");
+const agentMemories = require("../agent/memories");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -464,6 +467,34 @@ function createApiRouter() {
   );
 
   router.get("/api/events", events.sseHandler);
+
+  /* "My Sahay": profile, rules and memories of the session's business. */
+  router.get("/api/agent", (req, res) => {
+    const { businessId } = req.auth;
+    res.json({ profile: agentProfile.get(businessId), rules: agentRules.list(businessId), memories: agentMemories.list(businessId) });
+  });
+
+  router.put(
+    "/api/agent/profile",
+    json,
+    wrap(async (req, res) => {
+      const { businessId } = req.auth;
+      res.json({ profile: agentProfile.update(businessId, req.body, { sessionId: voice.get(businessId)?.sessionId ?? null }) });
+    }),
+  );
+
+  // The ✓ / ✕ on a rule card. A spoken keep goes through the confirm_rule tool instead.
+  router.post(
+    "/api/agent/rules/:id/decision",
+    json,
+    wrap(async (req, res) => {
+      const { businessId } = req.auth;
+      const decision = req.body?.decision;
+      if (decision !== "keep" && decision !== "forget") throw new HttpError(400, "INVALID_DECISION", 'decision is "keep" or "forget".');
+      const rule = agentRules.decide(businessId, req.params.id, decision, { via: "button", sessionId: voice.get(businessId)?.sessionId ?? null });
+      res.json({ rule });
+    }),
+  );
 
   router.post(
     "/api/telegram/link-code",

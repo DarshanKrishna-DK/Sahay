@@ -121,6 +121,11 @@ const SAY = {
     "kn-IN": "ಮಾಹಿತಿ ತೆಗೆಯುವ ಸೇವೆ ಉತ್ತರಿಸಲಿಲ್ಲ.",
     "en-IN": "The extraction service did not answer.",
   },
+  rule_already_decided: {
+    "hi-IN": "यह नियम पहले ही हटा दिया गया था, रखना हो तो मुझे फिर से बताइए।",
+    "kn-IN": "ಈ ನಿಯಮವನ್ನು ಈಗಾಗಲೇ ತೆಗೆದುಹಾಕಲಾಗಿದೆ, ಬೇಕಿದ್ದರೆ ನನಗೆ ಮತ್ತೆ ಹೇಳಿ.",
+    "en-IN": "This rule was already removed; tell me again if you want it.",
+  },
   internal: {
     "hi-IN": "कुछ गड़बड़ हो गई, मैं यह काम अभी नहीं कर पाई।",
     "kn-IN": "ಏನೋ ತೊಂದರೆಯಾಯಿತು, ಈ ಕೆಲಸ ಈಗ ಮಾಡಲು ಆಗಲಿಲ್ಲ.",
@@ -165,6 +170,10 @@ const CODE_MAP = {
   ANSWER_DURING_READBACK: ["not_affirmative", 409],
   READBACK_SUPERSEDED: ["not_affirmative", 409],
   BUSY: ["busy", 503],
+  // "My Sahay" (src/agent/*)
+  INVALID_RULE: ["invalid", 400],
+  RULE_NOT_FOUND: ["not_found", 404],
+  RULE_ALREADY_DECIDED: ["rule_already_decided", 409],
   ILLEGAL_TRANSITION: ["order_step_not_allowed", 409],
   PAID_BY_PAYMENT_ONLY: ["order_step_not_allowed", 409],
   PO_NOT_ISSUED: ["po_failed", 502],

@@ -278,21 +278,33 @@ function spokenPieces(text) {
 }
 
 /**
- * The owner's answer to this approval's read-back, from the call's /history `contents`
- * (Agora keeps them in turn order). Fails closed:
- * - the server must have spoken a read-back for this approval through this agent;
- * - every piece of that read-back must be in the history as a server line, not interrupted;
- * - the owner's last ASR turn must come after it, in array order AND by a larger numeric
- *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence);
- * - when Agora gives both speech timings, the owner must not have spoken over it;
- * - no read-back of another approval may have been spoken in between.
- * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
+ * The owner's answer to this approval's read-back, from the call's /history `contents`.
+ * See answerAfterSpoken; the read-backs are the ones the server spoke for this approval.
  */
 function answerToReadback(businessId, approval, contents, { agentId }) {
-  const own = repo.listApprovalReadbacks(businessId, { approval_id: approval.id, agent_id: agentId });
-  if (!agentId || !own.length) throw new ApprovalError("READBACK_NOT_SPOKEN", "This deal was not read out to the owner in this call.");
+  const own = agentId ? repo.listApprovalReadbacks(businessId, { approval_id: approval.id, agent_id: agentId }) : [];
+  return answerAfterSpoken(businessId, contents, { agentId, spoken: own.map((row) => row.spoken_text), subject: { approvalId: approval.id } });
+}
+
+/**
+ * The owner's answer to something the server itself spoke into this call (an approval's read-back,
+ * or a rule's sentence: src/agent/rules.js), from the call's /history `contents` (Agora keeps them
+ * in turn order). `spoken` are the texts the server spoke for this subject through `agentId`;
+ * `subject` ({approvalId} or {ruleId}) says which recorded read-backs are this one's own.
+ * Fails closed:
+ * - the server must have spoken it through this agent;
+ * - every piece of it must be in the history as a server line, not interrupted;
+ * - the owner's last ASR turn must come after it, in array order AND by a larger numeric
+ *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence); a typed
+ *   message is not an ASR turn, so it is never an answer;
+ * - when Agora gives both speech timings, the owner must not have spoken over it;
+ * - no read-back of another approval or rule may have been spoken in between.
+ * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
+ */
+function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject = {} }) {
+  if (!agentId || !spoken.length) throw new ApprovalError("READBACK_NOT_SPOKEN", "This was not read out to the owner in this call.");
   if (!Array.isArray(contents)) throw new ApprovalError("EVIDENCE_REQUIRED", "The call history is needed as evidence.");
-  const readbacks = own.map((row) => spokenPieces(row.spoken_text));
+  const readbacks = spoken.map(spokenPieces);
 
   let anchor = -1;
   let pieces = null;
@@ -328,15 +340,18 @@ function answerToReadback(businessId, approval, contents, { agentId }) {
     throw new ApprovalError("ANSWER_DURING_READBACK", "The owner spoke while the read-back was still playing.");
   }
 
+  const own = new Set(readbacks.flat());
   const others = new Set(
-    repo
-      .listApprovalReadbacks(businessId)
-      .filter((row) => row.approval_id !== approval.id)
-      .flatMap((row) => spokenPieces(row.spoken_text)),
+    [
+      ...repo.listApprovalReadbacks(businessId).filter((row) => row.approval_id !== subject.approvalId),
+      ...repo.listRuleReadbacks(businessId).filter((row) => row.rule_id !== subject.ruleId),
+    ]
+      .flatMap((row) => spokenPieces(row.spoken_text))
+      .filter((piece) => !own.has(piece)),
   );
   for (let i = anchor + 1; i < answerAt; i++) {
     if (isServerLine(contents[i]) && others.has(collapse(contents[i].content))) {
-      throw new ApprovalError("READBACK_SUPERSEDED", "Another deal was read out after this one.");
+      throw new ApprovalError("READBACK_SUPERSEDED", "Something else was read out after this one.");
     }
   }
   return { text: said.content.trim(), turnId: said.turn_id };
@@ -422,6 +437,6 @@ function assertOrderApproved(businessId, order) {
 module.exports = {
   ApprovalError,
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
-  answerToReadback, isAffirmative, classifyUtterance, isOwnerAsr,
+  answerToReadback, answerAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr,
   buildReadback,
 };
