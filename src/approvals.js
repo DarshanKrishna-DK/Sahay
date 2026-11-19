@@ -422,6 +422,6 @@ function assertOrderApproved(businessId, order) {
 module.exports = {
   ApprovalError,
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
-  answerToReadback, isAffirmative, classifyUtterance,
+  answerToReadback, isAffirmative, classifyUtterance, isOwnerAsr,
   buildReadback,
 };

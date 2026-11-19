@@ -5,13 +5,14 @@
  * Devanagari, a Kannada line is Kannada script. Murf reads a Latin word inside Hindi or Kannada
  * with an English voice model, and a Devanagari word inside Kannada with the wrong one.
  *
- * Allowed inside a hi/kn line: digits and punctuation, purchase-order numbers (SAHAY/2026/0001),
+ * Allowed inside a hi/kn line: digits and punctuation, purchase-order numbers (SAHAY/2026/AB12-0001),
  * the word "Razorpay", and the exact names the caller passes (a vendor's or business's own
  * brand name, which is never transliterated by guess).
  */
 
 const LATIN_WORD = /[A-Za-z][A-Za-z'.&-]*/g;
-const PO_NUMBER = /\b[A-Z]{2,10}\/\d{4}\/\d{1,6}\b/g;
+/** SAHAY/2026/AB12-0001 (per-business code, repo.poCode) and the older SAHAY/2026/0001. */
+const PO_NUMBER = /\b[A-Z]{2,10}\/\d{4}\/(?:[0-9A-F]{4,64}-)?\d{1,6}\b/g;
 const ALWAYS_ALLOWED = ["Razorpay"];
 /** A script that does not belong inside a sentence of this language. */
 const FOREIGN = {

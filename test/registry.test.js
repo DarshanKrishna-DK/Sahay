@@ -33,6 +33,7 @@ const jobs = require("../src/jobs");
 const approvals = require("../src/approvals");
 const session = require("../src/negotiation/session");
 const { rankVendors } = require("../src/procurement/scoring");
+const { scriptProblems } = require("../src/agora/script");
 
 const recordedPage = fs.readFileSync(path.join(__dirname, "fixtures", "indiamart-bengaluru-basmati-rice.html"), "utf8");
 const realFetch = globalThis.fetch;
@@ -204,7 +205,7 @@ test("start_sourcing returns a job id in under a second; the job stores scored r
   const out = await registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId });
   assert.ok(Date.now() - started < 1000);
   assert.match(out.jobId, /^job_/);
-  assert.equal(out.say, "इंडियामार्ट पर basmati rice के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।");
+  assert.equal(out.say, "इंडियामार्ट पर बासमती चावल के विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।", "E2E r4: no Latin item inside Hindi");
 
   const again = await registry.callTool(ctx, "start_sourcing", { requirementId: saved.requirementId });
   assert.equal(again.jobId, out.jobId, "a second start while running returns the same job");
@@ -345,13 +346,17 @@ test("in a call, request_approval speaks the read-back itself (APPEND, not inter
   assert.equal(asked.say, "क्या मैं ऑर्डर कर दूँ?");
   assert.equal(asked.readbackSpoken, true);
   assert.equal(asked.readback, undefined, "the model gets no figures to re-read");
-  assert.equal(call.spoken.join(" "), repo.getApproval(businessId, asked.approvalId).readback);
+  // The stored read-back keeps the owner's words ("basmati rice"); the spoken one names the item in Devanagari (E2E r4).
+  assert.equal(call.spoken.join(" "), repo.getApproval(businessId, asked.approvalId).readback.replace("basmati rice", "बासमती चावल"));
   assert.match(call.spoken.join(" "), /कुल 3250 रुपये/);
   for (const body of call.speakBodies) assert.equal(body.interruptable, false);
   assert.equal(call.speakBodies[0].priority, "APPEND");
   assert.deepEqual(repo.listApprovalReadbacks(businessId).map((r) => [r.approval_id, r.agent_id]), [[asked.approvalId, "AGV"]]);
 
+  // Asked again in another language: not read again (E2E r4), unless the owner asks to hear it.
   assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN" })).say, "Shall I place the order?");
+  assert.equal(call.spoken.length, 1);
+  assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN", repeat: true })).say, "Shall I place the order?");
   assert.match(call.spoken.at(-1), /^Order from Lakshmi Traders: .* Total 3250 rupees\./, "spoken again, in the owner's language");
 });
 
@@ -427,7 +432,7 @@ test("approved deal -> create_order -> create_payment_link (Razorpay test, faked
 
   const order = await registry.callTool(ctx, "create_order", { approvalId: asked.approvalId });
   assert.match(order.orderId, /^ord_/);
-  assert.match(order.poNumber, /^SAHAY\/\d{4}\/\d{4}$/);
+  assert.match(order.poNumber, /^SAHAY\/\d{4}\/[0-9A-F]{4,}-0001$/, "per-business code and sequence (E2E r4)");
   assert.equal(order.say, `The order is placed, purchase order number ${order.poNumber}.`);
   await expectToolError(registry.callTool(ctx, "create_order", { approvalId: asked.approvalId }), "APPROVAL_CONSUMED");
 
@@ -488,7 +493,7 @@ test("save_requirement stores canonical units and cities from Hindi, Kannada and
 
   const kn = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "ಕಿಲೋ", city: "ಬೆಂಗಳೂರು", reply_language: "kn-IN" });
   assert.deepEqual([kn.requirement.unit, kn.requirement.city], ["kg", "Bengaluru"]);
-  assert.match(kn.say, /ಬೆಂಗಳೂರುಗೆ/, "the city is said in Kannada script, never \"Bengaluruಗೆ\"");
+  assert.match(kn.say, /ಬೆಂಗಳೂರಿಗೆ/, "the city is said in Kannada script and case, never \"Bengaluruಗೆ\" or \"ಬೆಂಗಳೂರಿನಿಗೆ\"");
   assert.doesNotMatch(kn.say, /\p{Script=Latin}/u);
   const en = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "cotton t-shirts", quantity: 500, unit: "pieces", city: "Bangalore" });
   assert.deepEqual([en.requirement.unit, en.requirement.city], ["piece", "Bengaluru"]);
@@ -937,4 +942,183 @@ test("request_approval holds narration before the server speaks the read-back, s
   t.mock.method(agent, "speak", async () => order.push(["speak"]));
   const out = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
   assert.deepEqual(order, [["hold", businessId, out.approvalId], ["speak"]]);
+});
+
+/* ------------------------------------------------------------- E2E round 4 --- */
+
+test("E2E r4 bug 2: asking again for a deal already read out in this call does not read it again; the yes goes to confirm_approval", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGR" });
+  const { quote } = seedQuote(businessId);
+  const call = fakeCall(t);
+
+  const asked = await registry.callTool(ctx, "request_approval", {});
+  assert.equal(call.spoken.length, 1);
+
+  // Called again before the owner answered: no second read-back, the short question only.
+  const early = await registry.callTool(ctx, "request_approval", {});
+  assert.equal(early.status, "awaiting_answer");
+  assert.equal(early.approvalId, asked.approvalId);
+  assert.equal(early.say, "क्या मैं ऑर्डर कर दूँ?");
+  assert.equal(early.next, "confirm_approval");
+  assert.match(early.hint, /confirm_approval/);
+  assert.equal(call.spoken.length, 1, "the read-back is not spoken twice");
+
+  // The owner says yes; the model wrongly asks again: still no read-back, and it is told to confirm.
+  call.owner("हाँ");
+  const again = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  assert.equal(again.status, "awaiting_answer");
+  assert.equal(again.ownerReply, "affirmative");
+  assert.match(again.hint, /confirm_approval with decision approve/);
+  assert.equal(again.say, "ठीक है, दर्ज कर रही हूँ।");
+  assert.equal(call.spoken.length, 1);
+  assert.equal(repo.listApprovalReadbacks(businessId).length, 1, "one approval.spoken row, not three");
+  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending", "asking never approves: only confirm_approval does");
+
+  // confirm_approval with no id takes the one approval waiting, and the gate accepts the yes.
+  const ok = await registry.callTool(ctx, "confirm_approval", { decision: "approve" });
+  assert.equal(ok.status, "approved");
+  assert.equal(repo.getApproval(businessId, asked.approvalId).evidence_utterance, "हाँ");
+});
+
+test("E2E r4 bug 2: the owner asking to hear the deal again (repeat) reads it again; a no is pointed to confirm_approval reject", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGP" });
+  seedQuote(businessId);
+  const call = fakeCall(t);
+  await registry.callTool(ctx, "request_approval", {});
+  call.owner("can you read it again");
+  const repeated = await registry.callTool(ctx, "request_approval", { repeat: true });
+  assert.equal(call.spoken.length, 2, "read out again on request");
+  assert.equal(repeated.say, "Shall I place the order?");
+  assert.equal(repo.listApprovalReadbacks(businessId).length, 2);
+
+  call.owner("no");
+  const no = await registry.callTool(ctx, "request_approval", {});
+  assert.equal(no.ownerReply, "negative");
+  assert.match(no.hint, /confirm_approval with decision reject/);
+  assert.equal(call.spoken.length, 2);
+});
+
+test("E2E r4 bug 2: a yes said before the read-back still does not count after a repeated request", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGB" });
+  seedQuote(businessId);
+  const call = fakeCall(t);
+  call.owner("yes");
+  await registry.callTool(ctx, "request_approval", {});
+  const again = await registry.callTool(ctx, "request_approval", {});
+  assert.equal(again.status, "awaiting_answer");
+  assert.equal(again.ownerReply, undefined, "no answer since the read-back");
+  assert.equal(again.say, "Shall I place the order?");
+  await expectToolError(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), "NO_ANSWER_YET");
+});
+
+function stubIndiaMart(t) {
+  return stubFetch(t, async (url) => {
+    if (url.startsWith("https://dir.indiamart.com/bengaluru/basmati-rice.html")) {
+      const res = new Response(recordedPage, { status: 200 });
+      Object.defineProperty(res, "url", { value: url });
+      return res;
+    }
+    return new Response("not found", { status: 404 });
+  });
+}
+
+test("E2E r4 bug 3: in a call, a complete requirement starts the vendor search itself, said in Kannada with the city in Kannada", async (t) => {
+  stubIndiaMart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGK" });
+  const call = fakeCall(t);
+  call.owner("ನನಗೆ ಇನ್ನೂರು ಕಿಲೋ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ ಬೇಕು, ಬೆಂಗಳೂರಿಗೆ ಡೆಲಿವರಿ ಬೇಕು.");
+
+  const out = await registry.callTool(ctx, "save_requirement", { item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "ಕಿಲೋ", city: "ಬೆಂಗಳೂರು", reply_language: "kn-IN" });
+  assert.deepEqual(out.missing, []);
+  assert.equal(out.sourcingStarted, true);
+  assert.match(out.jobId, /^job_/);
+  assert.equal(out.say, "ಸರಿ, 200 ಕೆಜಿ ಬಾಸ್ಮತಿ ಅಕ್ಕಿ, ಬೆಂಗಳೂರಿಗೆ; ಇಂಡಿಯಾಮಾರ್ಟ್‌ನಲ್ಲಿ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕಲು ಶುರು ಮಾಡಿದ್ದೇನೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.");
+  assert.deepEqual(scriptProblems(out.say, "kn-IN"), { latin: [], foreign: false });
+  await jobs.whenSettled(out.jobId);
+  assert.equal(repo.getJob(businessId, out.jobId).status, "done");
+
+  // Adding a detail later does not search again; an explicit start_sourcing still can.
+  call.owner("ಗರಿಷ್ಠ ತೊಂಬತ್ತು ರೂಪಾಯಿ");
+  const later = await registry.callTool(ctx, "save_requirement", { max_price_per_unit: 90, reply_language: "kn-IN" });
+  assert.equal(later.sourcingStarted, false);
+  assert.equal(repo.listJobs(businessId, { kind: "sourcing" }).length, 1);
+});
+
+test("E2E r4 bug 3: a requirement still missing a field, or saved outside a call, does not start a search", async (t) => {
+  const requested = stubIndiaMart(t);
+  const businessId = seedBusiness("hi-IN");
+  const call = fakeCall(t);
+  call.owner("मुझे दो सौ किलो बासमती चावल चाहिए");
+  const partial = await registry.callTool(ownerCtx(businessId, { agentId: "AGM" }), "save_requirement", { item: "बासमती चावल", quantity: 200, unit: "किलो" });
+  assert.deepEqual(partial.missing, ["city"]);
+  assert.equal(partial.sourcingStarted, false);
+  const offCall = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "Bengaluru" });
+  assert.equal(offCall.sourcingStarted, false);
+  assert.deepEqual(repo.listJobs(businessId), []);
+  assert.deepEqual(requested, []);
+});
+
+test("E2E r4 bug 4: a fragment 'मुझे पांच' does not become '5 kg basmati rice'; nothing is saved and the owner is asked again", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGF" });
+  const call = fakeCall(t);
+  call.owner("मुझे दो सौ किलो बासमती चावल चाहिए, बेंगलुरु में");
+  call.owner("मुझे पांच");
+  // The model's own copy of the words is not trusted over the call history.
+  const out = await registry.callTool(ctx, "save_requirement", { item: "basmati rice", quantity: 5, unit: "kg", city: "Bengaluru", owner_words: "मुझे पांच किलो बासमती चावल" });
+  assert.equal(out.saved, false);
+  assert.equal(out.requirementId, null);
+  assert.deepEqual(out.missing, ["quantity", "unit"]);
+  assert.equal(out.say, "माफ़ कीजिए, पूरी बात सुनाई नहीं दी; बताइए, कितनी मात्रा, किस इकाई में?");
+  assert.deepEqual(repo.listRequirements(businessId), []);
+  assert.equal(call.historyReads, 2, "the call history is read again once in case the turn lagged");
+
+  // Without a call, the owner's words the model passes are checked instead.
+  const off = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "basmati rice", quantity: 5, unit: "kg", owner_words: "मुझे पांच", reply_language: "en-IN" });
+  assert.equal(off.saved, false);
+  assert.equal(off.say, "Sorry, I did not catch all of that; please tell me again which item, how much, in which unit.");
+  const ok = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "basmati rice", quantity: 5, unit: "kg", owner_words: "five kilos of basmati rice" });
+  assert.equal(ok.saved, true);
+});
+
+test("E2E r4 bug 5: every hi/kn say template of the registry is in its own script (names, PO numbers, digits and Razorpay aside)", () => {
+  const { PHRASES, SAY_WORDS } = registry;
+  const { SAY } = require("../src/tools/errors");
+  const sample = {
+    "hi-IN": { city: "बेंगलुरु", unit: "किलो", item: "बासमती चावल", status: "पक्का", payment: "भुगतान बाकी है", missing: "कितनी मात्रा", list: "BS Foods 11000 रुपये" },
+    "kn-IN": { city: "ಬೆಂಗಳೂರು", unit: "ಕೆಜಿ", item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", status: "ಖಚಿತ", payment: "ಪಾವತಿ ಬಾಕಿ ಇದೆ", missing: "ಎಷ್ಟು ಪ್ರಮಾಣ", list: "BS Foods 11000 ರೂಪಾಯಿ" },
+  };
+  const names = { name: "Asha Kirana", vendor: "BS Foods", alt: "Lakshmi Traders", po: "SAHAY/2026/AB12-0001" };
+  const allow = Object.values(names);
+  for (const language of ["hi-IN", "kn-IN"]) {
+    const base = { ...names, ...sample[language], quantity: "200", count: 4, comparable: 3, price: "55", rank: 2, total: "11000", landed: "11000", goods: "11000", amount: "11000", n: 2, more: true, national: true, sim: true };
+    for (const [key, byLanguage] of Object.entries(PHRASES)) {
+      const bare = { ...base, sim: false, city: null, landed: null, more: false, national: false };
+      for (const vars of key === "requirement_missing" ? [base, bare, { ...bare, item: null }] : [base, bare]) {
+        const text = byLanguage[language](vars);
+        assert.deepEqual(scriptProblems(text, language, { allow }), { latin: [], foreign: false }, `${key} ${language}: "${text}"`);
+      }
+    }
+    for (const [group, words] of Object.entries(SAY_WORDS)) {
+      for (const [key, byLanguage] of Object.entries(words)) {
+        assert.deepEqual(scriptProblems(byLanguage[language], language), { latin: [], foreign: false }, `${group}.${key} ${language}`);
+      }
+    }
+    for (const [key, byLanguage] of Object.entries(SAY)) {
+      assert.deepEqual(scriptProblems(byLanguage[language], language), { latin: [], foreign: false }, `errors.${key} ${language}: "${byLanguage[language]}"`);
+    }
+  }
+});
+
+test("E2E r4 bug 5: a Latin or Kannada item is said in Devanagari inside Hindi, from the trade-word table", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const latin = await registry.callTool(ctx, "save_requirement", { item: "basmati rice", quantity: 5, unit: "kg", city: "Bengaluru" });
+  assert.equal(latin.say, "ठीक है, 5 किलो बासमती चावल लिख लिया, बेंगलुरु के लिए।");
+  const unknown = await registry.callTool(ownerCtx(businessId), "save_requirement", { item: "premium widgets", quantity: 5, unit: "pieces", city: "Bengaluru" });
+  assert.deepEqual(scriptProblems(unknown.say, "hi-IN"), { latin: [], foreign: false }, unknown.say);
 });

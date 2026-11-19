@@ -537,7 +537,7 @@ test("agentStatus: GET /agents/{id} (agora-findings: Query status) returns the s
 test("E2E r3 bug 4: once item, quantity, unit and city are saved, the prompt starts sourcing at once; max price is optional", () => {
   for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
     const prompt = agent.systemPrompt({ name: "Shree Balaji Stores", city: "Bengaluru", language });
-    assert.match(prompt, /empty missing list, call start_sourcing in the same turn/);
+    assert.match(prompt, /empty missing list with sourcingStarted false and no sourcingError, call start_sourcing in the same turn/);
     assert.match(prompt, /maximum price is optional: never ask for it before the search has started/);
     assert.match(prompt, /even one said before or in another language, call save_requirement with the item and no id/);
     // The prompt never makes a price ceiling a precondition of sourcing.
@@ -571,5 +571,18 @@ test("E2E r3 bug 8: every Agora POST logs its status and duration, with the agen
   for (const line of lines) {
     assert.ok(!line.includes("AGENT_SECRETISH_ID"));
     assert.ok(!/test-customer|Basic /.test(line));
+  }
+});
+
+/* ------------------------------------------- E2E round 4 regressions --- */
+
+test("E2E r4 bugs 2-4: the prompt sends the answer to a read-back to confirm_approval, lets save_requirement start the search, and never fills in a cut-off sentence", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language });
+    assert.match(prompt, /Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id/);
+    assert.match(prompt, /Never call request_approval again for that answer/);
+    assert.match(prompt, /save_requirement starts the vendor search itself in a call \(sourcingStarted true\)/);
+    assert.match(prompt, /Always pass owner_words/);
+    assert.match(prompt, /never fill them in from earlier turns/);
   }
 });

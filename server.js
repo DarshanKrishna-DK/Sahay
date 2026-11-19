@@ -40,6 +40,11 @@ function inlineScriptHashes(html) {
  * Content-Security-Policy for every response (security review r1 #11).
  * - script-src: our files, the three pinned CDN files, the import map by hash, and
  *   'wasm-unsafe-eval' because the Agora RTM SDK instantiates WebAssembly.
+ *   No 'unsafe-eval' (E2E r4: 2 CSP reports from agora-rtm@2.2.3/agora-rtm.js). The bundle's only
+ *   eval is protobufjs's @protobufjs/inquire, `eval("quire".replace(/^/,"re"))(name)`, called twice:
+ *   inquire("buffer") and inquire("long"). It looks for Node's require, runs inside try/catch and
+ *   returns null when blocked; protobufjs then uses Uint8Array and its own LongBits. So the two
+ *   reports are expected and harmless; nothing in RTM depends on eval in a browser.
  * - worker-src blob:: the RTC and RTM SDKs start workers from blob: URLs.
  * - connect-src https: wss:: Agora's RTC/RTM gateways, edge and log hosts are many and not one
  *   documented list we could verify, so any TLS origin is allowed for connections (never for scripts).

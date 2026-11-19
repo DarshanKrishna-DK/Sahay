@@ -28,7 +28,9 @@ const approvals = require("../approvals");
 const orders = require("../orders");
 const payments = require("../orders/payments");
 const { findVendors } = require("../discovery/indiamart");
-const { candidateSlugs, cityName, cityIn } = require("../discovery/slug");
+const { candidateSlugs, cityName, cityIn, itemIn } = require("../discovery/slug");
+const { isNativeScript } = require("../agora/script");
+const evidence = require("./evidence");
 const { scoreVendor, rankDeals, rankVendors, comparableListedPrice } = require("../procurement/scoring");
 const { canonicalUnit, unitWord, UNIT_CODES } = require("../procurement/units");
 const { ToolError, toToolError, sayFor, langKey, LANGS } = require("./errors");
@@ -76,6 +78,15 @@ const MISSING_WORDS = {
   city: { "hi-IN": "किस शहर में डिलीवरी", "kn-IN": "ಯಾವ ನಗರಕ್ಕೆ ಡೆಲಿವರಿ", "en-IN": "delivery to which city" },
 };
 
+/**
+ * A Kannada place name with the dative ending: ಬೆಂಗಳೂರು -> ಬೆಂಗಳೂರಿಗೆ, ಹೈದರಾಬಾದ್ -> ಹೈದರಾಬಾದಿಗೆ,
+ * ದೆಹಲಿ -> ದೆಹಲಿಗೆ (E2E r4 heard "ಬೆಂಗಳೂರುಗೆ" and "ಬೆಂಗಳೂರಿನಿಗೆ").
+ */
+function knDative(place) {
+  const word = String(place);
+  return /[ುೂ್]$/u.test(word) ? `${word.slice(0, -1)}ಿಗೆ` : `${word}ಗೆ`;
+}
+
 /** Phrase book. Each entry: (vars) => sentence, per language. */
 const PHRASES = {
   profile: {
@@ -85,8 +96,18 @@ const PHRASES = {
   },
   requirement_saved: {
     "hi-IN": (v) => `ठीक है, ${v.quantity} ${v.unit} ${v.item} लिख लिया${v.city ? `, ${v.city} के लिए` : ""}।`,
-    "kn-IN": (v) => `ಸರಿ, ${v.quantity} ${v.unit} ${v.item} ಬರೆದುಕೊಂಡೆ${v.city ? `, ${v.city}ಗೆ` : ""}.`,
+    "kn-IN": (v) => `ಸರಿ, ${v.quantity} ${v.unit} ${v.item} ಬರೆದುಕೊಂಡೆ${v.city ? `, ${knDative(v.city)}` : ""}.`,
     "en-IN": (v) => `Noted: ${v.quantity} ${v.unit} of ${v.item}${v.city ? ` for ${v.city}` : ""}.`,
+  },
+  requirement_saved_searching: {
+    "hi-IN": (v) => `ठीक है, ${v.quantity} ${v.unit} ${v.item}${v.city ? `, ${v.city} के लिए` : ""}; इंडियामार्ट पर विक्रेता खोजना शुरू कर दिया है, मिलते ही बताऊँगी।`,
+    "kn-IN": (v) => `ಸರಿ, ${v.quantity} ${v.unit} ${v.item}${v.city ? `, ${knDative(v.city)}` : ""}; ಇಂಡಿಯಾಮಾರ್ಟ್‌ನಲ್ಲಿ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕಲು ಶುರು ಮಾಡಿದ್ದೇನೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.`,
+    "en-IN": (v) => `Noted: ${v.quantity} ${v.unit} of ${v.item}${v.city ? ` for ${v.city}` : ""}. I have started looking for vendors on IndiaMART and will tell you as soon as I find them.`,
+  },
+  requirement_not_heard: {
+    "hi-IN": (v) => `माफ़ कीजिए, पूरी बात सुनाई नहीं दी; बताइए, ${v.missing}?`,
+    "kn-IN": (v) => `ಕ್ಷಮಿಸಿ, ಪೂರ್ತಿ ಕೇಳಿಸಲಿಲ್ಲ; ದಯವಿಟ್ಟು ಮತ್ತೆ ಹೇಳಿ, ${v.missing}?`,
+    "en-IN": (v) => `Sorry, I did not catch all of that; please tell me again ${v.missing}.`,
   },
   requirement_missing: {
     "hi-IN": (v) => `${v.item ? `${v.item} लिख लिया; ` : ""}बताइए, ${v.missing}?`,
@@ -263,6 +284,11 @@ const PHRASES = {
     "kn-IN": () => "ಆರ್ಡರ್ ಮಾಡಲೇ?",
     "en-IN": () => "Shall I place the order?",
   },
+  approval_recording: {
+    "hi-IN": () => "ठीक है, दर्ज कर रही हूँ।",
+    "kn-IN": () => "ಸರಿ, ದಾಖಲಿಸುತ್ತಿದ್ದೇನೆ.",
+    "en-IN": () => "All right, recording that.",
+  },
   readback_not_spoken: {
     "hi-IN": () => "मैं सौदे का ब्योरा पढ़कर नहीं सुना पाई; ब्योरा स्क्रीन पर है, वहीं मंज़ूरी का बटन दबाइए।",
     "kn-IN": () => "ವ್ಯವಹಾರದ ವಿವರ ಓದಿ ಹೇಳಲು ಆಗಲಿಲ್ಲ; ವಿವರ ಪರದೆಯ ಮೇಲಿದೆ, ಅಲ್ಲಿ ಒಪ್ಪಿಗೆ ಬಟನ್ ಒತ್ತಿ.",
@@ -401,28 +427,28 @@ function sourcedCategory(businessId, requirementId) {
   return done.at(-1)?.result?.category ?? null;
 }
 
-/** A script that would be read wrongly inside a sentence of this language. */
-const FOREIGN_SCRIPT = {
-  "en-IN": /[\p{Script=Devanagari}\p{Script=Kannada}]/u,
-  "hi-IN": /\p{Script=Kannada}/u,
-  "kn-IN": /\p{Script=Devanagari}/u,
-};
+/** Indic script, read wrongly inside an English sentence. */
+const INDIC_SCRIPT = /[\p{Script=Devanagari}\p{Script=Kannada}]/u;
 
 /** Said when no rule can name the item in the sentence's own script. */
 const UNNAMED_ITEM = { "hi-IN": "आपका बताया सामान", "kn-IN": "ನೀವು ಹೇಳಿದ ವಸ್ತು", "en-IN": "the requested item" };
 
 /**
- * The item as said in a `language` sentence: the owner's own words when their script fits,
- * else the IndiaMART category found by sourcing ("Basmati Rice"), else the English trade
- * name the category rules derive ("basmati rice"), else a plain "the requested item":
- * a word in another script is never read out by this language's voice.
+ * The item as said in a `language` sentence; a word in another script is never read out by this
+ * language's voice (CLAUDE.md rule 5).
+ * - hi / kn: the owner's own words when they are all in that script, else the same item from the
+ *   trade-word table ("basmati rice" -> "बासमती चावल", slug.itemIn), else a plain "the item you
+ *   named" (E2E r4: "basmati rice" was read inside a Hindi reply).
+ * - en: the owner's words when they have no Indic script, else the IndiaMART category found by
+ *   sourcing ("Basmati Rice"), else the English trade name ("basmati rice"), else "the requested item".
  */
 function spokenItem(businessId, requirement, language) {
   const lang = langKey(language);
   const item = String(requirement.item ?? "");
-  if (!FOREIGN_SCRIPT[lang].test(item)) return item;
+  if (lang !== "en-IN") return isNativeScript(item, lang) ? item : itemIn(item, lang) ?? UNNAMED_ITEM[lang];
+  if (!INDIC_SCRIPT.test(item)) return item;
   const category = sourcedCategory(businessId, requirement.id);
-  if (category && !FOREIGN_SCRIPT[lang].test(category)) return category;
+  if (category && !INDIC_SCRIPT.test(category)) return category;
   const slug = candidateSlugs(item)[0];
   return slug ? slug.replace(/-/g, " ") : UNNAMED_ITEM[lang];
 }
@@ -610,6 +636,90 @@ async function runSourcing(job) {
   };
 }
 
+/**
+ * Start the sourcing job for a requirement, or hand back the one already running for it.
+ * Returns `{ jobId, already }`; throws ToolError BUSY when the global search cap is full.
+ */
+function beginSourcing(ctx, requirement, language) {
+  const active = repo.listJobs(ctx.businessId, { requirement_id: requirement.id, kind: "sourcing" }).find(isActive);
+  if (active) return { jobId: active.id, already: true };
+  // Global cap on searches running at once, across all businesses (security review r1 #1).
+  const release = require("../limits").tryAcquire("sourcing");
+  if (!release) throw new ToolError("BUSY", phrase("busy", language), { status: 503, message: "Too many vendor searches are running." });
+  try {
+    repo.updateRequirement(ctx.businessId, requirement.id, { status: "sourcing" });
+    require("../agora/narrator").suppress(ctx.businessId, "job.started");
+    return { jobId: jobs.startJob(ctx.businessId, "sourcing", { requirementId: requirement.id }, runSourcing, { onSettled: release }), already: false };
+  } catch (err) {
+    release();
+    throw err;
+  }
+}
+
+/* ------------------------------------------------ owner's own words --- */
+
+/**
+ * The owner's latest turns, to check a requirement against (E2E r4 bug 4): in a call, the ASR
+ * turns of Agora /history (the model's copy is not trusted over them); otherwise, or when the
+ * history cannot be read, the `owner_words` the model passed. Null when there is neither.
+ */
+async function ownerWords(ctx, args) {
+  if (ctx.agentId) {
+    try {
+      return { turns: evidence.ownerTurns(await require("../agora/agent").history(ctx.agentId)), source: "history" };
+    } catch {
+      // the call history is unavailable: fall back to the model's copy below
+    }
+  }
+  return args.owner_words ? { turns: [args.owner_words], source: "owner_words" } : null;
+}
+
+/** Fields of a save_requirement call the owner's turns do not bear out ([] when all do, or when nothing can be checked). */
+async function unheardFields(ctx, args, claim) {
+  if (!claim.item && claim.quantity == null && !claim.unit) return [];
+  let said = await ownerWords(ctx, args);
+  if (!said) return [];
+  let missing = evidence.notHeard(said.turns, claim);
+  if (missing.length && said.source === "history") {
+    // /history can lag the final transcript by about 0.5 s: look once more before refusing.
+    await sleep(HISTORY_RETRY_MS);
+    said = (await ownerWords(ctx, args)) ?? said;
+    missing = evidence.notHeard(said.turns, claim);
+  }
+  return missing;
+}
+
+/* ------------------------------------------------------------ approval --- */
+
+/**
+ * request_approval for a deal this call's agent has already read out: nothing is spoken again.
+ * The owner's answer since the read-back (approvals.answerToReadback, best effort) tells the model
+ * which confirm_approval call to make. This never decides anything: only confirm_approval, through
+ * the gate, approves or rejects.
+ */
+async function awaitingAnswer(ctx, approval, result, language) {
+  let ownerReply;
+  try {
+    const history = await require("../agora/agent").history(ctx.agentId);
+    ownerReply = approvals.classifyUtterance(approvals.answerToReadback(ctx.businessId, approval, history, { agentId: ctx.agentId }).text);
+  } catch {
+    ownerReply = undefined; // no answer since the read-back, or the history is unavailable
+  }
+  const decision = { affirmative: "approve", negative: "reject" }[ownerReply] ?? null;
+  if (!decision) require("../agora/narrator").holdForApproval(ctx.businessId, approval.id);
+  return {
+    ...result,
+    status: "awaiting_answer",
+    readbackSpoken: true,
+    ...(ownerReply ? { ownerReply } : {}),
+    next: "confirm_approval",
+    hint: decision
+      ? `The owner has already answered this deal (${ownerReply}). Call confirm_approval with decision ${decision} now, with no id; do not call request_approval again.`
+      : "This deal was already read out and the owner was asked. When the owner answers, call confirm_approval with no id (decision approve on a clear yes, reject on a no); do not call request_approval again unless the owner asks to hear the deal again (repeat: true).",
+    say: phrase(decision ? "approval_recording" : "approval_question", language),
+  };
+}
+
 /* ----------------------------------------------------------- defaults --- */
 
 const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
@@ -696,10 +806,11 @@ const TOOLS = [
     name: "save_requirement",
     scopes: OWNER,
     description:
-      "Saves what the owner wants to buy. Call as soon as the item is known. To add details later, call it again without item and without any id: it updates the requirement saved in this call. Returns missing[] (fields still needed before sourcing). An item with no id starts a new requirement.",
+      "Saves what the owner wants to buy. Call as soon as the item is known. To add details later, call it again without item and without any id: it updates the requirement saved in this call. An item with no id starts a new requirement. Returns missing[] (fields still needed). In a call, once nothing is missing it also starts the vendor search itself (sourcingStarted true, jobId): just speak `say`, do not call start_sourcing. The server checks the item, quantity and unit against the owner's own words; when saved is false, nothing was saved: speak `say` and wait for the owner to repeat.",
     inputSchema: ownerObj(
       {
         requirementId: idArg("requirement", "the requirement saved in this call"),
+        owner_words: { type: "string", maxLength: 500, description: "The owner's last sentence, word for word as you heard it, in the owner's script. Always pass it." },
         item: { type: "string", maxLength: 200, description: "The item as the owner named it, in the owner's own script, e.g. बासमती चावल / ಬಾಸ್ಮತಿ ಅಕ್ಕಿ / basmati rice." },
         quantity: { type: "number", exclusiveMinimum: 0 },
         unit: { type: "string", maxLength: 40, description: `The unit as the owner said it (किलो, ಕಿಲೋ, kilos, pieces ...). Stored as one of: ${UNIT_CODES.join(", ")}.` },
@@ -724,35 +835,68 @@ const TOOLS = [
       }
       if (fields.city !== undefined) fields.city = cityName(fields.city);
 
-      let requirement;
-      if (args.requirementId || !fields.item) {
-        const target = args.requirementId
+      const update = Boolean(args.requirementId || !fields.item);
+      let target = null;
+      if (update) {
+        target = args.requirementId
           ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
           : ctx.sessionId && repo.listRequirements(ctx.businessId).filter((r) => r.session_id === ctx.sessionId).at(-1);
         if (!target) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
         if (!Object.keys(fields).length) throw new ToolError("INVALID", sayFor("invalid", language), { message: "Nothing to update." });
-        requirement = repo.updateRequirement(ctx.businessId, target.id, fields);
-      } else {
-        requirement = repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
       }
+
+      // Only what this call changes has to be in the owner's words; a value sent again unchanged does not.
+      const changed = (column) => fields[column] !== undefined && (!target || fields[column] !== target[column]);
+      const notHeard = await unheardFields(ctx, args, {
+        item: changed("item") ? fields.item : undefined,
+        quantity: changed("quantity") ? fields.quantity : undefined,
+        unit: changed("unit") ? fields.unit : undefined,
+      });
+      if (notHeard.length) {
+        return {
+          requirementId: target?.id ?? null,
+          saved: false,
+          missing: notHeard,
+          sourcingStarted: false,
+          say: phrase("requirement_not_heard", language, { missing: notHeard.map((m) => MISSING_WORDS[m][language]).join(", ") }),
+        };
+      }
+
+      const requirement = update
+        ? repo.updateRequirement(ctx.businessId, target.id, fields)
+        : repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
       events.emit(ctx.businessId, "requirement.saved", requirement, { sessionId: ctx.sessionId, actor: "agent" });
       const missing = missingFields(requirement);
       const item = spokenItem(ctx.businessId, requirement, language);
-      const say = missing.length
-        ? phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") })
-        : phrase("requirement_saved", language, {
-            quantity: money(requirement.quantity),
-            unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
-            item,
-            city: cityIn(requirement.city, language),
-          });
-      return { requirementId: requirement.id, requirement, missing, say };
+      if (missing.length) {
+        const say = phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") });
+        return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, say };
+      }
+      const vars = {
+        quantity: money(requirement.quantity),
+        unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
+        item,
+        city: cityIn(requirement.city, language),
+      };
+      const result = { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false };
+
+      // In a call, a complete requirement that was never searched starts its search here, so the
+      // model needs no second tool call (E2E r4 bug 3). start_sourcing stays for retries.
+      if (!ctx.agentId || latestJob(ctx.businessId, requirement.id, "sourcing")) return { ...result, say: phrase("requirement_saved", language, vars) };
+      try {
+        const { jobId } = beginSourcing(ctx, requirement, language);
+        return { ...result, sourcingStarted: true, jobId, say: phrase("requirement_saved_searching", language, vars) };
+      } catch (err) {
+        if (err?.code !== "BUSY") throw err;
+        return { ...result, sourcingError: "BUSY", say: `${phrase("requirement_saved", language, vars)} ${err.say}` };
+      }
     },
   },
   {
     name: "start_sourcing",
     scopes: OWNER,
-    description: "Starts finding and scoring real vendors on IndiaMART for the current requirement. Returns a jobId at once; progress is announced.",
+    description:
+      "Starts finding and scoring real vendors on IndiaMART for the current requirement. Returns a jobId at once; progress is announced. In a call save_requirement already starts the first search; call this when the owner asks to search (again), or when save_requirement returned sourcingStarted false with nothing missing.",
     inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
       const requirement = currentRequirement(ctx, args.requirementId, language);
@@ -764,20 +908,8 @@ const TOOLS = [
           details: { missing },
         });
       }
-      const active = repo.listJobs(ctx.businessId, { requirement_id: requirement.id, kind: "sourcing" }).find((j) => j.status === "queued" || j.status === "running");
-      if (active) return { jobId: active.id, already: true, say: phrase("sourcing_already", language) };
-      // Global cap on searches running at once, across all businesses (security review r1 #1).
-      const release = require("../limits").tryAcquire("sourcing");
-      if (!release) throw new ToolError("BUSY", phrase("busy", language), { status: 503, message: "Too many vendor searches are running." });
-      let jobId;
-      try {
-        repo.updateRequirement(ctx.businessId, requirement.id, { status: "sourcing" });
-        require("../agora/narrator").suppress(ctx.businessId, "job.started");
-        jobId = jobs.startJob(ctx.businessId, "sourcing", { requirementId: requirement.id }, runSourcing, { onSettled: release });
-      } catch (err) {
-        release();
-        throw err;
-      }
+      const { jobId, already } = beginSourcing(ctx, requirement, language);
+      if (already) return { jobId, already: true, say: phrase("sourcing_already", language) };
       return { jobId, requirementId: requirement.id, say: phrase("sourcing_started", language, { item }) };
     },
   },
@@ -944,8 +1076,12 @@ const TOOLS = [
     name: "request_approval",
     scopes: OWNER,
     description:
-      "Asks the owner to approve one deal; without quoteId, the best-ranked deal of the current requirement. In a call the server reads the deal out to the owner itself; you then say only `say` (a short question) and wait for a yes or no. Never repeat or paraphrase the figures.",
-    inputSchema: ownerObj({ quoteId: idArg("quote", "the best-ranked deal"), requirementId: idArg("requirement", "the latest requirement") }),
+      "Asks the owner to approve one deal; without quoteId, the best-ranked deal of the current requirement. Call it once per deal. In a call the server reads the deal out to the owner itself; you then say only `say` (a short question) and wait. The owner's yes or no to that question is answered with confirm_approval, never with request_approval again. Never repeat or paraphrase the figures. repeat: true only when the owner asks to hear the deal again.",
+    inputSchema: ownerObj({
+      quoteId: idArg("quote", "the best-ranked deal"),
+      requirementId: idArg("requirement", "the latest requirement"),
+      repeat: { type: "boolean", description: "Only when the owner asks to hear the deal again: the server reads it out once more." },
+    }),
     async handler(ctx, args, language) {
       const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
       const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
@@ -958,9 +1094,14 @@ const TOOLS = [
       // No call (or the deal is already approved): nothing can be answered by voice, so the model may read it out.
       if (!ctx.agentId || approval.status !== "pending") return { ...result, readback, say: readback };
 
+      const agent = require("../agora/agent");
+      // Already read out in this call (in any language): asking again is not a reason to read it
+      // again; the owner's answer belongs to confirm_approval (E2E r4: three read-backs for one yes).
+      const readBefore = repo.listApprovalReadbacks(ctx.businessId, { approval_id: approval.id, agent_id: ctx.agentId }).length > 0;
+      if (readBefore && !args.repeat) return awaitingAnswer(ctx, approval, result, language);
+
       // In a call the server speaks the read-back itself, so the yes it later accepts answers exactly
       // these words (security review r1 #2). The model only asks the question.
-      const agent = require("../agora/agent");
       // Nothing else may be narrated between the read-back and the owner's answer to it.
       require("../agora/narrator").holdForApproval(ctx.businessId, approval.id);
       try {
@@ -976,7 +1117,7 @@ const TOOLS = [
     name: "confirm_approval",
     scopes: OWNER,
     description:
-      "Records the owner's spoken decision on the deal that is waiting (only one waits at a time). The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out.",
+      "Records the owner's spoken yes or no to the deal request_approval put up: call it, with no id, as soon as the owner answers that question (decision approve on a clear yes, reject on a no). Only one deal waits at a time. The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out.",
     inputSchema: ownerObj({ approvalId: idArg("approval", "the one approval waiting"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
     async handler(ctx, args, language) {
       let approval;
@@ -1176,6 +1317,7 @@ async function callTool(ctx, name, args = {}) {
 }
 
 module.exports = {
+  knDative,
   TOOLS,
   SCOPES,
   callTool,
@@ -1188,4 +1330,7 @@ module.exports = {
   spokenItem,
   money,
   SIM_LABEL,
+  PHRASES,
+  /** Word tables spliced into `say` lines, per group -> key -> language (for the native-script test). */
+  SAY_WORDS: { missing: MISSING_WORDS, orderStatus: ORDER_STATUS_WORDS, payment: PAYMENT_WORDS, labels: { sim: SIM_LABEL, unnamedItem: UNNAMED_ITEM } },
 };

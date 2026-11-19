@@ -149,10 +149,10 @@ test("an approved deal becomes an order with a sequential PO number, a PDF on di
   assert.equal(order.approval_id, first.approval.id);
   assert.equal(order.simulated, false);
 
-  const [, year, sequence] = /^SAHAY\/(\d{4})\/(\d{4})$/.exec(order.po_number);
+  const [, year, code, sequence] = /^SAHAY\/(\d{4})\/([0-9A-F]{4,})-(\d{4})$/.exec(order.po_number);
   assert.ok(Math.abs(Number(year) - new Date().getFullYear()) <= 1);
   const next = await orders.createOrder(businessId, second.approval.id);
-  assert.equal(next.po_number, `SAHAY/${year}/${String(Number(sequence) + 1).padStart(4, "0")}`);
+  assert.equal(next.po_number, `SAHAY/${year}/${code}-${String(Number(sequence) + 1).padStart(4, "0")}`);
 
   assert.equal(order.pdf_path, path.join(config.poDir, `${order.po_number.replaceAll("/", "-")}.pdf`));
   assert.equal(path.dirname(order.pdf_path), path.join(TMP, "po"));

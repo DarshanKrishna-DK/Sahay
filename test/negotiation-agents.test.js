@@ -291,7 +291,8 @@ async function humanRun(t, { terms }) {
   assert.ok(calls.some((c) => c.url.endsWith("/think")), "negotiator told to begin");
 
   const brief = await registry.callTool(ctx, "get_negotiation_brief", {});
-  assert.equal(brief.say, "हमें 100 किलो basmati rice चाहिए, Bengaluru में डिलीवरी; आपका सबसे अच्छा भाव प्रति किलो क्या होगा?");
+  // E2E r4: the item is said in Devanagari (registry.spokenItem). The city is still Latin: see session.js brief (not changed here).
+  assert.equal(brief.say, "हमें 100 किलो बासमती चावल चाहिए, बेंगलुरु में डिलीवरी; आपका सबसे अच्छा भाव प्रति किलो क्या होगा?");
   said(history, "assistant", brief.say);
   said(history, "user", "भाई 64 रुपये किलो लगेगा");
 

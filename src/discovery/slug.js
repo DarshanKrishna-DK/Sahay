@@ -179,6 +179,46 @@ function cityIn(city, language) {
   return script.test(first) && /^[\p{L}\p{M}\p{Join_Control}\s.'-]+$/u.test(first) && !/\p{Script=Latin}/u.test(first) ? first : null;
 }
 
+/** English trade term -> its word in one script, from TRADE_WORDS read backwards ("rice" -> "चावल", "ಅಕ್ಕಿ"). */
+const NATIVE_TRADE_WORDS = Object.fromEntries(
+  Object.entries(SCRIPT_OF).map(([language, script]) => {
+    const words = new Map();
+    for (const [word, english] of TRADE_WORDS) if (script.test(word) && !words.has(english)) words.set(english, word);
+    return [language, words];
+  }),
+);
+
+/**
+ * An item as said in a sentence of `language` (hi-IN / kn-IN) when the owner named it in another
+ * script: "basmati rice" or "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ" -> "बासमती चावल". Every word must be known to the
+ * trade-word table (digits stay as they are); otherwise null, so no word is silently dropped
+ * and nothing is transliterated by guess (CLAUDE.md rule 5).
+ */
+function itemIn(item, language) {
+  const native = NATIVE_TRADE_WORDS[language];
+  if (!native || typeof item !== 'string') return null;
+  const english = [];
+  for (const word of fold(item).replace(QUANTITY, ' ').split(/[^\p{L}\p{M}\p{N}-]+/u).filter(Boolean)) {
+    if (FILLER_WORDS.has(word)) continue;
+    const known = TRADE_WORDS.get(word) ?? (/^[a-z0-9-]+$/.test(word) ? word : null);
+    if (!known) return null;
+    english.push(...known.split(' '));
+  }
+  if (!english.length) return null;
+  const out = [];
+  for (let i = 0; i < english.length; ) {
+    const pair = native.get(`${english[i]} ${english[i + 1]}`);
+    if (english[i + 1] && pair) {
+      out.push(pair);
+      i += 2;
+    } else if (/^\d+$/.test(english[i]) || native.has(english[i])) {
+      out.push(native.get(english[i]) ?? english[i]);
+      i += 1;
+    } else return null;
+  }
+  return out.join(' ');
+}
+
 /** Whether two city names mean the same city ("Bangalore" and "Bengaluru"). Unknown is never a match. */
 function sameCity(a, b) {
   const slug = citySlug(a);
@@ -355,4 +395,4 @@ async function resolveSlug(item, city = null, { signal } = {}) {
   );
 }
 
-module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, cityIn, sameCity, clearSlugCache };
+module.exports = { candidateSlugs, suggestSlugs, resolveSlug, citySlug, cityName, cityIn, itemIn, sameCity, clearSlugCache };

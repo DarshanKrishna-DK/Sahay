@@ -85,13 +85,13 @@ function registry() {
 
 const BUYER_LINES = {
   disclosure: {
-    "hi-IN": (v) => `नमस्ते, मैं सहाय हूँ, ${v.business} की ओर से बात कर रहा एक स्वचालित सहायक।`,
+    "hi-IN": (v) => `नमस्ते, मैं सहाय हूँ, ${v.business} की ओर से बात कर रही एक स्वचालित सहायक हूँ।`,
     "kn-IN": (v) => `ನಮಸ್ಕಾರ, ನಾನು ಸಹಾಯ್, ${v.business} ಪರವಾಗಿ ಮಾತನಾಡುತ್ತಿರುವ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ.`,
     "en-IN": (v) => `Hello, this is Sahay, an automated assistant speaking for ${v.business}.`,
   },
   opening: {
     "hi-IN": (v) => `हमें ${v.quantity} ${v.unit} ${v.item} चाहिए${v.city ? `, ${v.city} में डिलीवरी` : ""}; आपका सबसे अच्छा भाव प्रति ${v.unitOne} क्या होगा?`,
-    "kn-IN": (v) => `ನಮಗೆ ${v.quantity} ${v.unit} ${v.item} ಬೇಕು${v.city ? `, ${v.city}ಗೆ ಡೆಲಿವರಿ` : ""}; ಒಂದು ${v.unitOne}ಗೆ ನಿಮ್ಮ ಉತ್ತಮ ಬೆಲೆ ಎಷ್ಟು?`,
+    "kn-IN": (v) => `ನಮಗೆ ${v.quantity} ${v.unit} ${v.item} ಬೇಕು${v.city ? `, ${registry().knDative(v.city)} ಡೆಲಿವರಿ` : ""}; ಒಂದು ${v.unitOne}ಗೆ ನಿಮ್ಮ ಉತ್ತಮ ಬೆಲೆ ಎಷ್ಟು?`,
     "en-IN": (v) => `We need ${v.quantity} ${v.unit} of ${v.item}${v.city ? `, delivered in ${v.city}` : ""}; what is your best price per ${v.unitOne}?`,
   },
   counter: {
@@ -177,7 +177,7 @@ function brief(ctx) {
         unit: unitSpoken(rt, r.quantity !== 1),
         unitOne: unitSpoken(rt),
         item: itemSpoken(rt),
-        city: r.city,
+        city: (rt.language === "en-IN" ? r.city : require("../discovery/slug").cityIn(r.city, rt.language)) ?? null,
       }),
     ),
   };

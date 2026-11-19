@@ -32,3 +32,9 @@ test("English has no script rule here", () => {
   assert.ok(isNativeScript("The order SAHAY/2026/0001 is placed.", "en-IN"));
   assert.ok(isNativeScript("anything", "xx-YY"));
 });
+
+test("E2E r4 bug 7: per-business PO numbers (SAHAY/2026/AB12-0001) are allowed inside hi/kn lines", () => {
+  assert.ok(isNativeScript("ऑर्डर SAHAY/2026/AB12-0001 पक्का है।", "hi-IN"));
+  assert.ok(isNativeScript("ಆರ್ಡರ್ SAHAY/2026/AB12CD-0002 ಖಚಿತ.", "kn-IN"));
+  assert.deepEqual(scriptProblems("ऑर्डर SAHAY/2026/AB12-0001 ok", "hi-IN").latin, ["ok"]);
+});

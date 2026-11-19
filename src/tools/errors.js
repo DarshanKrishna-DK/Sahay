@@ -214,4 +214,4 @@ function toToolError(err, language) {
   return new ToolError("INTERNAL", sayFor("internal", language), { message: err?.message ?? String(err), status: 500, cause: err });
 }
 
-module.exports = { ToolError, toToolError, sayFor, langKey, LANGS };
+module.exports = { ToolError, toToolError, sayFor, langKey, LANGS, SAY };

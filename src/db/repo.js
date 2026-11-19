@@ -496,6 +496,30 @@ function listApprovalReadbacks(businessId, { approval_id, agent_id } = {}) {
 /* -------------------------------------------------------------- orders --- */
 
 /**
+ * The business's code inside its purchase-order numbers (SAHAY/2026/AB12-0001): every business
+ * counts its own orders from 0001 (E2E r4 bug 7), and the code keeps the numbers unique across
+ * businesses (orders.po_number is UNIQUE). The code is the start of a hash of the business id,
+ * 4 hex digits, longer only when another business already uses that code under this prefix; a
+ * business keeps the code its earlier orders under the prefix have. Runs inside the order transaction.
+ */
+function poCode(businessId, poPrefix) {
+  const own = db
+    .prepare("SELECT po_number FROM orders WHERE business_id = ? AND substr(po_number, 1, ?) = ? ORDER BY rowid DESC")
+    .all(businessId, poPrefix.length, poPrefix)
+    .map((row) => /^([0-9A-F]+)-\d+$/.exec(row.po_number.slice(poPrefix.length))?.[1])
+    .find(Boolean);
+  if (own) return own;
+  const hash = crypto.createHash("sha256").update(businessId).digest("hex").toUpperCase();
+  const taken = db.prepare("SELECT 1 FROM orders WHERE business_id <> ? AND substr(po_number, 1, ?) = ? LIMIT 1");
+  for (let length = 4; length <= hash.length; length += 2) {
+    const code = hash.slice(0, length);
+    const prefix = `${poPrefix}${code}-`;
+    if (!taken.get(businessId, prefix.length, prefix)) return code;
+  }
+  throw new RepoError("PO_CODE_EXHAUSTED", "No free purchase-order code for this business.");
+}
+
+/**
  * The only way an order row comes to exist: consume an approved approval of this
  * business and create the order for the quote and amount that approval names.
  * Both happen in one transaction; the approval cannot be used a second time.
@@ -510,16 +534,17 @@ function createOrderFromApproval(businessId, approvalId, { status, po_prefix }) 
       throw new RepoError("APPROVAL_NOT_USABLE", "There is no approved, unused approval with that id for this business.");
     }
 
+    const prefix = `${po_prefix}${poCode(businessId, po_prefix)}-`;
     const { last } = db
-      .prepare("SELECT MAX(CAST(substr(po_number, ?) AS INTEGER)) AS last FROM orders WHERE substr(po_number, 1, ?) = ?")
-      .get(po_prefix.length + 1, po_prefix.length, po_prefix);
+      .prepare("SELECT MAX(CAST(substr(po_number, ?) AS INTEGER)) AS last FROM orders WHERE business_id = ? AND substr(po_number, 1, ?) = ?")
+      .get(prefix.length + 1, businessId, prefix.length, prefix);
     const id = newId("ord");
     insertRow("orders", {
       id,
       business_id: businessId,
       quote_id: approval.quote_id,
       approval_id: approval.id,
-      po_number: `${po_prefix}${String((last ?? 0) + 1).padStart(4, "0")}`,
+      po_number: `${prefix}${String((last ?? 0) + 1).padStart(4, "0")}`,
       status,
       amount: approval.total_amount,
       created_at: now(),

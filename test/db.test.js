@@ -260,7 +260,8 @@ test("an order row can only come from an approved approval, exactly once", () =>
 
   repo.decideApproval(businessId, approval.id, { status: "approved", decided_via: "button" });
   const order = repo.createOrderFromApproval(businessId, approval.id, options);
-  assert.equal(order.po_number, "TEST/2026/0001");
+  const [, code] = /^TEST\/2026\/([0-9A-F]{4})-0001$/.exec(order.po_number) ?? [];
+  assert.ok(code, order.po_number);
   assert.equal(order.amount, 3250);
   assert.equal(order.quote_id, deal.quote.id);
   assert.equal(order.currency, "INR");
@@ -273,7 +274,35 @@ test("an order row can only come from an approved approval, exactly once", () =>
   const secondDeal = seedDeal(second);
   const secondApproval = repo.createApproval(second, { quote_id: secondDeal.quote.id, readback: "r", total_amount: 100 });
   repo.decideApproval(second, secondApproval.id, { status: "approved", decided_via: "button" });
-  assert.equal(repo.createOrderFromApproval(second, secondApproval.id, options).po_number, "TEST/2026/0002");
+  // E2E r4 bug 7: every business counts its own orders from 0001, under its own code.
+  const secondPo = repo.createOrderFromApproval(second, secondApproval.id, options).po_number;
+  assert.match(secondPo, /^TEST\/2026\/[0-9A-F]{4,}-0001$/);
+  assert.notEqual(secondPo.split("-")[0], order.po_number.split("-")[0]);
+  assert.equal(seedOrder(businessId).order.po_number.replace("SAHAY/", "TEST/"), `TEST/2026/${code}-0001`, "a new prefix starts at 0001 again");
+  const third = repo.createApproval(businessId, { quote_id: seedDeal(businessId).quote.id, readback: "r", total_amount: 3250 });
+  repo.decideApproval(businessId, third.id, { status: "approved", decided_via: "button" });
+  assert.equal(repo.createOrderFromApproval(businessId, third.id, options).po_number, `TEST/2026/${code}-0002`);
+});
+
+test("E2E r4 bug 7: two businesses whose short PO codes collide get distinct codes; each keeps its own", () => {
+  // Business ids whose first four hex digits of the PO code hash are the same.
+  const crypto = require("node:crypto");
+  const short = (id) => crypto.createHash("sha256").update(id).digest("hex").slice(0, 4);
+  const seen = new Map();
+  let pair = null;
+  for (let n = 0; !pair; n++) {
+    const id = `biz_pocollide${n}`;
+    const prev = seen.get(short(id));
+    if (prev) pair = [prev, id];
+    else seen.set(short(id), id);
+  }
+  for (const id of pair) repo.createBusiness(id, { name: id });
+  const [a, b] = pair.map((id) => seedOrder(id).order.po_number);
+  assert.match(a, /^SAHAY\/2026\/[0-9A-F]{4}-0001$/);
+  assert.match(b, /^SAHAY\/2026\/[0-9A-F]{6}-0001$/, "the second business gets a longer code");
+  assert.ok(b.startsWith(a.split("-")[0]), "same short hash, longer code");
+  assert.equal(seedOrder(pair[1]).order.po_number, b.replace("-0001", "-0002"), "and keeps it");
+  assert.equal(seedOrder(pair[0]).order.po_number, a.replace("-0001", "-0002"));
 });
 
 test("the database itself refuses an order without a consumed approval and an approval that is re-armed", () => {

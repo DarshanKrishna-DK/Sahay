@@ -361,3 +361,19 @@ test('cityIn: a city in the sentence language\'s own script, English for en-IN, 
   assert.equal(cityIn(null, 'hi-IN'), null);
   assert.equal(cityIn('', 'kn-IN'), null);
 });
+
+test('itemIn: an item named in another script, said in the sentence\'s own script from the trade-word table, or null', () => {
+  const { itemIn } = require('../src/discovery/slug');
+  assert.equal(itemIn('basmati rice', 'hi-IN'), 'बासमती चावल');
+  assert.equal(itemIn('basmati rice', 'kn-IN'), 'ಬಾಸ್ಮತಿ ಅಕ್ಕಿ');
+  assert.equal(itemIn('ಬಾಸ್ಮತಿ ಅಕ್ಕಿ', 'hi-IN'), 'बासमती चावल');
+  assert.equal(itemIn('बासमती चावल', 'kn-IN'), 'ಬಾಸ್ಮತಿ ಅಕ್ಕಿ');
+  assert.equal(itemIn('basmati chawal', 'hi-IN'), 'बासमती चावल', 'romanised Hindi');
+  assert.equal(itemIn('atta', 'hi-IN'), 'आटा', 'a two-word trade term maps back as one word');
+  assert.equal(itemIn('atta', 'kn-IN'), 'ಗೋಧಿ ಹಿಟ್ಟು');
+  assert.equal(itemIn('1121 basmati rice', 'hi-IN'), '1121 बासमती चावल', 'digits stay');
+  assert.equal(itemIn('premium basmati rice', 'hi-IN'), null, 'a word it cannot say is never dropped');
+  assert.equal(itemIn('ಸೋನಾ ಮಸೂರಿ ಅಕ್ಕಿ', 'hi-IN'), null, 'an unknown Kannada word is never dropped either');
+  assert.equal(itemIn('basmati rice', 'en-IN'), null, 'English has no rule here');
+  assert.equal(itemIn('', 'hi-IN'), null);
+});
