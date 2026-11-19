@@ -54,7 +54,7 @@ function directives(csp) {
 
 test("every page answer carries a CSP: self, the pinned CDN files, no inline script except hashed ones", async () => {
   await withApp(async (base) => {
-    for (const p of ["/", "/js/app.js", "/vendor/somecode", "/healthz"]) {
+    for (const p of ["/", "/js/app/main.js", "/vendor/somecode", "/healthz"]) {
       const res = await fetch(base + p);
       const csp = res.headers.get("content-security-policy");
       assert.ok(csp, `CSP on ${p}`);
