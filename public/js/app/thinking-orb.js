@@ -38,15 +38,17 @@ function isDark() {
 
 /**
  * createThinkingOrb({ size, state, color, label }) -> { el, set(agentState), setSize(px), destroy() }
- * `state` is a Sahay agent state (see AGENT_TO_ORB). `color` a #rrggbb tint (marigold by default).
+ * `state` is a Sahay agent state (see AGENT_TO_ORB). `color` / `lightColor`: #rrggbb tints for the
+ * dark and light themes (marigold / deep amber by default).
  * The canvas is decorative unless `label` is given (then role="img" with that name).
  */
-export function createThinkingOrb({ size = 64, state = "idle", color = "#FFB020", label } = {}) {
+export function createThinkingOrb({ size = 64, state = "idle", color = "#FFB020", lightColor = "#B86E00", label } = {}) {
   const el = document.createElement("canvas");
   el.className = "torb";
   if (label) { el.setAttribute("role", "img"); el.setAttribute("aria-label", label); } else el.setAttribute("aria-hidden", "true");
   const ctx = el.getContext("2d");
-  const tint = parseTint(color);
+  // Marigold reads on ink; on the light surface the same dots wash out, so light uses a deeper amber.
+  const tints = { dark: parseTint(color), light: parseTint(lightColor) };
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let css = size;
   let agentState = state;
@@ -71,7 +73,7 @@ export function createThinkingOrb({ size = 64, state = "idle", color = "#FFB020"
     const k = (css / BASE) * dpr;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.clearRect(0, 0, BASE, BASE);
-    paintFrame(ctx, MODE_FRAMES[mode](BASE, tSec, opts), dark, tint);
+    paintFrame(ctx, MODE_FRAMES[mode](BASE, tSec, opts), dark, dark ? tints.dark : tints.light);
   }
   const now = () => (performance.now() / 1000) * speed * speedMul;
   const loop = () => { paint(now()); if (running) raf = requestAnimationFrame(loop); };
