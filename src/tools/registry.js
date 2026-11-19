@@ -101,6 +101,11 @@ const PHRASES = {
     "kn-IN": (v) => `ಹುಡುಕಾಟ ನಡೆಯುತ್ತಿದೆ, ಇಲ್ಲಿಯವರೆಗೆ ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ.`,
     "en-IN": (v) => `The search is running; ${v.count} vendors found so far.`,
   },
+  sourcing_running_none: {
+    "hi-IN": () => "विक्रेताओं की खोज अभी चल रही है, मिलते ही बताऊँगी।",
+    "kn-IN": () => "ಮಾರಾಟಗಾರರ ಹುಡುಕಾಟ ಇನ್ನೂ ನಡೆಯುತ್ತಿದೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.",
+    "en-IN": () => "The vendor search is still running; I will tell you as soon as I find vendors.",
+  },
   job_running_negotiation: {
     "hi-IN": () => "मोल-भाव अभी चल रहा है।",
     "kn-IN": () => "ಚೌಕಾಸಿ ಇನ್ನೂ ನಡೆಯುತ್ತಿದೆ.",
@@ -116,6 +121,16 @@ const PHRASES = {
     "kn-IN": () => "ಚೌಕಾಸಿ ಮುಗಿಯಿತು.",
     "en-IN": () => "The negotiation is finished.",
   },
+  job_done_negotiation_agreed: {
+    "hi-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["hi-IN"]})` : ""} से मोल-भाव पूरा, ${v.price} रुपये प्रति ${v.unit} पर बात बनी।`,
+    "kn-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["kn-IN"]})` : ""} ಜೊತೆ ಚೌಕಾಸಿ ಮುಗಿಯಿತು, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿಗೆ ಒಪ್ಪಿಗೆಯಾಯಿತು.`,
+    "en-IN": (v) => `The negotiation with ${v.vendor}${v.sim ? ` (${SIM_LABEL["en-IN"]})` : ""} is done at ${v.price} rupees per ${v.unit}.`,
+  },
+  job_done_negotiation_no_deal: {
+    "hi-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["hi-IN"]})` : ""} से मोल-भाव ख़त्म हुआ, सौदा नहीं बना।`,
+    "kn-IN": (v) => `${v.vendor}${v.sim ? ` (${SIM_LABEL["kn-IN"]})` : ""} ಜೊತೆ ಚೌಕಾಸಿ ಮುಗಿಯಿತು, ವ್ಯವಹಾರ ಆಗಲಿಲ್ಲ.`,
+    "en-IN": (v) => `The negotiation with ${v.vendor}${v.sim ? ` (${SIM_LABEL["en-IN"]})` : ""} has ended without a deal.`,
+  },
   job_failed: {
     "hi-IN": () => "यह काम पूरा नहीं हो पाया।",
     "kn-IN": () => "ಈ ಕೆಲಸ ಮುಗಿಸಲು ಆಗಲಿಲ್ಲ.",
@@ -126,10 +141,15 @@ const PHRASES = {
     "kn-IN": () => "ಈ ಕೆಲಸ ರದ್ದಾಗಿದೆ.",
     "en-IN": () => "That job was cancelled.",
   },
-  shortlist_empty: {
-    "hi-IN": () => "अभी कोई विक्रेता नहीं मिला है।",
-    "kn-IN": () => "ಇನ್ನೂ ಯಾವ ಮಾರಾಟಗಾರರೂ ಸಿಕ್ಕಿಲ್ಲ.",
-    "en-IN": () => "No vendors have been found yet.",
+  sourcing_not_started: {
+    "hi-IN": () => "विक्रेताओं की खोज अभी शुरू नहीं हुई है; शुरू करूँ?",
+    "kn-IN": () => "ಮಾರಾಟಗಾರರ ಹುಡುಕಾಟ ಇನ್ನೂ ಶುರುವಾಗಿಲ್ಲ; ಶುರು ಮಾಡಲೇ?",
+    "en-IN": () => "The vendor search has not started yet; shall I start it?",
+  },
+  sourcing_found_none: {
+    "hi-IN": () => "खोज में कोई विक्रेता नहीं मिला।",
+    "kn-IN": () => "ಹುಡುಕಾಟದಲ್ಲಿ ಯಾವ ಮಾರಾಟಗಾರರೂ ಸಿಕ್ಕಿಲ್ಲ.",
+    "en-IN": () => "The search found no vendors.",
   },
   shortlist: {
     "hi-IN": (v) => `${v.count} विक्रेता मिले, ${v.comparable} के भाव प्रति ${v.unit} में हैं; सबसे अच्छे ${v.name}${v.city ? `, ${v.city}` : ""}, ${v.price} रुपये प्रति ${v.unit}।`,
@@ -200,6 +220,11 @@ const PHRASES = {
     "hi-IN": () => "विक्रेता के जुड़ने का लिंक स्क्रीन पर है; उनके जुड़ते ही मोल-भाव शुरू होगा।",
     "kn-IN": () => "ಮಾರಾಟಗಾರರು ಸೇರುವ ಲಿಂಕ್ ಪರದೆಯ ಮೇಲಿದೆ; ಅವರು ಸೇರಿದ ತಕ್ಷಣ ಚೌಕಾಸಿ ಶುರುವಾಗುತ್ತದೆ.",
     "en-IN": () => "The vendor's join link is on the screen; the negotiation starts as soon as they join.",
+  },
+  negotiation_running_no_quote: {
+    "hi-IN": () => "मोल-भाव अभी चल रहा है, नतीजा आते ही बताऊँगी।",
+    "kn-IN": () => "ಚೌಕಾಸಿ ಇನ್ನೂ ನಡೆಯುತ್ತಿದೆ, ಫಲಿತಾಂಶ ಬಂದ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.",
+    "en-IN": () => "The negotiation is still going on; I will tell you the result as soon as it is in.",
   },
   deals_empty: {
     "hi-IN": () => "अभी कोई कोटेशन नहीं आया है।",
@@ -346,18 +371,55 @@ const FOREIGN_SCRIPT = {
   "kn-IN": /\p{Script=Devanagari}/u,
 };
 
+/** Said when no rule can name the item in the sentence's own script. */
+const UNNAMED_ITEM = { "hi-IN": "आपका बताया सामान", "kn-IN": "ನೀವು ಹೇಳಿದ ವಸ್ತು", "en-IN": "the requested item" };
+
 /**
  * The item as said in a `language` sentence: the owner's own words when their script fits,
  * else the IndiaMART category found by sourcing ("Basmati Rice"), else the English trade
- * name the category rules derive ("basmati rice"), else the words as stored.
+ * name the category rules derive ("basmati rice"), else a plain "the requested item":
+ * a word in another script is never read out by this language's voice.
  */
 function spokenItem(businessId, requirement, language) {
+  const lang = langKey(language);
   const item = String(requirement.item ?? "");
-  if (!FOREIGN_SCRIPT[langKey(language)].test(item)) return item;
+  if (!FOREIGN_SCRIPT[lang].test(item)) return item;
   const category = sourcedCategory(businessId, requirement.id);
-  if (category) return category;
+  if (category && !FOREIGN_SCRIPT[lang].test(category)) return category;
   const slug = candidateSlugs(item)[0];
-  return slug ? slug.replace(/-/g, " ") : item;
+  return slug ? slug.replace(/-/g, " ") : UNNAMED_ITEM[lang];
+}
+
+const isActive = (job) => Boolean(job) && (job.status === "queued" || job.status === "running");
+
+/** The latest job of one kind for a requirement, or null. */
+function latestJob(businessId, requirementId, kind) {
+  return repo.listJobs(businessId, { requirement_id: requirementId, kind }).at(-1) ?? null;
+}
+
+/**
+ * Why a requirement has no vendors, without claiming a result before the search has ended:
+ * running -> "still running", never started -> offer to start, ended -> "found none".
+ */
+function noVendors(businessId, requirement, language) {
+  const job = latestJob(businessId, requirement.id, "sourcing");
+  if (isActive(job)) return { code: "SOURCING_RUNNING", say: phrase("sourcing_running_none", language) };
+  if (!job) return { code: "NOT_SOURCED", say: phrase("sourcing_not_started", language) };
+  if (job.status === "cancelled") return { code: "NO_VENDORS", say: phrase("job_cancelled", language) };
+  return { code: "NO_VENDORS", say: phrase("sourcing_found_none", language) };
+}
+
+/** Why a requirement has no quotes: a negotiation still running says so instead of "no quotes". */
+function noQuotes(businessId, requirement, language) {
+  if (isActive(latestJob(businessId, requirement.id, "negotiation"))) {
+    return { code: "NEGOTIATION_RUNNING", say: phrase("negotiation_running_no_quote", language) };
+  }
+  return { code: "NO_QUOTES", say: phrase("deals_empty", language) };
+}
+
+/** A tool just spoke a finished search's result: the narrator must not say it again. */
+function sourcingResultSpoken(businessId, requirementId) {
+  require("../agora/narrator").suppress(businessId, `sourcing.done:${requirementId}`);
 }
 
 /** Vendors of a requirement, best first (scoring.rankVendors); the order vendorRank counts in. */
@@ -398,6 +460,16 @@ function vendorSummary(v, requirement, rank) {
     score: v.score,
     sourceUrl: v.source_url,
   };
+}
+
+/** How a finished negotiation ended, from the outcome stored on its job (session.finish). */
+function negotiationOutcomeSay(outcome, language) {
+  if (!outcome || !outcome.vendorName) return phrase("job_done_negotiation", language);
+  const vars = { vendor: outcome.vendorName, sim: Boolean(outcome.simulated) };
+  if (outcome.agreed && outcome.unitPrice != null) {
+    return phrase("job_done_negotiation_agreed", language, { ...vars, price: money(outcome.unitPrice), unit: unitWord(outcome.unit, language) });
+  }
+  return phrase("job_done_negotiation_no_deal", language, vars);
 }
 
 /** rankDeals output -> the deal shape of architecture.md. */
@@ -509,7 +581,10 @@ const dealCost = (d) => d.landedCost ?? d.goodsCost;
 function defaultDeal(ctx, args, language) {
   const requirement = currentRequirement(ctx, args.requirementId, language);
   const deals = rankedDeals(ctx.businessId, requirement.id);
-  if (!deals.length) throw new ToolError("NO_QUOTES", phrase("deals_empty", language), { status: 409 });
+  if (!deals.length) {
+    const why = noQuotes(ctx.businessId, requirement, language);
+    throw new ToolError(why.code, why.say, { status: 409 });
+  }
   const eligible = deals.filter((d) => d.status === "ranked" || d.status === "freight_unknown");
   if (!eligible.length) throw new ToolError("NO_RANKABLE_DEAL", phrase("deal_none_rankable", language), { status: 409 });
   const best = eligible[0];
@@ -657,13 +732,17 @@ const TOOLS = [
       let say;
       if (job.status === "queued") say = phrase("job_queued", language);
       else if (job.status === "running") {
-        say = job.kind === "sourcing"
-          ? phrase("job_running_sourcing", language, { count: repo.listVendors(ctx.businessId, { requirement_id: job.requirement_id }).length })
-          : phrase("job_running_negotiation", language);
+        const found = job.kind === "sourcing" ? repo.listVendors(ctx.businessId, { requirement_id: job.requirement_id }).length : 0;
+        say = job.kind !== "sourcing"
+          ? phrase("job_running_negotiation", language)
+          : found
+            ? phrase("job_running_sourcing", language, { count: found })
+            : phrase("sourcing_running_none", language);
+      } else if (job.status === "done" && job.kind === "sourcing") {
+        say = phrase("job_done_sourcing", language, { count: job.result?.count ?? 0, national: job.result?.scope === "national" });
+        if (job.requirement_id) sourcingResultSpoken(ctx.businessId, job.requirement_id);
       } else if (job.status === "done") {
-        say = job.kind === "sourcing"
-          ? phrase("job_done_sourcing", language, { count: job.result?.count ?? 0, national: job.result?.scope === "national" })
-          : phrase("job_done_negotiation", language);
+        say = negotiationOutcomeSay(job.result?.outcome, language);
       } else if (job.status === "cancelled") say = phrase("job_cancelled", language);
       else say = phrase("job_failed", language);
       return { jobId: job.id, kind: job.kind, status: job.status, progress, result: job.result ?? null, error: job.error ?? null, say };
@@ -679,7 +758,8 @@ const TOOLS = [
       const requirement = currentRequirement(ctx, args.requirementId, language);
       const ranked = rankedVendors(ctx.businessId, requirement);
       const vendors = ranked.slice(0, args.limit ?? SHORTLIST_SIZE).map((v, i) => vendorSummary(v, requirement, i + 1));
-      if (!ranked.length) return { requirementId: requirement.id, vendors, say: phrase("shortlist_empty", language) };
+      if (!ranked.length) return { requirementId: requirement.id, vendors, say: noVendors(ctx.businessId, requirement, language).say };
+      if (latestJob(ctx.businessId, requirement.id, "sourcing")?.status === "done") sourcingResultSpoken(ctx.businessId, requirement.id);
       const unit = unitWord(requirement.unit, language);
       const comparable = ranked
         .map((vendor) => ({ vendor, price: comparableListedPrice(vendor, requirement.unit)?.value ?? null }))
@@ -720,7 +800,10 @@ const TOOLS = [
         requirement = currentRequirement(ctx, args.requirementId, language);
       }
       const ranked = rankedVendors(ctx.businessId, requirement);
-      if (!ranked.length) throw new ToolError("NO_VENDORS", phrase("shortlist_empty", language), { status: 409 });
+      if (!ranked.length) {
+        const why = noVendors(ctx.businessId, requirement, language);
+        throw new ToolError(why.code, why.say, { status: 409 });
+      }
       const unit = unitWord(requirement.unit, language);
       const comparableAt = ranked.findIndex((v) => comparableListedPrice(v, requirement.unit));
       if (!vendor && args.vendorRank) {
@@ -765,7 +848,7 @@ const TOOLS = [
     async handler(ctx, args, language) {
       const requirement = currentRequirement(ctx, args.requirementId, language);
       const deals = rankedDeals(ctx.businessId, requirement.id);
-      if (!deals.length) return { requirementId: requirement.id, deals, say: phrase("deals_empty", language) };
+      if (!deals.length) return { requirementId: requirement.id, deals, say: noQuotes(ctx.businessId, requirement, language).say };
       const best = deals[0];
       if (best.status === "unrankable") return { requirementId: requirement.id, deals, say: phrase("deal_none_rankable", language) };
       return {
@@ -791,8 +874,11 @@ const TOOLS = [
     async handler(ctx, args, language) {
       const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
       const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
-      // The stored read-back is in the business language; the spoken one follows the owner's language. Same figures.
-      const readback = approvals.buildReadback(deal, READBACK_LANGUAGE[language]);
+      // The stored read-back is in the business language; the spoken one follows the owner's language. Same figures,
+      // and the item named in that language's script (the stored one keeps the owner's words).
+      const requirement = repo.getRequirement(ctx.businessId, repo.getQuote(ctx.businessId, quoteId)?.requirement_id);
+      const item = requirement ? spokenItem(ctx.businessId, requirement, language) : deal.item;
+      const readback = approvals.buildReadback({ ...deal, item }, READBACK_LANGUAGE[language]);
       return { approvalId: approval.id, quoteId, status: approval.status, readback, totalAmount: approval.total_amount, say: readback };
     },
   },

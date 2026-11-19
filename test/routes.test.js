@@ -214,6 +214,54 @@ test("state is scoped to the cookie's business; a button decision on another bus
   });
 });
 
+test("GET /api/state lists vendors in the get_shortlist order, with rank 1 = the vendor the agent names best", async () => {
+  const registry = require("../src/tools/registry");
+  await withApp(async (base) => {
+    const { cookie, business } = await signUp(base, { name: "Rank Check", city: "Bengaluru", language: "en-IN" });
+    const need = repo.createRequirement(business.id, { item: "basmati rice", quantity: 200, unit: "kg", max_price: 90, city: "Bengaluru" });
+    // Found in this order; all score 78, so only the tie-break decides (e2e r2 row 13).
+    for (const [name, price, rating, count] of [["Arthace Ariez Global Private Limited", 80, 4, 25], ["Pansari Industries", 68, 3.7, 443], ["JMD Enterprises", 79, 4.4, 34], ["BS Foods", 60, 4, 208]]) {
+      repo.createVendor(business.id, { requirement_id: need.id, source: "indiamart", name, listed_price: price, listed_unit: "Kg", rating, rating_count: count, score: 78 });
+    }
+    const state = await call(base, "GET", "/api/state", { cookie });
+    assert.equal(state.status, 200);
+    assert.deepEqual(state.json.vendors.map((v) => v.name), ["BS Foods", "Pansari Industries", "JMD Enterprises", "Arthace Ariez Global Private Limited"]);
+    assert.deepEqual(state.json.vendors.map((v) => v.rank), [1, 2, 3, 4]);
+
+    const session = repo.createSession(business.id, { kind: "owner", channel: "own-rankcheck", status: "active" });
+    const shortlist = await registry.callTool({ businessId: business.id, sessionId: session.id, agentId: null, actor: "agent", toolScope: "owner" }, "get_shortlist", { limit: 4 });
+    assert.deepEqual(shortlist.vendors.map((v) => v.vendorId), state.json.vendors.map((v) => v.id), "panel order = spoken order");
+    assert.deepEqual(shortlist.vendors.map((v) => v.rank), state.json.vendors.map((v) => v.rank));
+  });
+});
+
+test("voice token renewal names the channel; a call the server no longer holds answers 409 CALL_ENDED and opens nothing", async () => {
+  await withApp(async (base) => {
+    const { cookie, business } = await signUp(base);
+    const noCall = await call(base, "POST", "/api/voice/token", { cookie, body: { channel: "own-gone" } });
+    assert.equal(noCall.status, 409);
+    assert.equal(noCall.json.code, "CALL_ENDED");
+    assert.equal(noCall.json.message, "The call ended. Start a new call to continue.");
+    assert.equal(repo.listSessions(business.id, { kind: "owner" }).length, 0, "renewal never starts a call");
+
+    const first = await call(base, "POST", "/api/voice/token", { cookie, body: {} });
+    assert.equal(first.status, 200);
+    const renewed = await call(base, "POST", "/api/voice/token", { cookie, body: { channel: first.json.channel } });
+    assert.equal(renewed.status, 200);
+    assert.equal(renewed.json.channel, first.json.channel);
+    assert.equal(renewed.json.uid, first.json.uid);
+    assert.match(renewed.json.token, /^007/);
+
+    const stale = await call(base, "POST", "/api/voice/token", { cookie, body: { channel: "own-someone-else" } });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.json.code, "CALL_ENDED");
+
+    await call(base, "POST", "/api/voice/stop", { cookie, body: {} });
+    const afterStop = await call(base, "POST", "/api/voice/token", { cookie, body: { channel: first.json.channel } });
+    assert.equal(afterStop.status, 409, "the ended call cannot be renewed");
+  });
+});
+
 test("telegram link code returns the bot deep link", async () => {
   await withApp(async (base) => {
     const { cookie } = await signUp(base);

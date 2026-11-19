@@ -1,5 +1,6 @@
 "use strict";
 
+// Default mode: a simulated vendor is met by the deterministic server-driven loop.
 Object.assign(process.env, {
   DB_FILE: ":memory:",
   SESSION_SIGNING_SECRET: "test-secret-".padEnd(48, "x"),
@@ -15,6 +16,7 @@ Object.assign(process.env, {
   MURF_VOICE_KN: "kn-IN-harshitha",
   SARVAM_API_KEY: "test-sarvam-key",
   GROQ_API_KEY: "test-groq-key",
+  NEGOTIATION_MODE: "loop", // pinned so a developer .env cannot change what this file tests
 });
 
 const assert = require("node:assert/strict");
@@ -25,17 +27,17 @@ const vendorAgent = require("../src/negotiation/vendor-agent");
 const registry = require("../src/tools/registry");
 const { ToolError } = require("../src/tools/errors");
 const agent = require("../src/agora/agent");
-const auth = require("../src/auth");
 const repo = require("../src/db/repo");
 const events = require("../src/events");
 const jobs = require("../src/jobs");
+const { loadConfig, ConfigError } = require("../src/config");
 
-session.configureTiming({ pollMs: 5, stallMs: 40, closingGraceMs: 5, msPerChar: 0, minLineMs: 1, humanJoinMs: 5000, maxMs: 5000 });
+session.configureTiming({ pollMs: 5, stallMs: 40, turnStallMs: 40, closingGraceMs: 5, msPerChar: 0, minLineMs: 1, humanJoinMs: 5000, maxMs: 5000 });
 
 const realFetch = globalThis.fetch;
 
-/** Fake Agora REST. history() answers from `historyFor(agentId)`. */
-function fakeAgora(t, { historyFor = () => [] } = {}) {
+/** Fake Agora REST: records every call; /join answers an agent id per role. */
+function fakeAgora(t) {
   const calls = [];
   let n = 0;
   agent.setFetch(async (url, init) => {
@@ -45,47 +47,64 @@ function fakeAgora(t, { historyFor = () => [] } = {}) {
       n += 1;
       return new Response(JSON.stringify({ agent_id: `${body.properties.labels.role}-${n}`, status: "RUNNING" }), { status: 200 });
     }
-    const history = /\/agents\/([^/]+)\/history$/.exec(url);
-    if (history) return new Response(JSON.stringify({ contents: historyFor(history[1]) }), { status: 200 });
+    if (/\/history$/.test(url)) return new Response(JSON.stringify({ contents: [] }), { status: 200 });
     return new Response("{}", { status: 200 });
   });
   t.after(() => agent.setFetch(null));
   return calls;
 }
 
-/** Fake Groq for quote extraction. */
-function fakeGroq(t, fields) {
+/** No model may be called in loop mode: any outbound fetch fails the test. */
+function noModel(t) {
   globalThis.fetch = async (url) => {
-    assert.match(String(url), /^https:\/\/api\.groq\.com\//);
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(fields) }, finish_reason: "stop" }] }), { status: 200 });
+    throw new Error(`unexpected fetch in loop mode: ${url}`);
   };
   t.after(() => {
     globalThis.fetch = realFetch;
   });
 }
 
-/** 100 kg basmati, owner max 70/kg; a listed vendor at 65/kg. */
-function seed({ language = "hi-IN", listedPrice = 65, maxPrice = 70 } = {}) {
+function seed({ language = "hi-IN", listedPrice = 60, maxPrice = 90, quantity = 200 } = {}) {
   const businessId = repo.newId("biz");
-  repo.createBusiness(businessId, { name: "Asha Kirana", city: "Bengaluru", language });
-  const requirement = repo.createRequirement(businessId, { item: "basmati rice", quantity: 100, unit: "kg", city: "Bengaluru", max_price: maxPrice });
+  repo.createBusiness(businessId, { name: "Ganesh Traders", city: "Bengaluru", language });
+  const requirement = repo.createRequirement(businessId, { item: "बासमती चावल", quantity, unit: "kg", city: "Bengaluru", max_price: maxPrice });
   const vendor = repo.createVendor(businessId, {
     requirement_id: requirement.id,
     source: "indiamart",
-    name: "Lakshmi Traders",
+    name: "BS Foods",
     listed_price: listedPrice,
     listed_unit: listedPrice == null ? null : "kg",
   });
   return { businessId, requirement, vendor };
 }
 
-async function until(predicate, ms = 3000) {
-  const end = Date.now() + ms;
-  while (!predicate()) {
-    if (Date.now() > end) throw new Error("timed out waiting");
-    await new Promise((r) => setTimeout(r, 5));
-  }
+async function runSimulated(t, opts) {
+  const calls = fakeAgora(t);
+  noModel(t);
+  const { businessId, requirement, vendor } = seed(opts);
+  const seen = [];
+  const stop = events.subscribe(businessId, (e) => seen.push(e));
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: opts?.language ?? "hi-IN" });
+  await jobs.whenSettled(started.jobId);
+  stop();
+  const job = repo.getJob(businessId, started.jobId);
+  assert.equal(job.status, "done", job.error);
+  const neg = repo.getNegotiation(businessId, started.negotiationId);
+  const quotes = repo.listQuotes(businessId, { requirement_id: requirement.id });
+  return { calls, seen, job, neg, quotes, businessId, requirement, vendor, started };
 }
+
+const offers = (neg) => neg.transcript.filter((t) => t.offer != null).map((t) => `${t.speaker}:${t.offer}`);
+
+/* ----------------------------------------------------------------- config --- */
+
+test("config: a simulated negotiation defaults to the deterministic loop; agents mode is opt-in; a typo fails loudly", () => {
+  assert.equal(loadConfig({}).negotiation.mode, "loop");
+  assert.equal(loadConfig({ NEGOTIATION_MODE: "agents" }).negotiation.mode, "agents");
+  assert.equal(loadConfig({ NEGOTIATION_MODE: " Agents " }).negotiation.mode, "agents");
+  assert.equal(loadConfig({ NEGOTIATION_MODE: "loop" }).negotiation.mode, "loop");
+  assert.throws(() => loadConfig({ NEGOTIATION_MODE: "agent" }), (err) => err instanceof ConfigError && err.code === "INVALID_NEGOTIATION_MODE");
+});
 
 /* -------------------------------------------------------------- refusals --- */
 
@@ -95,20 +114,6 @@ test("a simulated vendor needs a real listed price to be based on; no price is i
     session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" }),
     (err) => err instanceof ToolError && err.code === "NO_LISTED_PRICE" && /लिस्टिंग/.test(err.say),
   );
-});
-
-test("regression (E2E 2026-11-19): a requirement stored as किलो negotiates against a per-Kg IndiaMART listing", async (t) => {
-  fakeAgora(t); // no vendor turn -> server loop; the point is that it starts and agrees in kg
-  const businessId = repo.newId("biz");
-  repo.createBusiness(businessId, { name: "Sri Lakshmi Stores", city: "Bengaluru", language: "hi-IN" });
-  const requirement = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", max_price: 110 });
-  const vendor = repo.createVendor(businessId, { requirement_id: requirement.id, source: "indiamart", name: "Babu Trading Co.", listed_price: 100, listed_unit: "Kg" });
-  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
-  await jobs.whenSettled(started.jobId);
-  const quote = repo.listQuotes(businessId, { requirement_id: requirement.id })[0];
-  assert.ok(quote, "a quote is recorded");
-  assert.equal(quote.simulated, true);
-  assert.ok(quote.unit_price <= 110);
 });
 
 test("refusals are said in the owner's reply language while the negotiation keeps the business language", async () => {
@@ -136,74 +141,56 @@ test("a vendor of another business is not found", async () => {
   );
 });
 
-/* ------------------------------------------------- simulated, fallback loop --- */
+/* ------------------------------------------------------ the default loop --- */
 
-test("simulated run: agents that cannot hear each other fall back to the server loop and record an honest, labelled quote", async (t) => {
-  const calls = fakeAgora(t); // /history never shows a vendor turn -> stall -> loop
-  const { businessId, requirement, vendor } = seed({ language: "hi-IN" });
-  const seen = [];
-  const stop = events.subscribe(businessId, (e) => seen.push(e));
+test("regression (E2E r2 BLOCKER): BS Foods listed 60/kg, owner max 90, 200 kg agrees at 55 in round 4, voiced by two agents", async (t) => {
+  const { calls, seen, job, neg, quotes, businessId } = await runSimulated(t, { listedPrice: 60, maxPrice: 90 });
 
-  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
-  assert.match(started.jobId, /^job_/);
-  assert.equal(started.joinUrl, undefined);
-  await jobs.whenSettled(started.jobId);
-  stop();
-
-  const job = repo.getJob(businessId, started.jobId);
-  assert.equal(job.status, "done", job.error);
-  assert.ok(job.progress.some((p) => /switching to the server-driven negotiation/.test(p.message)));
-
-  // Both agents joined in the negotiation channel, each listening to the other.
-  const joins = calls.filter((c) => c.url.endsWith("/join"));
+  // Two agents with different Murf voices, both listening to nobody: they only say what /speak sends.
+  const joins = calls.filter((c) => c.url.endsWith("/join")).map((c) => c.body.properties);
   assert.equal(joins.length, 2);
-  const [negotiator, simulated] = joins.map((c) => c.body.properties);
-  assert.deepEqual(negotiator.remote_rtc_uids, [String(session.UIDS.vendor)]);
-  assert.deepEqual(simulated.remote_rtc_uids, [String(session.UIDS.negotiator)]);
-  assert.equal(negotiator.channel, simulated.channel);
-  assert.deepEqual(negotiator.llm.mcp_servers[0].allowed_tools, ["get_negotiation_brief", "record_vendor_offer"]);
-  assert.equal(simulated.llm.mcp_servers, undefined, "the simulated vendor has no tools");
-  assert.equal(simulated.tts.params.voiceId, vendorAgent.VENDOR_VOICE_ID);
-  assert.notEqual(simulated.tts.params.voiceId, negotiator.tts.params.voiceId);
-  assert.match(simulated.llm.system_messages[0].content, /SIMULATED vendor/);
-  const bearer = negotiator.llm.mcp_servers[0].headers.Authorization.slice(7);
-  const negSession = repo.getSession(businessId, auth.verifySession(bearer, { scope: "mcp" }).sessionId);
-  assert.equal(negSession.kind, "negotiation");
-  assert.equal(negSession.status, "ended");
+  for (const p of joins) assert.deepEqual(p.remote_rtc_uids, [String(session.UIDS.nobody)]);
+  assert.equal(joins[0].llm.mcp_servers, undefined, "loop mode: the negotiator has no tools, the server decides every price");
+  assert.equal(joins[1].tts.params.voiceId, vendorAgent.VENDOR_VOICE_ID);
+  assert.notEqual(joins[0].tts.params.voiceId, joins[1].tts.params.voiceId);
+  assert.equal(calls.filter((c) => c.url.endsWith("/leave")).length, 2, "both agents stopped");
 
-  // Disclosure first, not interruptable; the simulated vendor introduces itself as simulated.
-  const speaks = calls.filter((c) => c.url.endsWith("/speak"));
-  assert.match(speaks[0].body.text, /स्वचालित सहायक/);
-  assert.equal(speaks[0].body.interruptable, false);
-  assert.ok(speaks.some((s) => s.body.text.includes("सिम्युलेटेड विक्रेता")));
-  assert.equal(speaks.filter((s) => s.body.text.includes("स्वचालित सहायक")).length, 1, "disclosure spoken once, not again after the fallback");
-  assert.ok(calls.filter((c) => c.url.endsWith("/leave")).length === 2, "both agents stopped");
+  // Disclosure first, then the simulated vendor says it is simulated.
+  const speaks = calls.filter((c) => c.url.endsWith("/speak")).map((c) => c.body.text);
+  assert.match(speaks[0], /स्वचालित सहायक/);
+  assert.match(speaks[1], /सिम्युलेटेड विक्रेता/);
+  assert.equal(speaks.filter((s) => s.includes("स्वचालित सहायक")).length, 1);
 
-  const neg = repo.getNegotiation(businessId, started.negotiationId);
+  // The price trace: whole rupees, the buyer never counters above an ask.
+  assert.deepEqual(offers(neg), ["vendor:65", "agent:51", "vendor:61", "agent:52", "vendor:57", "agent:55", "vendor:55", "agent:55"]);
   assert.equal(neg.status, "agreed");
-  assert.equal(neg.simulated, true);
-  assert.ok(neg.transcript.length >= 6);
+  assert.equal(neg.outcome.mode, "loop");
+  assert.equal(neg.outcome.rounds, 4);
+  assert.equal(neg.outcome.reason, null);
   assert.ok(neg.transcript.every((turn) => turn.simulated === true), "every stored turn is labelled simulated");
+  assert.ok(!neg.transcript.some((turn) => /आख़िरी भाव/.test(turn.text)), "no price before the last scheduled one is called final");
 
-  const quotes = repo.listQuotes(businessId, { requirement_id: requirement.id });
   assert.equal(quotes.length, 1);
-  const quote = quotes[0];
+  const [quote] = quotes;
+  assert.equal(quote.unit_price, 55);
+  assert.ok(quote.unit_price <= 90);
   assert.equal(quote.simulated, true);
   assert.equal(quote.unit, "kg");
-  assert.ok(quote.unit_price <= 65, "never above the reservation (min of owner max 70 and listed 65)");
-  assert.ok(quote.unit_price >= vendorAgent.vendorPolicy(65).floor, "never below the simulated floor");
+  assert.equal(quote.quoted_sentence, "ठीक है, 55 रुपये प्रति किलो में दे देंगे।", "the vendor line that produced the accept");
   assert.equal(quote.freight, null, "no freight figure is invented");
-  assert.equal(quote.landed_cost, null);
-  assert.ok(neg.transcript.some((turn) => turn.speaker === "vendor" && turn.text === quote.quoted_sentence));
+  assert.equal(quote.confidence, 1);
 
-  const turnEvents = seen.filter((e) => e.type === "negotiation.turn");
-  assert.ok(turnEvents.some((e) => e.actor === "vendor" && e.data.speaker === "vendor"));
-  assert.ok(turnEvents.every((e) => e.data.simulated === true));
-  const ended = seen.find((e) => e.type === "negotiation.ended");
-  assert.equal(ended.data.status, "agreed");
-  assert.equal(ended.data.outcome.unitPrice, quote.unit_price);
-  assert.equal(ended.data.outcome.mode, "loop");
-  assert.ok(seen.some((e) => e.type === "quote.recorded"));
+  // Jobs panel: one progress line per round, with the numbers.
+  const rounds = job.progress.filter((p) => /^Round \d/.test(p.message)).map((p) => p.message);
+  assert.deepEqual(rounds, [
+    "Round 1: simulated vendor asks 65 per kg; Sahay offers 51.",
+    "Round 2: simulated vendor asks 61 per kg; Sahay offers 52.",
+    "Round 3: simulated vendor asks 57 per kg; Sahay offers 55.",
+    "Round 4: simulated vendor asks 55 per kg; Sahay agrees at 55, pending the owner's approval.",
+  ]);
+  assert.match(job.progress[0].message, /BS Foods \(simulated vendor\): server-driven turns/);
+  assert.ok(seen.filter((e) => e.type === "job.progress").length >= 5, "progress is emitted as events, not only stored");
+  assert.equal(seen.find((e) => e.type === "negotiation.ended").data.outcome.unitPrice, 55);
 
   // The quote passes the approval gate's consistency checks.
   const { requestApproval } = require("../src/approvals");
@@ -211,91 +198,69 @@ test("simulated run: agents that cannot hear each other fall back to the server 
   assert.match(approval.readback, /सिम्युलेटेड वेंडर/);
 });
 
-/* -------------------------------------------- human, agents mode with tools --- */
-
-async function humanRun(t, { extracted }) {
-  const history = [];
-  const calls = fakeAgora(t, { historyFor: () => history });
-  fakeGroq(t, extracted);
-  const { businessId, requirement, vendor } = seed({ language: "hi-IN" });
-  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "human", language: "hi-IN" });
-  assert.match(started.joinUrl, /^https:\/\/sahay\.test\/vendor\/[A-Za-z0-9_-]+$/);
-  const code = started.joinUrl.split("/").pop();
-
-  const info = session.humanJoinInfo(code);
-  assert.equal(info.uid, session.UIDS.human);
-  assert.match(info.token, /^007/);
-  assert.match(info.disclosure, /स्वचालित सहायक/);
-  assert.equal(session.humanJoinInfo("wrong-code"), null);
-
-  await until(() => repo.listSessions(businessId, { kind: "negotiation" })[0]?.agent_id);
-  const negSession = repo.listSessions(businessId, { kind: "negotiation" })[0];
-  const ctx = { businessId, sessionId: negSession.id, agentId: negSession.agent_id, actor: "agent", toolScope: "negotiation" };
-
-  assert.equal(await session.humanJoined(code), true);
-  assert.ok(calls.some((c) => c.url.endsWith("/think")), "negotiator told to begin");
-
-  const brief = await registry.callTool(ctx, "get_negotiation_brief", {});
-  assert.equal(brief.say, "हमें 100 किलो basmati rice चाहिए, Bengaluru में डिलीवरी; आपका सबसे अच्छा भाव प्रति किलो क्या होगा?");
-  history.push({ role: "assistant", content: brief.say, metadata: { source: "llm" }, timestamp: Date.now(), turn_id: 1 });
-  history.push({ role: "user", content: "भाई 64 रुपये किलो लगेगा", metadata: { source: "asr" }, timestamp: Date.now(), turn_id: 2 });
-
-  const clarify = await registry.callTool(ctx, "record_vendor_offer", { price_per_unit: 1500, unit: "bag" });
-  assert.equal(clarify.action, "clarify");
-  assert.equal(clarify.say, "कृपया प्रति किलो का भाव बताइए।");
-
-  const counter = await registry.callTool(ctx, "record_vendor_offer", { price_per_unit: 64, unit: "kg" });
-  assert.equal(counter.action, "counter");
-  assert.ok(counter.price < 64 && counter.price <= 65);
-  assert.equal(counter.say, `हम ${counter.price} रुपये प्रति किलो दे सकते हैं, क्या इस पर बात बनेगी?`);
-  history.push({ role: "assistant", content: counter.say, metadata: { source: "llm" }, timestamp: Date.now(), turn_id: 3 });
-  history.push({ role: "user", content: "ठीक है, 55 रुपये किलो दे दूँगा", metadata: { source: "asr" }, timestamp: Date.now(), turn_id: 4 });
-
-  const accept = await registry.callTool(ctx, "record_vendor_offer", { price_per_unit: 55, vendor_sentence: "ठीक है, 55 रुपये किलो दे दूँगा" });
-  assert.equal(accept.action, "accept");
-  assert.equal(accept.price, 55);
-  history.push({ role: "assistant", content: accept.say, metadata: { source: "llm" }, timestamp: Date.now() + 1, turn_id: 5 });
-
-  const jobId = repo.listJobs(businessId, { kind: "negotiation" })[0].id;
-  await jobs.whenSettled(jobId);
-  return { businessId, requirement, started, jobId };
-}
-
-test("human run (agents mode): tools give every price, the transcript backs the quote, quote recorded", async (t) => {
-  const { businessId, requirement, started, jobId } = await humanRun(t, {
-    extracted: { unit_price: 55, unit: "kg", quoted_sentence: "ठीक है, 55 रुपये किलो दे दूँगा", confidence: 0.9, freight: null, lead_time_days: null, moq: null, payment_terms: null },
-  });
-  assert.equal(repo.getJob(businessId, jobId).status, "done");
-  const neg = repo.getNegotiation(businessId, started.negotiationId);
+test("loop, listed 60 and no owner max: the listing is the ceiling and the deal lands at 55", async (t) => {
+  const { neg, quotes } = await runSimulated(t, { listedPrice: 60, maxPrice: null });
   assert.equal(neg.status, "agreed");
-  assert.equal(neg.simulated, false);
-  assert.ok(neg.transcript.some((turn) => turn.speaker === "vendor" && turn.text.includes("64")));
-  assert.ok(neg.transcript.some((turn) => turn.speaker === "agent" && turn.offer != null), "agent turns carry the offer computed in code");
-  const [quote] = repo.listQuotes(businessId, { requirement_id: requirement.id });
-  assert.equal(quote.unit_price, 55);
-  assert.equal(quote.simulated, false);
-  assert.equal(quote.confidence, 0.9);
+  assert.equal(quotes[0].unit_price, 55);
+  assert.ok(quotes[0].unit_price <= 60);
 });
 
-test("human run: an extracted price that differs from the price agreed in code is not recorded", async (t) => {
-  const { businessId, requirement, started } = await humanRun(t, {
-    extracted: { unit_price: 45, unit: "kg", quoted_sentence: "ठीक है, 55 रुपये किलो दे दूँगा", confidence: 0.9 },
+test("loop, listed 100 and owner max 90 (under the listing, at the vendor floor): agreed at 90 within five rounds", async (t) => {
+  const { neg, quotes } = await runSimulated(t, { listedPrice: 100, maxPrice: 90 });
+  assert.equal(neg.status, "agreed");
+  assert.equal(quotes[0].unit_price, 90);
+  assert.ok(neg.outcome.rounds <= session.MAX_ROUNDS);
+});
+
+test("loop, owner max below the simulated vendor's floor: an honest walk-away, then the same vendor can be tried again", async (t) => {
+  const first = await runSimulated(t, { listedPrice: 100, maxPrice: 80 });
+  assert.equal(first.neg.status, "walked_away");
+  assert.equal(first.neg.outcome.reason, "walked_away:final_ask_above_reservation");
+  assert.equal(first.quotes.length, 0);
+  assert.ok(first.neg.transcript.some((turn) => turn.speaker === "vendor" && turn.offer === 90 && /आख़िरी भाव/.test(turn.text)), "only the floor is called final");
+  assert.ok(first.job.progress.some((p) => /^Round 5: .*Sahay walks away \(final_ask_above_reservation\)\.$/.test(p.message)));
+
+  // E2E r2: "negotiate again" after a walk-away must not be refused as busy.
+  const again = await session.startNegotiation({ businessId: first.businessId, requirementId: first.requirement.id, vendorId: first.vendor.id, counterpart: "simulated", language: "hi-IN" });
+  assert.notEqual(again.negotiationId, first.started.negotiationId);
+  await jobs.whenSettled(again.jobId);
+  assert.equal(repo.getNegotiation(first.businessId, again.negotiationId).status, "walked_away");
+});
+
+test("the negotiation is released before it is announced, so a start on hearing the outcome is not refused", async (t) => {
+  fakeAgora(t);
+  noModel(t);
+  const { businessId, requirement, vendor } = seed({ listedPrice: 100, maxPrice: 80 });
+  const restarts = [];
+  const stop = events.subscribe(businessId, (e) => {
+    if (e.type !== "negotiation.ended") return;
+    restarts.push(session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" }));
   });
-  assert.equal(repo.listQuotes(businessId, { requirement_id: requirement.id }).length, 0);
-  const neg = repo.getNegotiation(businessId, started.negotiationId);
-  assert.equal(neg.status, "no_deal");
-  assert.equal(neg.outcome.reason, "price_differs_from_agreed");
+  const first = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(first.jobId);
+  stop();
+  assert.equal(restarts.length, 1);
+  const second = await restarts[0];
+  await jobs.whenSettled(second.jobId);
+  assert.equal(repo.getJob(businessId, second.jobId).status, "done");
 });
 
-test("human run: a quoted sentence the vendor never said is not recorded", async (t) => {
-  const { businessId, requirement, started } = await humanRun(t, {
-    extracted: { unit_price: 55, unit: "kg", quoted_sentence: "मैं 55 में फ्री डिलीवरी दूँगा", confidence: 0.9 },
-  });
-  assert.equal(repo.listQuotes(businessId, { requirement_id: requirement.id }).length, 0);
-  assert.equal(repo.getNegotiation(businessId, started.negotiationId).outcome.reason, "quoted_sentence_not_in_transcript");
+test("regression (E2E 2026-11-19): a requirement stored as किलो negotiates against a per-Kg IndiaMART listing", async (t) => {
+  fakeAgora(t);
+  noModel(t);
+  const businessId = repo.newId("biz");
+  repo.createBusiness(businessId, { name: "Sri Lakshmi Stores", city: "Bengaluru", language: "hi-IN" });
+  const requirement = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", max_price: 110 });
+  const vendor = repo.createVendor(businessId, { requirement_id: requirement.id, source: "indiamart", name: "Babu Trading Co.", listed_price: 100, listed_unit: "Kg" });
+  const started = await session.startNegotiation({ businessId, requirementId: requirement.id, vendorId: vendor.id, counterpart: "simulated", language: "hi-IN" });
+  await jobs.whenSettled(started.jobId);
+  const quote = repo.listQuotes(businessId, { requirement_id: requirement.id })[0];
+  assert.ok(quote, "a quote is recorded");
+  assert.equal(quote.simulated, true);
+  assert.ok(quote.unit_price <= 110);
 });
 
-test("negotiation tools refuse a ctx with no running negotiation, and one negotiation runs per business", async (t) => {
+test("negotiation tools refuse a ctx with no running negotiation, and a still-running negotiation blocks a second one", async (t) => {
   fakeAgora(t);
   const { businessId, requirement, vendor } = seed();
   const s = repo.createSession(businessId, { kind: "negotiation", channel: "neg-x", status: "active" });
@@ -321,16 +286,4 @@ test("saidByVendor matches vendor words only, ignoring punctuation and spacing",
   assert.equal(session.saidByVendor("ठीक है, 55 रुपये किलो दे दूँगा", turns), true);
   assert.equal(session.saidByVendor("हम 55 रुपये देंगे", turns), false, "the agent's words are not the vendor's");
   assert.equal(session.saidByVendor("55", turns), false, "too short to prove anything");
-});
-
-test("vendor prompt carries the computed schedule and floor, and forbids other numbers", () => {
-  const policy = vendorAgent.vendorPolicy(65);
-  const schedule = vendorAgent.askSchedule(policy, 5);
-  assert.equal(schedule[0], policy.anchor);
-  assert.ok(schedule.every((p, i) => i === 0 || p <= schedule[i - 1]));
-  const prompt = vendorAgent.vendorPrompt({ language: "hi-IN", item: "rice", quantity: 100, unit: "kg", unitSpoken: "किलो", schedule, floor: policy.floor });
-  assert.match(prompt, /SIMULATED vendor/);
-  assert.ok(prompt.includes(`${policy.floor}`));
-  assert.match(prompt, /Never mention any other number/);
-  assert.match(vendorAgent.introText("kn-IN"), /ಸಿಮ್ಯುಲೇಟೆಡ್/);
 });

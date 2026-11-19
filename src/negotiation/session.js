@@ -9,19 +9,21 @@
  *   (a) "simulated": a labelled simulated vendor agent (vendor-agent.js), or
  *   (b) "human": a person who opens a one-time join link.
  *
- * Mode "agents" (default): both agents in one channel, each with remote_rtc_uids
- * set to the other's uid. UNVERIFIED: whether an Agora agent subscribes to and
- * transcribes another agent's audio has not been seen live. If a simulated run
- * hears no vendor turn within STALL_MS it switches to mode "loop".
- * Mode "loop" (config.negotiation.mode = "loop", simulated only): the server
- * computes both sides with strategy.js and voices every line with /speak on two
- * agents that listen to nobody.
+ * Mode "loop" (default for a simulated vendor, config.negotiation.mode): the
+ * server computes both sides with strategy.js and voices every line with /speak
+ * on two agents (two Murf voices) that listen to nobody. Deterministic.
+ * Mode "agents" (NEGOTIATION_MODE=agents, and always for a human): both agents
+ * in one channel, each with remote_rtc_uids set to the other's uid. A simulated
+ * run that hears no vendor turn within stallMs, or no new turn for turnStallMs
+ * after that, stops both agents and continues in mode "loop" from the same
+ * round and offer.
  *
  * Turns are read from the negotiator's /history (agents) or known directly
- * (loop), stored with repo.appendNegotiationTurn and emitted as negotiation.turn.
- * At the end the quote is extracted (llm.completeJSON) and accepted only if its
- * price matches the price agreed in code, is not above the owner's maximum, and
- * its quoted_sentence appears in the vendor's own words.
+ * (loop), stored with repo.appendNegotiationTurn and emitted as negotiation.turn;
+ * every round is also a job.progress line. The quote's price is the price agreed
+ * in code (record_vendor_offer accept), never a number re-read by a model; its
+ * quoted_sentence is the vendor line that produced the accept. A model reads the
+ * transcript only for optional terms (freight, lead time, MOQ) of a human run.
  */
 
 const crypto = require("node:crypto");
@@ -49,6 +51,8 @@ const NEGOTIATION_MCP_NAME = "sahayneg";
 const timing = {
   pollMs: 1500,
   stallMs: 45000, // simulated agents mode: no vendor turn by then -> loop mode
+  turnStallMs: 40000, // simulated agents mode: no new turn for this long after the first vendor turn -> loop mode
+  humanTurnStallMs: 120000, // human: silence this long after joining ends the negotiation honestly
   humanJoinMs: 5 * 60 * 1000,
   maxMs: 6 * 60 * 1000,
   closingGraceMs: 4000,
@@ -109,6 +113,11 @@ const BUYER_LINES = {
     "kn-IN": (v) => `ದಯವಿಟ್ಟು ಒಂದು ${v.unit}ಗೆ ಬೆಲೆ ಹೇಳಿ.`,
     "en-IN": (v) => `Please give me the price per ${v.unit}.`,
   },
+  clarify_price: {
+    "hi-IN": (v) => `माफ़ कीजिए, भाव साफ़ सुनाई नहीं दिया; प्रति ${v.unit} का भाव फिर से बताइए।`,
+    "kn-IN": (v) => `ಕ್ಷಮಿಸಿ, ಬೆಲೆ ಸ್ಪಷ್ಟವಾಗಿ ಕೇಳಿಸಲಿಲ್ಲ; ಒಂದು ${v.unit}ಗೆ ಬೆಲೆಯನ್ನು ಮತ್ತೊಮ್ಮೆ ಹೇಳಿ.`,
+    "en-IN": (v) => `Sorry, I did not catch the price clearly; please say the price per ${v.unit} again.`,
+  },
 };
 
 const buyerLine = (key, language, vars = {}) => BUYER_LINES[key][langKey(language)](vars);
@@ -122,7 +131,7 @@ function negotiatorPrompt(rt) {
     "The system has already said that you are an automated assistant. Do not repeat it.",
     `Speak only ${script}. One or two short sentences per turn. No lists, no ids.`,
     "First call get_negotiation_brief and say its `say` text word for word.",
-    "Every time the vendor names a price or agrees to one, call record_vendor_offer with that price per unit (and freight or delivery days only if the vendor said them). Then say the tool's `say` text word for word. That text holds the only price you may offer.",
+    "Every time the vendor names a price or agrees to one, call record_vendor_offer once with that price per unit and the vendor's sentence as vendor_sentence (and freight or delivery days only if the vendor said them). Never call it twice for the same vendor sentence. Set is_final only if the vendor said the word final or last price. Then say the tool's `say` text word for word. That text holds the only price you may offer.",
     "Never say any number that did not come from a tool. Never agree to a price on your own: only when record_vendor_offer returns action accept. When it returns accept or walk_away, say its text and then stay silent.",
     "If the vendor does not say a price, ask for their price per unit.",
   ].join("\n");
@@ -151,6 +160,7 @@ function runtimeFor(ctx) {
 function brief(ctx) {
   const rt = runtimeFor(ctx);
   const r = rt.requirement;
+  rt.openingSaid = true;
   return {
     item: r.item,
     quantity: r.quantity,
@@ -158,14 +168,23 @@ function brief(ctx) {
     round: rt.round,
     maxRounds: MAX_ROUNDS,
     counterpart: rt.counterpart,
-    say: buyerLine("opening", rt.language, {
-      quantity: money(r.quantity),
-      unit: unitSpoken(rt, r.quantity !== 1),
-      unitOne: unitSpoken(rt),
-      item: itemSpoken(rt),
-      city: r.city,
-    }),
+    say: spokenLine(
+      rt,
+      buyerLine("opening", rt.language, {
+        quantity: money(r.quantity),
+        unit: unitSpoken(rt, r.quantity !== 1),
+        unitOne: unitSpoken(rt),
+        item: itemSpoken(rt),
+        city: r.city,
+      }),
+    ),
   };
+}
+
+/** Remember which buyer price (or none) a line the negotiator is told to say carries. */
+function spokenLine(rt, text, price = null) {
+  rt.sayPrices.set(text.trim(), price);
+  return text;
 }
 
 /**
@@ -174,31 +193,60 @@ function brief(ctx) {
  */
 function recordVendorOffer(ctx, args) {
   const rt = runtimeFor(ctx);
-  return applyVendorOffer(rt, args);
+  // The server took over (mode "loop"): a late call from the stopped negotiator changes nothing.
+  if (rt.mode === "loop") return { action: "wait", price: null, say: "" };
+  // The model sometimes calls twice for one vendor sentence; that must not spend a round.
+  const ask = Number(args.price_per_unit);
+  if (rt.lastReply && args.vendor_sentence && ask === rt.lastAsk && String(args.vendor_sentence) === rt.lastVendorSentence) {
+    return rt.lastReply;
+  }
+  const reply = applyVendorOffer(rt, args);
+  rt.lastReply = reply;
+  rt.lastVendorSentence = args.vendor_sentence ? String(args.vendor_sentence) : null;
+  return reply;
 }
+
+/** Prices a simulated vendor can have said: its scheduled asks, or a buyer counter it accepted. */
+function simulatedPrices(rt) {
+  return new Set([...(rt.vendorSchedule ?? []), ...rt.moves.filter((m) => m.action === "counter").map((m) => m.price)]);
+}
+
+const MAX_PRICE_CLARIFICATIONS = 2;
 
 function applyVendorOffer(rt, args) {
   const unit = unitSpoken(rt);
   if (rt.state !== "open") {
     return { action: rt.state === "agreed" ? "accept" : "walk_away", price: rt.agreedPrice ?? null, final: true, say: "" };
   }
+  rt.lastTurnAt = Date.now();
   if (args.unit && !sameUnit(args.unit, rt.requirement.unit)) {
-    return { action: "clarify", price: null, round: rt.round, say: buyerLine("clarify_unit", rt.language, { unit }) };
+    return { action: "clarify", price: null, round: rt.round, say: spokenLine(rt, buyerLine("clarify_unit", rt.language, { unit })) };
   }
   const ask = Number(args.price_per_unit);
+  // A simulated vendor only ever says its scheduled asks or accepts a counter. Anything else was
+  // misheard (spoken numbers through ASR): ask again rather than spend a round or agree to it.
+  if (rt.counterpart === "simulated" && !simulatedPrices(rt).has(ask) && (rt.priceClarifications ?? 0) < MAX_PRICE_CLARIFICATIONS) {
+    rt.priceClarifications = (rt.priceClarifications ?? 0) + 1;
+    progress(rt, `Round ${Math.min(rt.round, MAX_ROUNDS)}: heard ${money(ask)} per ${rt.requirement.unit}, which the simulated vendor never offered; asking again.`, { round: rt.round, heard: ask });
+    return { action: "clarify", price: null, round: rt.round, say: spokenLine(rt, buyerLine("clarify_price", rt.language, { unit })) };
+  }
   rt.askHistory.push(ask);
   if (args.freight != null) rt.terms.freight = args.freight;
   if (args.lead_time_days != null) rt.terms.lead_time_days = args.lead_time_days;
-  if (args.vendor_sentence) rt.vendorSentences.push(String(args.vendor_sentence));
 
+  // A simulated vendor's only final price is its last scheduled ask (its floor); a model that
+  // calls an earlier ask "final" is not believed.
+  const vendorSaysFinal = Boolean(args.is_final) && (rt.counterpart !== "simulated" || ask <= rt.vendorPolicy.floor);
   const round = Math.min(rt.round, MAX_ROUNDS);
   const move = strategy.buyerMove({
     round,
     maxRounds: MAX_ROUNDS,
     open: rt.open,
     reservation: rt.reservation,
+    ceiling: rt.ceiling,
+    tick: rt.tick,
     vendorAsk: ask,
-    vendorSaysFinal: Boolean(args.is_final),
+    vendorSaysFinal,
     askHistory: rt.askHistory,
   });
   rt.round += 1;
@@ -210,6 +258,7 @@ function applyVendorOffer(rt, args) {
     rt.state = "agreed";
     rt.agreedPrice = move.price;
     rt.decidedAt = Date.now();
+    rt.acceptVendorSentence = args.vendor_sentence ? String(args.vendor_sentence) : null;
     say = buyerLine("accept", rt.language, { price: money(move.price), unit });
   } else if (move.action === "walk_away") {
     rt.state = "walked_away";
@@ -220,8 +269,34 @@ function applyVendorOffer(rt, args) {
     rt.lastBuyerOffer = move.price;
     say = buyerLine("counter", rt.language, { price: money(move.price), unit });
   }
-  rt.pendingOffer = { vendorAsk: ask, buyerPrice: move.price, action: move.action };
+  if (move.action === "accept") rt.acceptSay = say.trim();
+  spokenLine(rt, say, move.price);
+  rt.pendingOffer = { vendorAsk: ask, buyerPrice: move.price, action: move.action, say: say.trim() };
+  progress(rt, roundSummary(rt, round, ask, move), { round, vendorAsk: ask, action: move.action, price: move.price, reason: move.reason, unit: rt.requirement.unit });
   return { action: move.action, price: move.price, unit: rt.requirement.unit, round, reason: move.reason, say };
+}
+
+/** "Round 2: simulated vendor asks 61 per kg; Sahay offers 52." for the Jobs panel. */
+function roundSummary(rt, round, ask, move) {
+  const who = rt.counterpart === "simulated" ? "simulated vendor" : "vendor";
+  const unit = rt.requirement.unit;
+  const reply =
+    move.action === "accept"
+      ? `Sahay agrees at ${money(move.price)}, pending the owner's approval`
+      : move.action === "walk_away"
+        ? `Sahay walks away (${move.reason})`
+        : `Sahay offers ${money(move.price)}`;
+  return `Round ${round}: ${who} asks ${money(ask)} per ${unit}; ${reply}.`;
+}
+
+/** A job.progress line for the negotiation job; never lets a finished or cancelled job break a turn. */
+function progress(rt, message, data) {
+  if (!rt.job) return;
+  try {
+    rt.job.progress(message, data);
+  } catch {
+    /* the job was cancelled or has finished; the turn itself is still recorded */
+  }
 }
 
 /* ------------------------------------------------------------- turns --- */
@@ -235,6 +310,7 @@ function recordTurn(rt, { speaker, text, offer = null }) {
     ...(offer != null ? { offer, unit: rt.requirement.unit } : {}),
   };
   rt.turns.push(turn);
+  rt.lastTurnAt = Date.now();
   repo.appendNegotiationTurn(rt.businessId, rt.negotiationId, turn);
   events.emit(
     rt.businessId,
@@ -264,10 +340,18 @@ function ingestHistory(rt, contents) {
     const key = `${item.turn_id ?? ""}|${item.role}|${item.timestamp ?? ""}|${item.content.length}`;
     if (rt.seenHistory.has(key)) continue;
     rt.seenHistory.add(key);
+    // An agent line is matched to the tool reply whose `say` it speaks; /history can lag behind
+    // the tool calls, so "the latest reply" may already belong to a later round.
     let offer = null;
-    if (speaker === "agent" && rt.pendingOffer) {
-      offer = rt.pendingOffer.buyerPrice;
-      rt.pendingOffer = null;
+    if (speaker === "agent") {
+      const text = item.content.trim();
+      if (rt.sayPrices.has(text)) {
+        offer = rt.sayPrices.get(text);
+        if (rt.pendingOffer?.say === text) rt.pendingOffer = null;
+      } else if (rt.pendingOffer) {
+        offer = rt.pendingOffer.buyerPrice; // the model paraphrased: best effort
+        rt.pendingOffer = null;
+      }
     }
     recordTurn(rt, { speaker, text: item.content.trim(), offer });
     if (speaker === "vendor") vendorTurns += 1;
@@ -384,16 +468,26 @@ async function runAgents(rt, job) {
   }
 
   const started = Date.now();
+  rt.lastTurnAt = started;
   let vendorTurns = 0;
   for (;;) {
     await sleep(timing.pollMs, job.signal);
     vendorTurns += ingestHistory(rt, await agent.history(negotiatorId));
-    if (rt.state !== "open" && (rt.closingSpokenAt ? Date.now() - rt.closingSpokenAt >= timing.closingGraceMs : Date.now() - rt.decidedAt > 20000)) return "agents";
-    if (rt.counterpart === "human" && !rt.humanJoinedAt && Date.now() - started > timing.humanJoinMs) {
+    const now = Date.now();
+    if (rt.state !== "open" && (rt.closingSpokenAt ? now - rt.closingSpokenAt >= timing.closingGraceMs : now - rt.decidedAt > 20000)) return "agents";
+    if (rt.counterpart === "human" && !rt.humanJoinedAt && now - started > timing.humanJoinMs) {
       throw new Error("The vendor did not open the join link in time.");
     }
-    if (rt.counterpart === "simulated" && vendorTurns === 0 && Date.now() - started > timing.stallMs) return "stalled";
-    if (Date.now() - (rt.humanJoinedAt ?? started) > timing.maxMs) return "timeout";
+    if (rt.state === "open" && rt.counterpart === "simulated") {
+      // E2E r2: one run sat 4 m 53 s between an agent counter and the next vendor turn.
+      if (vendorTurns === 0 && now - started > timing.stallMs) return "stalled";
+      if (vendorTurns > 0 && now - rt.lastTurnAt > timing.turnStallMs) {
+        rt.stallNote = `no new turn for ${Math.round((now - rt.lastTurnAt) / 1000)} s after round ${Math.min(rt.round, MAX_ROUNDS)}`;
+        return "stalled";
+      }
+    }
+    if (rt.state === "open" && rt.counterpart === "human" && rt.humanJoinedAt && now - Math.max(rt.lastTurnAt, rt.humanJoinedAt) > timing.humanTurnStallMs) return "timeout";
+    if (now - (rt.humanJoinedAt ?? started) > timing.maxMs) return "timeout";
   }
 }
 
@@ -408,9 +502,14 @@ async function kickOff(rt) {
   });
 }
 
-/** Mode "loop": the server plays both sides with strategy.js and voices each line with /speak. */
+/**
+ * Mode "loop": the server plays both sides with strategy.js and voices each line with /speak.
+ * It starts from the runtime's current state, so after an agents-mode stall it continues at
+ * the same round with the same last offer (and does not repeat the disclosure or the opening).
+ */
 async function runLoop(rt, job) {
   if (rt.counterpart !== "simulated") throw new Error("The server-driven loop can only voice a simulated vendor.");
+  rt.mode = "loop";
   // Agents that listen to a uid nobody uses: they only speak what /speak sends. That uid never
   // joins, so idle_timeout is 0 (never) and the finally block of the job always calls /leave.
   const buyer = rt.agents.negotiator ?? (await startNegotiatorAgent(rt, { remoteUid: UIDS.nobody, withTools: false, idleTimeout: 0 }));
@@ -426,19 +525,18 @@ async function runLoop(rt, job) {
     await say("vendor", seller, vendorAgent.introText(rt.language));
     rt.introduced = true;
   }
-  await say("agent", buyer, brief({ businessId: rt.businessId, sessionId: rt.sessionId }).say);
+  if (!rt.openingSaid) await say("agent", buyer, brief({ businessId: rt.businessId, sessionId: rt.sessionId }).say);
 
-  let vendorRound = 1;
+  // rt.round only moves in applyVendorOffer, so the vendor's round and the buyer's stay in step.
   while (rt.state === "open") {
     job.signal.throwIfAborted();
     const turn = vendorAgent.vendorTurn({
       policy: rt.vendorPolicy,
-      round: vendorRound,
+      round: rt.round,
       buyerOffer: rt.lastBuyerOffer ?? null,
       language: rt.language,
       unitSpoken: unitSpoken(rt),
     });
-    vendorRound += 1;
     await say("vendor", seller, turn.text, turn.price);
     const move = applyVendorOffer(rt, { price_per_unit: turn.price, is_final: turn.final, vendor_sentence: turn.text });
     rt.pendingOffer = null;
@@ -463,49 +561,79 @@ function saidByVendor(sentence, turns) {
   return turns.some((t) => t.speaker === "vendor" && normalise(t.text).includes(wanted));
 }
 
-const EXTRACT_SYSTEM = [
+/**
+ * The vendor line that produced the accept: the vendor turn just before the agent's accept line
+ * (the turn that speaks the accept `say` text), else the sentence the negotiator passed to
+ * record_vendor_offer, else the last vendor turn. Never a model's re-copy.
+ * Returns { sentence, heard } where heard says it is a recorded vendor turn.
+ */
+function acceptingVendorSentence(rt) {
+  const acceptAt = rt.acceptSay ? rt.turns.findIndex((t) => t.speaker === "agent" && t.text.trim() === rt.acceptSay) : -1;
+  if (acceptAt > 0) {
+    const vendorTurn = rt.turns.slice(0, acceptAt).findLast((t) => t.speaker === "vendor");
+    if (vendorTurn) return { sentence: vendorTurn.text, heard: true };
+  }
+  if (rt.acceptVendorSentence) return { sentence: rt.acceptVendorSentence, heard: saidByVendor(rt.acceptVendorSentence, rt.turns) };
+  const lastVendor = rt.turns.findLast((t) => t.speaker === "vendor");
+  return lastVendor ? { sentence: lastVendor.text, heard: true } : { sentence: null, heard: false };
+}
+
+const TERMS_SYSTEM = [
   "You read the transcript of a purchase negotiation between a buyer (AGENT) and a vendor (VENDOR).",
-  "Extract the final price the vendor agreed to, per unit, only as stated in the transcript.",
-  "quoted_sentence must be copied character for character from one VENDOR line: the line where the vendor stated or accepted that price.",
-  "Use null for anything the transcript does not state. Never estimate. confidence is 0 to 1.",
+  "Extract only the terms the VENDOR stated besides the price: freight in rupees for the whole order, delivery time in days, minimum order quantity, payment terms.",
+  "Use null for anything the vendor did not state. Never estimate.",
 ].join(" ");
-const EXTRACT_HINT =
-  '{"unit_price": 185, "unit": "kg", "moq": null, "lead_time_days": null, "freight": null, "payment_terms": null, "quoted_sentence": "...", "confidence": 0.9}';
+const TERMS_HINT = '{"freight": null, "lead_time_days": null, "moq": null, "payment_terms": null}';
+
+/** Optional terms of a human run read from the transcript by a model. Prices never come from here. */
+async function extractTerms(rt, signal) {
+  const transcript = rt.turns.map((t) => `${t.speaker === "vendor" ? "VENDOR" : "AGENT"}: ${t.text}`).join("\n");
+  const fields = await llm.completeJSON({ system: TERMS_SYSTEM, user: transcript, schemaHint: TERMS_HINT, signal });
+  return {
+    freight: Number.isFinite(fields?.freight) && fields.freight >= 0 ? fields.freight : null,
+    lead_time_days: Number.isInteger(fields?.lead_time_days) && fields.lead_time_days >= 0 ? fields.lead_time_days : null,
+    moq: Number.isFinite(fields?.moq) && fields.moq > 0 ? fields.moq : null,
+    payment_terms: typeof fields?.payment_terms === "string" && fields.payment_terms.trim() ? fields.payment_terms.trim() : null,
+  };
+}
 
 /**
- * Work out the quote. Loop mode knows every figure (no model); agents mode asks
- * llm.completeJSON and cross-checks it against the price agreed in code.
- * Returns { quote fields } or { rejected: reason }.
+ * Work out the quote. The price is rt.agreedPrice, set in code when record_vendor_offer (or the
+ * loop) accepted; it is checked against the owner's limits and, for a simulated vendor, against
+ * the prices the simulation could have said. Returns { quote fields } or { rejected: reason }.
  */
 async function extractQuote(rt, mode, signal) {
   if (rt.state !== "agreed") return { rejected: rt.state === "walked_away" ? `walked_away:${rt.walkReason}` : "no_agreement" };
-  const lastVendor = [...rt.turns].reverse().find((t) => t.speaker === "vendor");
-  let fields;
-  if (mode === "loop") {
-    fields = { unit_price: rt.agreedPrice, unit: rt.requirement.unit, quoted_sentence: lastVendor?.text ?? null, confidence: 1, freight: null, lead_time_days: null, moq: null, payment_terms: null };
-  } else {
-    const transcript = rt.turns.map((t) => `${t.speaker === "vendor" ? "VENDOR" : "AGENT"}: ${t.text}`).join("\n");
-    fields = await llm.completeJSON({ system: EXTRACT_SYSTEM, user: transcript, schemaHint: EXTRACT_HINT, signal });
-  }
-  const price = Number(fields.unit_price);
-  if (!Number.isFinite(price) || price <= 0) return { rejected: "no_price_in_transcript" };
-  if (Math.abs(price - rt.agreedPrice) > Math.max(0.01, rt.agreedPrice * 0.005)) return { rejected: "price_differs_from_agreed", extracted: price, agreed: rt.agreedPrice };
+  const price = rt.agreedPrice;
+  if (!Number.isFinite(price) || price <= 0) return { rejected: "no_agreed_price" };
   if (price > rt.reservation) return { rejected: "above_reservation" };
   if (rt.requirement.max_price != null && price > rt.requirement.max_price) return { rejected: "above_owner_max" };
-  if (fields.unit && !sameUnit(fields.unit, rt.requirement.unit)) return { rejected: "unit_mismatch" };
-  if (!fields.quoted_sentence || !saidByVendor(fields.quoted_sentence, rt.turns)) return { rejected: "quoted_sentence_not_in_transcript" };
+  if (rt.counterpart === "simulated" && !simulatedPrices(rt).has(price)) {
+    return { rejected: "price_not_offered_by_simulated_vendor", agreed: price };
+  }
+  const { sentence, heard } = acceptingVendorSentence(rt);
+  if (!sentence) return { rejected: "no_vendor_sentence" };
 
-  const freight = rt.terms.freight ?? (Number.isFinite(fields.freight) ? fields.freight : null);
-  const leadTime = rt.terms.lead_time_days ?? (Number.isInteger(fields.lead_time_days) ? fields.lead_time_days : null);
+  let terms = { freight: null, lead_time_days: null, moq: null, payment_terms: null };
+  let termsNote = null;
+  // A simulated vendor states no terms (its prompt forbids them), so there is nothing to read.
+  if (mode !== "loop" && rt.counterpart === "human") {
+    try {
+      terms = await extractTerms(rt, signal);
+    } catch (err) {
+      termsNote = `terms_not_read: ${err.message}`;
+    }
+  }
   return {
-    unit_price: rt.agreedPrice,
+    unit_price: price,
     unit: rt.requirement.unit,
-    moq: Number.isFinite(fields.moq) ? fields.moq : null,
-    lead_time_days: leadTime,
-    freight,
-    payment_terms: typeof fields.payment_terms === "string" ? fields.payment_terms : null,
-    quoted_sentence: fields.quoted_sentence,
-    confidence: Number.isFinite(fields.confidence) ? Math.max(0, Math.min(1, fields.confidence)) : null,
+    moq: terms.moq,
+    lead_time_days: rt.terms.lead_time_days ?? terms.lead_time_days,
+    freight: rt.terms.freight ?? terms.freight,
+    payment_terms: terms.payment_terms,
+    quoted_sentence: sentence,
+    confidence: heard ? 1 : 0.7,
+    ...(termsNote ? { termsNote } : {}),
   };
 }
 
@@ -517,6 +645,9 @@ async function finish(rt, mode, signal) {
   } catch (err) {
     extracted = { rejected: `extraction_failed: ${err.message}` };
   }
+  const { termsNote = null, ...fields } = extracted;
+  extracted = fields;
+  if (termsNote) progress(rt, `Agreed; optional terms could not be read from the transcript (${termsNote}).`);
   if (!extracted.rejected) {
     const { landed_cost } = computeLandedCost({ unit_price: extracted.unit_price, unit: extracted.unit, freight: extracted.freight }, rt.requirement);
     quote = repo.createQuote(rt.businessId, {
@@ -549,26 +680,70 @@ async function finish(rt, mode, signal) {
 
 /* ------------------------------------------------------------ the job --- */
 
-function negotiationMode() {
-  return config.negotiation?.mode === "loop" ? "loop" : "agents";
+/** A human is always met by the agents mode; a simulated vendor by the loop unless NEGOTIATION_MODE=agents. */
+function negotiationMode(counterpart) {
+  return counterpart === "simulated" && config.negotiation?.mode !== "agents" ? "loop" : "agents";
+}
+
+/**
+ * The negotiation is over for this process: its session is ended and it no longer blocks the
+ * next one. Idempotent; called before the outcome is announced so that "negotiate again" right
+ * after a walk-away is not refused as busy.
+ */
+function release(rt) {
+  if (rt.released) return;
+  rt.released = true;
+  repo.updateSession(rt.businessId, rt.sessionId, { status: "ended", ended_at: new Date().toISOString() });
+  runtimes.delete(rt.sessionId);
+  if (rt.joinCode) joinCodes.delete(rt.joinCode);
+}
+
+/**
+ * Diagnosis for a stall: the last two /history items each agent has (what each one last heard
+ * or said), so the next stalled run shows which side stopped hearing the other.
+ */
+async function lastHeard(rt) {
+  const out = {};
+  for (const role of ["negotiator", "vendor"]) {
+    if (!rt.agents[role]) continue;
+    try {
+      const items = await agent.history(rt.agents[role]);
+      out[role] = items.slice(-2).map((i) => ({ role: i?.role ?? null, source: i?.metadata?.source ?? null, timestamp: i?.timestamp ?? null, text: String(i?.content ?? "").slice(0, 200) }));
+    } catch (err) {
+      out[role] = { error: err.message };
+    }
+  }
+  return out;
 }
 
 async function runNegotiation(rt, job) {
+  rt.job = job;
   try {
-    let mode = negotiationMode() === "loop" && rt.counterpart === "simulated" ? "loop" : "agents";
+    let mode = negotiationMode(rt.counterpart);
+    rt.mode = mode;
+    const who = rt.counterpart === "simulated" ? `${rt.vendor.name} (simulated vendor)` : rt.vendor.name;
+    job.progress(`Negotiating with ${who}: ${mode === "loop" ? "server-driven turns" : "two live agents"}, at most ${MAX_ROUNDS} rounds.`, { mode, maxRounds: MAX_ROUNDS });
     let ended = mode === "loop" ? await runLoop(rt, job) : await runAgents(rt, job);
     if (ended === "stalled") {
-      job.progress("The two agents could not hear each other; switching to the server-driven negotiation.", { mode: "loop" });
+      rt.mode = "loop"; // late tool calls from the stopped negotiator are ignored from here on
+      job.progress(
+        rt.stallNote
+          ? `The agents went quiet (${rt.stallNote}); switching to the server-driven negotiation from round ${Math.min(rt.round, MAX_ROUNDS)}.`
+          : "The two agents could not hear each other; switching to the server-driven negotiation.",
+        { mode: "loop", round: rt.round, lastHeard: await lastHeard(rt) },
+      );
+      // Stop the listening agents first: a model that hears the server's lines would answer them.
+      await stopAgents(rt);
       mode = "loop";
       ended = await runLoop(rt, job);
     }
     if (ended === "timeout") job.progress("The negotiation ran out of time.");
+    await stopAgents(rt);
+    release(rt);
     return await finish(rt, mode, job.signal);
   } finally {
     await stopAgents(rt);
-    repo.updateSession(rt.businessId, rt.sessionId, { status: "ended", ended_at: new Date().toISOString() });
-    runtimes.delete(rt.sessionId);
-    if (rt.joinCode) joinCodes.delete(rt.joinCode);
+    release(rt);
   }
 }
 
@@ -600,9 +775,11 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   }
 
   const listed = comparableListedPrice(vendor, requirement.unit);
+  const marketEvidence = listed?.value ?? null;
   let reservation;
   try {
-    reservation = strategy.reservationPrice({ ownerMax: requirement.max_price ?? null, marketEvidence: listed?.value ?? null });
+    // The owner's maximum is the hard ceiling; without one, the listed price.
+    reservation = strategy.reservationPrice({ ownerMax: requirement.max_price ?? null, marketEvidence });
   } catch {
     throw new ToolError("MAX_PRICE_NEEDED", MAX_PRICE_NEEDED[lang], { status: 400, message: "Neither a maximum price nor a comparable listed price is known." });
   }
@@ -611,9 +788,11 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     if (!listed) {
       throw new ToolError("NO_LISTED_PRICE", NO_LISTED_PRICE[lang], { status: 400, message: `The listing has no price per ${requirement.unit} to base a simulated vendor on.` });
     }
-    policy = vendorAgent.vendorPolicy(listed.value);
+    policy = vendorAgent.vendorPolicy(listed.value, MAX_ROUNDS);
   }
-  const open = strategy.openingOffer({ target: requirement.target_price ?? null, reservation });
+  const ceiling = strategy.softCeiling({ reservation, marketEvidence });
+  const tick = strategy.priceTick(ceiling);
+  const open = strategy.openingOffer({ target: requirement.target_price ?? null, reservation, marketEvidence, tick });
   const business = repo.getBusiness(businessId);
 
   const channel = `neg-${crypto.randomBytes(6).toString("hex")}`;
@@ -632,16 +811,19 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     counterpart,
     language: negotiationLanguage,
     reservation,
+    ceiling,
+    tick,
     open,
     vendorPolicy: policy,
-    vendorSchedule: policy ? vendorAgent.askSchedule(policy, MAX_ROUNDS) : null,
+    vendorSchedule: policy ? vendorAgent.askSchedule(policy) : null,
     round: 1,
     askHistory: [],
     moves: [],
     turns: [],
     terms: {},
-    vendorSentences: [],
     seenHistory: new Set(),
+    sayPrices: new Map(), // tool `say` text -> the buyer price it speaks
+    lastTurnAt: Date.now(),
     serverLines: new Set(),
     state: "open",
     agents: { negotiator: null, vendor: null },

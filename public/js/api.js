@@ -86,6 +86,14 @@ export function getVoiceToken() {
   return request("POST", "/api/voice/token", {});
 }
 
+/**
+ * Token renewal for a live call: POST /api/voice/token { channel } -> same shape as above,
+ * for the same channel and uid; 409 CALL_ENDED when the server no longer holds that call.
+ */
+export function renewVoiceToken(channel) {
+  return request("POST", "/api/voice/token", { channel });
+}
+
 /** Step 2, after the browser has joined and subscribed: POST /api/voice/start { channel } -> { agentId, agentUid, channel }. */
 export function startVoice(channel) {
   // The agent join plus the spoken disclosure can take a while.

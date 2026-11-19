@@ -25,6 +25,11 @@ function h(tag, props, ...children) {
   append(el, children);
   return el;
 }
+/** replaceChildren that skips null/false children (DOM replaceChildren would print "null"). */
+function fill(el, ...children) {
+  el.replaceChildren();
+  append(el, children);
+}
 function append(el, children) {
   for (const c of children) {
     if (c === null || c === undefined || c === false) continue;
@@ -189,7 +194,7 @@ const state = {
   copyUi: new Map(),
   call: {
     status: "idle", agentState: null, muted: false, lang: null, langSource: null,
-    error: null, note: null, autoplay: false, issues: [], metrics: {}, transcriptLink: true,
+    error: null, note: null, ended: null, autoplay: false, issues: [], metrics: {}, transcriptLink: true,
   },
   transcript: [],
 };
@@ -265,7 +270,13 @@ function normJob(d) {
   const progress = parseMaybeJson(pick(j, "progress"));
   const entries = Array.isArray(progress) ? progress.filter((e) => e && typeof e === "object") : [];
   let last = entries.length ? entries[entries.length - 1] : null;
+  // job.progress as emitted by src/jobs.js: { jobId, kind, message, data? }.
   if (typeof pick(j, "message") === "string") last = { message: j.message, data: j.data && typeof j.data === "object" ? j.data : null };
+  // job.* per architecture.md: { jobId, kind, status, progress: { message, done?, total?, pct?, ... } }.
+  if (progress && typeof progress === "object" && !Array.isArray(progress) && typeof progress.message === "string") {
+    const { message, data, ...rest } = progress;
+    last = { message, data: { ...rest, ...(data && typeof data === "object" ? data : {}) } };
+  }
   let joinUrl = null;
   for (const e of [...entries, last]) {
     const u = e && e.data && typeof e.data === "object" ? e.data.joinUrl : null;
@@ -277,6 +288,8 @@ function normJob(d) {
     kind: pick(j, "kind"),
     status: pick(j, "status"),
     progressMessage: last && typeof last.message === "string" ? last.message : undefined,
+    // Snapshot rows carry the whole history; live events add one line each (see applyEvent).
+    progressLog: entries.length ? entries.filter((e) => typeof e.message === "string" && e.message).map((e) => ({ ts: e.ts ?? null, message: e.message })) : undefined,
     progressData: last && last.data && typeof last.data === "object" ? last.data : undefined,
     error: pick(j, "error"),
     createdAt: pick(j, "created_at", "createdAt"),
@@ -300,6 +313,7 @@ function normVendor(v) {
     rating: num(pick(v, "rating")),
     ratingCount: num(pick(v, "rating_count", "ratingCount")),
     sourceUrl: pick(v, "source_url", "sourceUrl"),
+    rank: num(pick(v, "rank")),
     source: pick(v, "source"),
     kind: pick(v, "kind"),
     score: num(pick(v, "score")),
@@ -497,7 +511,15 @@ function applyEvent(evt, { live = true } = {}) {
         const failed = [...state.jobs.values()].find((x) => x.kind === j.kind && x.status === "failed");
         if (failed) state.adapt.push({ ts: evt.ts, text: `Retried ${kindLabel(j.kind).toLowerCase()} after a failure` });
       }
+      if (j.progressMessage && !j.progressLog) {
+        const log = prev && Array.isArray(prev.progressLog) ? prev.progressLog : [];
+        const lastLine = log[log.length - 1];
+        j.progressLog = lastLine && lastLine.message === j.progressMessage ? log : [...log, { ts: evt.ts ?? null, message: j.progressMessage }];
+      }
       merge(state.jobs, j);
+      // The live vendor.found stream arrives in discovery order; the snapshot carries the
+      // ranked order (scoring.rankVendors) the agent speaks from.
+      if (live && type === "job.done" && j.kind === "sourcing") scheduleResync();
       invalidate("jobs", "plan", "vendors", "negotiation");
       break;
     }
@@ -585,6 +607,9 @@ function applyEvent(evt, { live = true } = {}) {
     case "session.ended": {
       if (pick(d, "kind") === "owner") {
         state.voiceServer = type === "session.started" ? { channel: pick(d, "channel"), active: true } : null;
+        // Closed from another tab or by the server while this tab still holds the call. A tab that
+        // pressed End itself is already "ending" or "idle" here, so endedByServer ignores it.
+        if (live && type === "session.ended") call.endedByServer(pick(d, "channel"));
         invalidate("call");
       }
       break;
@@ -790,7 +815,8 @@ RENDERERS.call = () => {
   const [orbState, label, sub] = view;
   $("orb").dataset.state = orbState;
   $("orb-label").textContent = label;
-  $("orb-sub").textContent = c.status === "idle" && c.note ? `${c.note} ${sub}` : sub;
+  $("orb-sub").textContent = c.status === "idle" && c.ended ? "The call ended. Press Start call to talk to Sahay again."
+    : c.status === "idle" && c.note ? `${c.note} ${sub}` : sub;
 
   const ready = state.boot === "ready";
   const btn = $("call-btn");
@@ -856,7 +882,14 @@ RENDERERS.call = () => {
       h("div", { class: "body" }, h("strong", { text: "Transcript link interrupted" }),
         h("span", { text: "Audio continues. The transcript catches up when the link is back." }))));
   }
+  if (c.status === "idle" && c.ended) {
+    issues.push(h("div", { class: "notice error", role: "alert" }, icon("alert", 20),
+      h("div", { class: "body" },
+        h("strong", { text: "The call ended. Start a new call to continue." }),
+        c.ended.reason ? h("span", { text: `${c.ended.reason} Nothing you say now reaches Sahay.` }) : h("span", { text: "Nothing you say now reaches Sahay." }))));
+  }
   for (const i of c.issues) {
+    if (c.status === "idle" && c.ended) break; // stale in-call warnings would only confuse
     issues.push(h("div", { class: "notice warn" }, icon("alert", 20),
       h("div", { class: "body" }, h("strong", { text: issueTitle(i.source) }), scripted("span", i.message))));
   }
@@ -1016,7 +1049,7 @@ RENDERERS.requirement = () => {
   const earlier = state.requirements
     .filter((x) => String(x.id) !== String(r.id))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  box.replaceChildren(
+  fill(box,
     h("dl", { class: "facts" }, ...facts.map(([k, v, mono]) => h("div", { class: "fact" }, h("dt", { text: k }), scripted("dd", v, { class: mono ? "mono" : undefined })))),
     r.notes ? scripted("p", r.notes, { class: "row-meta" }) : null,
     missing.length ? h("div", { class: "notice warn" }, icon("alert", 20),
@@ -1029,6 +1062,18 @@ RENDERERS.requirement = () => {
 };
 
 const JOB_CHIP = { queued: "", running: "amber", done: "jade", failed: "terra", cancelled: "" };
+
+/** Earlier progress lines of a job, newest first, below the current one. */
+const JOB_HISTORY_LINES = 4;
+function jobHistory(j) {
+  const log = Array.isArray(j.progressLog) ? j.progressLog : [];
+  const earlier = log.slice(0, -1).filter((e) => e.message !== progressText(j)).slice(-JOB_HISTORY_LINES).reverse();
+  if (!earlier.length) return null;
+  return h("ol", { class: "job-log", "aria-label": `Earlier ${kindLabel(j.kind).toLowerCase()} progress` },
+    ...earlier.map((e) => h("li", {},
+      e.ts && clock(e.ts) ? h("span", { class: "mono job-log-time", text: clock(e.ts) }) : null,
+      scripted("span", e.message))));
+}
 
 RENDERERS.jobs = () => {
   const box = $("jobs-body");
@@ -1050,17 +1095,32 @@ RENDERERS.jobs = () => {
         h("span", { class: `chip ${JOB_CHIP[status] || ""}` }, status === "running" ? h("span", { class: "spinner", "aria-hidden": "true", style: "width:12px;height:12px;border-width:2px" }) : null, status)),
       status === "failed"
         ? scripted("p", j.error ? String(j.error) : "The job stopped with an error.", { class: "row-meta", style: "color:var(--terra)" })
-        : (progressText(j) ? scripted("p", progressText(j), { class: "row-meta" }) : null),
+        : (progressText(j) ? scripted("p", progressText(j), { class: "row-meta job-now", "aria-live": status === "running" ? "polite" : undefined }) : null),
+      jobHistory(j),
       status === "failed" || status === "cancelled" ? null : h("div", { class: `bar${bar === null && status === "running" ? " indeterminate" : ""}`, role: "progressbar", "aria-label": `${kindLabel(j.kind)} progress`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": bar === null ? undefined : String(Math.round(bar * 100)) },
         h("span", { style: bar === null ? undefined : `width:${Math.round(bar * 100)}%` })),
       h("p", { class: "row-meta mono", style: "font-size:13px" }, j.createdAt ? `Started ${clock(j.createdAt) || ""}` : "", j.updatedAt && j.updatedAt !== j.createdAt ? ` · updated ${clock(j.updatedAt) || ""}` : ""));
   })));
 };
 
+/**
+ * The server's rank (scoring.rankVendors, the order the agent speaks from) when the snapshot
+ * gave one. Vendors streamed in by vendor.found before the post-sourcing resync have none
+ * yet: they follow by score, rating, then name, so the panel never depends on arrival order.
+ */
+function sortVendors(list) {
+  const desc = (a, b) => (b ?? -Infinity) - (a ?? -Infinity);
+  return list.sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity)
+    || desc(a.score, b.score)
+    || desc(a.rating, b.rating)
+    || desc(a.ratingCount, b.ratingCount)
+    || String(a.name ?? "").localeCompare(String(b.name ?? ""), "en-IN")
+    || String(a.id).localeCompare(String(b.id)));
+}
+
 RENDERERS.vendors = () => {
   const box = $("vendors-body");
-  const vendors = [...state.vendors.values()];
-  vendors.sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+  const vendors = sortVendors([...state.vendors.values()]);
   setCount("vendors-count", vendors.length);
   if (bootStates(box, "vendors")) return;
   if (!vendors.length) {
@@ -1080,7 +1140,7 @@ RENDERERS.vendors = () => {
     const simulated = v.kind === "simulated" || v.source === "simulated";
     return h("li", { class: "vendor" },
       h("div", { class: "row-head" },
-        h("span", { class: "vendor-rank mono", text: `#${i + 1}` }),
+        h("span", { class: "vendor-rank mono", text: `#${v.rank ?? i + 1}` }),
         simulated ? h("span", { class: "chip sim", text: "Simulated vendor" }) : v.kind === "human" ? h("span", { class: "chip info", text: "Joins by link" }) : null,
         v.score !== null ? h("span", { class: "chip", text: `Score ${qtyFmt.format(v.score)}` }) : null),
       scripted("p", v.name || "Unnamed listing", { class: "vendor-name" }),
@@ -1234,7 +1294,7 @@ RENDERERS.approval = () => {
     if (latest.reason) parts.push(scripted("p", String(latest.reason), { class: "row-meta" }));
     if (latest.evidence) parts.push(h("p", { class: "evidence" }, "Your words: ", h("q", {}, scripted("span", String(latest.evidence)))));
   }
-  box.replaceChildren(...parts);
+  fill(box, ...parts);
 };
 
 async function decide(id, decision) {
@@ -1426,7 +1486,7 @@ function auditSummary(r) {
   switch (r.type) {
     case "requirement.saved": { const q = normRequirement(d); return q ? [q.item, qty(q.quantity, q.unit), q.city].filter(Boolean).join(", ") : null; }
     case "job.started": case "job.done": case "job.cancelled": return kindLabel(pick(d, "kind"));
-    case "job.progress": return [kindLabel(pick(d, "kind")), pick(d, "message")].filter(Boolean).join(": ");
+    case "job.progress": return [kindLabel(pick(d, "kind")), pick(d, "message") ?? pick(pick(d, "progress"), "message")].filter(Boolean).join(": ");
     case "job.failed": return [kindLabel(pick(d, "kind")), pick(d, "error")].filter(Boolean).join(": ");
     case "vendor.found": { const v = normVendor(d.vendor || {}); return [v.name, v.city].filter(Boolean).join(", ") || null; }
     case "negotiation.turn": {
@@ -1455,8 +1515,14 @@ const call = new VoiceCall({
     const c = state.call;
     c.status = status;
     if (status === "error") c.error = detail.error || null;
-    if (status === "idle") { c.note = detail.note || null; c.agentState = null; }
-    if (status === "mic") { c.error = null; c.note = null; c.issues = []; c.metrics = {}; c.lang = null; c.langSource = null; c.transcriptLink = true; c.muted = false; state.transcript = []; }
+    if (status === "idle") {
+      c.note = detail.note || null;
+      c.agentState = null;
+      // The owner did not press End: say plainly that nothing more reaches Sahay.
+      c.ended = detail.unexpected ? { reason: detail.note || null } : null;
+    }
+    if (status === "error") c.ended = null;
+    if (status === "mic") { c.ended = null; c.error = null; c.note = null; c.issues = []; c.metrics = {}; c.lang = null; c.langSource = null; c.transcriptLink = true; c.muted = false; state.transcript = []; }
     if (status === "error" || status === "idle") c.muted = false;
     invalidate("call", "transcript", "plan");
   },

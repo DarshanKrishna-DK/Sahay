@@ -42,7 +42,7 @@ const SAY = {
     "en-IN": "That information is incomplete or not valid, please say it again.",
   },
   not_approved: {
-    "hi-IN": "इस सौदे की मंज़ूरी अभी नहीं मिली है, इसलिए मैं ऑर्डर नहीं बना सकता।",
+    "hi-IN": "इस सौदे की मंज़ूरी अभी नहीं मिली है, इसलिए मैं ऑर्डर नहीं बना सकती।",
     "kn-IN": "ಈ ವ್ಯವಹಾರಕ್ಕೆ ಇನ್ನೂ ಒಪ್ಪಿಗೆ ಸಿಕ್ಕಿಲ್ಲ, ಹಾಗಾಗಿ ಆರ್ಡರ್ ಮಾಡಲು ಆಗುವುದಿಲ್ಲ.",
     "en-IN": "This deal is not approved yet, so I cannot place the order.",
   },

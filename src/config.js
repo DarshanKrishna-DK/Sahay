@@ -28,6 +28,20 @@ class ConfigError extends Error {
   }
 }
 
+/**
+ * How a simulated negotiation runs. "loop" (default): the server computes both sides and
+ * voices them through two Agora agents with /speak, deterministic. "agents": two LLM agents
+ * in one channel hear each other (opt-in; falls back to "loop" when they stall).
+ */
+const NEGOTIATION_MODES = ["loop", "agents"];
+function negotiationMode(value) {
+  const mode = (value ?? "loop").toLowerCase();
+  if (!NEGOTIATION_MODES.includes(mode)) {
+    throw new ConfigError("INVALID_NEGOTIATION_MODE", `NEGOTIATION_MODE must be one of ${NEGOTIATION_MODES.join(", ")}.`);
+  }
+  return mode;
+}
+
 /** Keys the product cannot run without. `missingKeys()` reports the unset ones. */
 const REQUIRED = [
   ["PUBLIC_URL", (c) => c.publicUrl],
@@ -159,8 +173,7 @@ function loadConfig(env = process.env) {
       followups: Object.freeze({
         delaySeconds: read("FOLLOWUP_DELAY_SECONDS") === null ? null : Number(read("FOLLOWUP_DELAY_SECONDS")),
       }),
-      // "agents" (two Agora agents in one channel) or "loop" (server voices both sides via /speak).
-      negotiation: Object.freeze({ mode: read("NEGOTIATION_MODE") ?? "agents" }),
+      negotiation: Object.freeze({ mode: negotiationMode(read("NEGOTIATION_MODE")) }),
     },
     ["sessionSecret"],
   );

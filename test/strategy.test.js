@@ -6,17 +6,28 @@ const assert = require('node:assert/strict');
 const strategy = require('../src/negotiation/strategy');
 
 const {
-  reservationPrice, openingOffer, nextBuyerOffer, shouldAccept, shouldWalkAway, buyerMove,
-  createVendorSim, vendorSimAsk, vendorSimMove,
+  priceTick, reservationPrice, softCeiling, openingOffer, nextBuyerOffer, shouldAccept, shouldWalkAway, buyerMove,
+  createVendorSim, vendorSimAsk, vendorSimSchedule, vendorSimMove,
 } = strategy;
 
 const rounds = (maxRounds) => Array.from({ length: maxRounds }, (_, i) => i + 1);
 
-test('reservation price is the lower of the owner maximum and the market evidence', () => {
-  assert.equal(reservationPrice({ ownerMax: 80, marketEvidence: 72 }), 72);
+test('price tick: whole rupees for everyday prices, finer steps for cheap items, coarser for dear ones', () => {
+  assert.equal(priceTick(60), 1);
+  assert.equal(priceTick(50), 1);
+  assert.equal(priceTick(1999), 1);
+  assert.equal(priceTick(25000), 10);
+  assert.equal(priceTick(12), 0.5);
+  assert.equal(priceTick(4.2), 0.1);
+  assert.equal(priceTick(0.4), 0.01);
+  assert.throws(() => priceTick(0), RangeError);
+});
+
+test('reservation price is the owner maximum when stated, otherwise the listed (market) price', () => {
+  assert.equal(reservationPrice({ ownerMax: 90, marketEvidence: 60 }), 90, 'a listing below the owner max does not lower the hard ceiling');
   assert.equal(reservationPrice({ ownerMax: 80, marketEvidence: 95 }), 80);
   assert.equal(reservationPrice({ ownerMax: 80 }), 80);
-  assert.equal(reservationPrice({ marketEvidence: 72 }), 72);
+  assert.equal(reservationPrice({ marketEvidence: 72 }), 72, 'without an owner max the listed price is the ceiling');
 });
 
 test('reservation price cannot be formed without any ceiling, or from a bad figure', () => {
@@ -27,24 +38,34 @@ test('reservation price cannot be formed without any ceiling, or from a bad figu
   assert.throws(() => reservationPrice({ ownerMax: '80' }), RangeError);
 });
 
-test('opening offer leaves room under the reservation price', () => {
+test('soft ceiling: the buyer concedes toward the market price first, never past the reservation', () => {
+  assert.equal(softCeiling({ reservation: 90, marketEvidence: 60 }), 60);
+  assert.equal(softCeiling({ reservation: 80, marketEvidence: 95 }), 80);
+  assert.equal(softCeiling({ reservation: 80 }), 80);
+});
+
+test('opening offer leaves room under the market price or the reservation, whichever is lower', () => {
   assert.equal(openingOffer({ reservation: 80 }), 68); // 15% under
   assert.equal(openingOffer({ reservation: 80, target: 60 }), 60); // the owner's lower target
   assert.equal(openingOffer({ reservation: 80, target: 79 }), 68); // a target near the ceiling still anchors lower
   assert.equal(openingOffer({ reservation: 80, anchorDiscount: 0 }), 80);
+  assert.equal(openingOffer({ reservation: 90, marketEvidence: 60 }), 51, 'anchored on the listing, not on a generous owner max');
+  assert.equal(openingOffer({ reservation: 90, marketEvidence: 60.7, tick: 1 }), 51, 'rounded down to the price tick');
   assert.throws(() => openingOffer({ reservation: 80, anchorDiscount: 1 }), RangeError);
   assert.throws(() => openingOffer({ target: 60 }), RangeError);
 });
 
-test('buyer offers follow the pact curve: open + (reservation - open) * t^beta', () => {
-  const at = (round) => nextBuyerOffer({ round, maxRounds: 6, open: 60, reservation: 80 });
-  assert.deepEqual(rounds(6).map(at), [60, 60.8, 63.2, 67.2, 72.8, 80]);
-  assert.equal(strategy.DEFAULT_BETA, 2);
+test('buyer offers rise from the opening offer to the soft ceiling by the second-last round, then to the reservation', () => {
+  const at = (round) => nextBuyerOffer({ round, maxRounds: 5, open: 51, ceiling: 60, reservation: 90, tick: 1 });
+  assert.deepEqual(rounds(5).map(at), [51, 52, 55, 60, 90]);
+  assert.equal(strategy.DEFAULT_BETA, 1.5);
   assert.equal(strategy.nextOffer, nextBuyerOffer);
+  // no separate ceiling: the curve ends at the reservation
+  assert.deepEqual(rounds(5).map((round) => nextBuyerOffer({ round, maxRounds: 5, open: 51, reservation: 60, tick: 1 })), [51, 52, 55, 60, 60]);
 });
 
 test('beta above 1 concedes later than linear (Boulware), below 1 earlier', () => {
-  const mid = (beta) => nextBuyerOffer({ round: 3, maxRounds: 5, open: 60, reservation: 80, beta });
+  const mid = (beta) => nextBuyerOffer({ round: 2, maxRounds: 4, open: 60, reservation: 80, beta });
   assert.equal(mid(1), 70);
   assert.ok(mid(2) < 70);
   assert.ok(mid(0.5) > 70);
@@ -52,23 +73,27 @@ test('beta above 1 concedes later than linear (Boulware), below 1 earlier', () =
 
 test('buyer concessions are monotonic and never exceed the reservation or the owner maximum', () => {
   for (const ownerMax of [0.5, 48, 80, 61999.99]) {
-    for (const marketEvidence of [null, ownerMax * 0.9, ownerMax * 1.4]) {
+    for (const marketEvidence of [null, ownerMax * 0.6, ownerMax * 0.9, ownerMax * 1.4]) {
       const reservation = reservationPrice({ ownerMax, marketEvidence });
+      const ceiling = softCeiling({ reservation, marketEvidence });
       assert.ok(reservation <= ownerMax);
-      for (const target of [null, ownerMax * 0.5, ownerMax * 2]) {
-        const open = openingOffer({ target, reservation });
-        for (const beta of [0.5, 1, 2, 4]) {
-          for (const maxRounds of [2, 3, 6, 10]) {
-            let previous = 0;
-            for (const round of [...rounds(maxRounds), maxRounds + 1, maxRounds + 5]) {
-              const offer = nextBuyerOffer({ round, maxRounds, open, reservation, beta });
-              assert.ok(offer >= previous, `round ${round}: ${offer} dropped below ${previous}`);
-              assert.ok(offer <= reservation, `round ${round}: ${offer} is above the reservation ${reservation}`);
-              assert.ok(offer <= ownerMax, `round ${round}: ${offer} is above the owner maximum ${ownerMax}`);
-              previous = offer;
+      for (const tick of [0.01, priceTick(ceiling)]) {
+        for (const target of [null, ownerMax * 0.5, ownerMax * 2]) {
+          const open = openingOffer({ target, reservation, marketEvidence, tick });
+          for (const beta of [0.5, 1, 1.5, 4]) {
+            for (const maxRounds of [2, 3, 6, 10]) {
+              let previous = 0;
+              for (const round of [...rounds(maxRounds), maxRounds + 1, maxRounds + 5]) {
+                const offer = nextBuyerOffer({ round, maxRounds, open, reservation, ceiling, beta, tick });
+                assert.ok(offer >= previous, `round ${round}: ${offer} dropped below ${previous}`);
+                assert.ok(offer <= reservation, `round ${round}: ${offer} is above the reservation ${reservation}`);
+                assert.ok(offer <= ownerMax, `round ${round}: ${offer} is above the owner maximum ${ownerMax}`);
+                if (round < maxRounds) assert.ok(offer <= ceiling, `round ${round}: ${offer} is above the soft ceiling ${ceiling} before the last round`);
+                previous = offer;
+              }
+              assert.equal(nextBuyerOffer({ round: 1, maxRounds, open, reservation, ceiling, beta, tick }), open);
+              assert.equal(nextBuyerOffer({ round: maxRounds, maxRounds, open, reservation, ceiling, beta, tick }), reservation);
             }
-            assert.equal(nextBuyerOffer({ round: 1, maxRounds, open, reservation, beta }), open);
-            assert.equal(nextBuyerOffer({ round: maxRounds, maxRounds, open, reservation, beta }), reservation);
           }
         }
       }
@@ -79,6 +104,8 @@ test('buyer concessions are monotonic and never exceed the reservation or the ow
 test('nextBuyerOffer rejects inputs that would break its guarantees', () => {
   const ok = { round: 1, maxRounds: 6, open: 60, reservation: 80 };
   assert.throws(() => nextBuyerOffer({ ...ok, open: 81 }), /open \(81\) is above reservation \(80\)/);
+  assert.throws(() => nextBuyerOffer({ ...ok, ceiling: 81 }), /ceiling/);
+  assert.throws(() => nextBuyerOffer({ ...ok, ceiling: 59 }), /ceiling/);
   assert.throws(() => nextBuyerOffer({ ...ok, round: 0 }), RangeError);
   assert.throws(() => nextBuyerOffer({ ...ok, round: 1.5 }), RangeError);
   assert.throws(() => nextBuyerOffer({ ...ok, maxRounds: 1 }), RangeError);
@@ -114,31 +141,61 @@ test('shouldWalkAway: only above the reservation, on a final ask, spent rounds o
 });
 
 test('buyerMove counters along the curve, accepts within it, and walks away past the ceiling', () => {
-  const base = { maxRounds: 6, open: 60, reservation: 80 };
+  const base = { maxRounds: 6, open: 60, reservation: 80, beta: 2 };
   assert.deepEqual(buyerMove({ ...base, round: 1 }), { action: 'counter', price: 60, reason: 'concession_curve' });
-  assert.deepEqual(buyerMove({ ...base, round: 3, vendorAsk: 90 }), { action: 'counter', price: 63.2, reason: 'concession_curve' });
-  assert.deepEqual(buyerMove({ ...base, round: 4, vendorAsk: 67 }), { action: 'accept', price: 67, reason: 'ask_within_offer' });
+  assert.deepEqual(buyerMove({ ...base, round: 3, vendorAsk: 90 }), { action: 'counter', price: 65, reason: 'concession_curve' });
+  assert.deepEqual(buyerMove({ ...base, round: 4, vendorAsk: 71 }), { action: 'accept', price: 71, reason: 'ask_within_offer' });
   assert.deepEqual(buyerMove({ ...base, round: 6, vendorAsk: 80 }), { action: 'accept', price: 80, reason: 'ask_within_offer' });
   assert.deepEqual(buyerMove({ ...base, round: 6, vendorAsk: 85 }), { action: 'walk_away', price: null, reason: 'max_rounds_reached' });
   assert.deepEqual(buyerMove({ ...base, round: 2, vendorAsk: 85, vendorSaysFinal: true }), { action: 'walk_away', price: null, reason: 'final_ask_above_reservation' });
 });
 
-test('simulated vendor anchors high, concedes in small steps and never goes below its floor', () => {
-  const policy = createVendorSim({ basisPrice: 100 });
-  assert.deepEqual(policy, { simulated: true, anchor: 108, floor: 88, step: 0.15 });
-  assert.ok(Object.isFrozen(policy));
+test('regression (E2E r2): a final ask within the owner maximum is accepted, never walked away from', () => {
+  // live run: owner max 90, BS Foods listed 60; the vendor called 64.8 "final" in round 1
+  const reservation = reservationPrice({ ownerMax: 90, marketEvidence: 60 });
+  const move = buyerMove({ round: 1, maxRounds: 5, open: 51, ceiling: 60, reservation, tick: 1, vendorAsk: 64.8, vendorSaysFinal: true });
+  assert.deepEqual(move, { action: 'accept', price: 64.8, reason: 'final_ask_within_reservation' });
+});
 
-  const asks = rounds(8).map((round) => vendorSimAsk(policy, round));
-  assert.equal(asks[0], 108, 'opens at the anchor, above the basis price');
-  for (let i = 1; i < asks.length; i++) {
-    assert.ok(asks[i] < asks[i - 1], 'each ask is lower than the last');
-    assert.ok(asks[i - 1] - asks[i] <= (policy.anchor - policy.floor) * policy.step + 0.01, 'no step is larger than the first');
-    assert.ok(asks[i] >= policy.floor);
+test('regression (E2E r2): an ask a few paise over the listed price but under the owner max is not walked away from on the last round', () => {
+  const reservation = reservationPrice({ ownerMax: 90, marketEvidence: 60 });
+  const move = buyerMove({ round: 5, maxRounds: 5, open: 51, ceiling: 60, reservation, tick: 1, vendorAsk: 60.17, askHistory: [64.8, 64.8, 63, 61.47, 60.17] });
+  assert.deepEqual(move, { action: 'accept', price: 60.17, reason: 'ask_within_offer' });
+});
+
+test('the buyer never counters at or above the vendor ask', () => {
+  for (const vendorAsk of [40, 51, 52.5, 55, 59, 60, 61, 64.8, 89, 95]) {
+    for (const round of rounds(5)) {
+      const move = buyerMove({ round, maxRounds: 5, open: 51, ceiling: 60, reservation: 90, tick: 1, vendorAsk });
+      if (move.action === 'counter') assert.ok(move.price < vendorAsk, `round ${round}: countered ${move.price} against an ask of ${vendorAsk}`);
+      if (move.action === 'accept') assert.equal(move.price, vendorAsk, 'accepts the ask itself, never a higher figure');
+    }
   }
-  assert.equal(vendorSimAsk(policy, 10_000), policy.floor);
+});
+
+test('simulated vendor: anchors above the listing, concedes in believable whole-rupee steps, ends at its floor', () => {
+  const policy = createVendorSim({ basisPrice: 60 });
+  assert.deepEqual(policy, { simulated: true, anchor: 65, floor: 54, maxRounds: 5, tick: 1 });
+  assert.ok(Object.isFrozen(policy));
+  assert.deepEqual(vendorSimSchedule(policy), [65, 61, 57, 55, 54]);
+
+  const dear = createVendorSim({ basisPrice: 100 });
+  assert.deepEqual(vendorSimSchedule(dear), [108, 101, 95, 92, 90]);
+
+  for (const basisPrice of [0.4, 4.2, 12, 60, 100, 999, 25000]) {
+    const p = createVendorSim({ basisPrice });
+    const asks = vendorSimSchedule(p);
+    assert.equal(asks[0], p.anchor, 'opens at the anchor');
+    assert.ok(p.anchor > basisPrice, 'the anchor is above the listing');
+    assert.ok(p.floor < basisPrice, 'the floor is below the listing');
+    assert.equal(asks.at(-1), p.floor, 'the last scheduled ask is the floor');
+    for (let i = 1; i < asks.length; i++) assert.ok(asks[i] <= asks[i - 1], `basis ${basisPrice}: ask rose from ${asks[i - 1]} to ${asks[i]}`);
+    assert.equal(vendorSimAsk(p, 10_000), p.floor);
+  }
   assert.throws(() => vendorSimAsk(policy, 0), RangeError);
   assert.throws(() => createVendorSim({ basisPrice: null }), RangeError);
   assert.throws(() => createVendorSim({ basisPrice: 100, floorDiscount: 1 }), RangeError);
+  assert.throws(() => createVendorSim({ basisPrice: 100, maxRounds: 1 }), RangeError);
 });
 
 test('every simulated vendor move is labelled simulated and priced at or above the floor', () => {
@@ -147,7 +204,7 @@ test('every simulated vendor move is labelled simulated and priced at or above t
   assert.deepEqual(vendorSimMove({ policy, round: 1, buyerOffer: 70 }), { simulated: true, action: 'counter', price: 108 });
   assert.deepEqual(vendorSimMove({ policy, round: 1, buyerOffer: 110 }), { simulated: true, action: 'accept', price: 110 });
   for (const round of rounds(50)) {
-    for (const buyerOffer of [null, 1, 87.99, 88, 95, 200]) {
+    for (const buyerOffer of [null, 1, 89.99, 90, 95, 200]) {
       const move = vendorSimMove({ policy, round, buyerOffer });
       assert.equal(move.simulated, true);
       assert.ok(move.price >= policy.floor, `round ${round}, offer ${buyerOffer}: ${move.price} is below the floor`);
@@ -155,48 +212,88 @@ test('every simulated vendor move is labelled simulated and priced at or above t
   }
 });
 
-/** Plays buyer curve against the simulated vendor; returns the closing move. */
-function negotiate({ ownerMax, target, basisPrice, maxRounds = 6 }) {
-  const policy = createVendorSim({ basisPrice });
-  const reservation = reservationPrice({ ownerMax });
-  const open = openingOffer({ target, reservation });
+/**
+ * The deterministic loop the server plays in "loop" mode: vendor speaks its ask for the round
+ * (or accepts the buyer's last counter), then the buyer answers with buyerMove.
+ */
+function negotiate({ ownerMax = null, target = null, basisPrice, maxRounds = 5 }) {
+  const policy = createVendorSim({ basisPrice, maxRounds });
+  const reservation = reservationPrice({ ownerMax, marketEvidence: basisPrice });
+  const ceiling = softCeiling({ reservation, marketEvidence: basisPrice });
+  const tick = priceTick(ceiling);
+  const open = openingOffer({ target, reservation, marketEvidence: basisPrice, tick });
   const askHistory = [];
+  const trace = [];
+  let lastOffer = null;
   for (let round = 1; round <= maxRounds; round++) {
-    const ask = vendorSimAsk(policy, round);
-    askHistory.push(ask);
-    const buyer = buyerMove({ round, maxRounds, open, reservation, vendorAsk: ask, askHistory });
-    if (buyer.action !== 'counter') return { ...buyer, round, policy, reservation };
-    const vendor = vendorSimMove({ policy, round, buyerOffer: buyer.price });
-    if (vendor.action === 'accept') return { action: 'accept', price: vendor.price, round, policy, reservation };
+    const vendor = vendorSimMove({ policy, round, buyerOffer: lastOffer });
+    askHistory.push(vendor.price);
+    const buyer = buyerMove({ round, maxRounds, open, reservation, ceiling, tick, vendorAsk: vendor.price, vendorSaysFinal: vendor.action === 'counter' && vendor.price <= policy.floor, askHistory });
+    trace.push({ round, vendor: vendor.price, buyer: buyer.action, price: buyer.price });
+    if (buyer.action === 'counter') assert.ok(buyer.price < vendor.price, 'the buyer never counters at or above the ask');
+    if (buyer.action !== 'counter') return { ...buyer, round, policy, reservation, trace };
+    lastOffer = buyer.price;
   }
   throw new Error('negotiation ran past maxRounds without closing');
 }
 
-test('buyer against simulated vendor: a deal lands between the floor and the owner maximum', () => {
-  const deal = negotiate({ ownerMax: 100, target: 85, basisPrice: 100 });
-  assert.equal(deal.action, 'accept');
-  assert.ok(deal.price <= 100, `agreed ${deal.price} is above the owner maximum`);
-  assert.ok(deal.price >= deal.policy.floor, `agreed ${deal.price} is below the vendor floor`);
+test('full loop, basis 60 / owner max 90 (the live BS Foods case): agreement in round 4 at 55', () => {
+  const deal = negotiate({ ownerMax: 90, basisPrice: 60 });
+  assert.deepEqual(deal.trace, [
+    { round: 1, vendor: 65, buyer: 'counter', price: 51 },
+    { round: 2, vendor: 61, buyer: 'counter', price: 52 },
+    { round: 3, vendor: 57, buyer: 'counter', price: 55 },
+    { round: 4, vendor: 55, buyer: 'accept', price: 55 },
+  ]);
 });
 
-test('buyer against simulated vendor: walks away when the floor is above the owner maximum', () => {
-  const outcome = negotiate({ ownerMax: 80, target: 70, basisPrice: 100 }); // floor 88
+test('full loop, basis 60 / no owner max: the listing is the ceiling, same agreement', () => {
+  const deal = negotiate({ basisPrice: 60 });
+  assert.equal(deal.action, 'accept');
+  assert.equal(deal.price, 55);
+  assert.equal(deal.round, 4);
+  assert.equal(deal.reservation, 60);
+});
+
+test('full loop, basis 100 / owner max 90: owner max below the listing but at the vendor floor, agreement at the floor', () => {
+  const deal = negotiate({ ownerMax: 90, basisPrice: 100 });
+  assert.equal(deal.action, 'accept');
+  assert.equal(deal.price, 90);
+  assert.ok(deal.round <= 5);
+});
+
+test('full loop, basis 100 / owner max 80: the vendor floor is above the owner max, an honest walk-away', () => {
+  const outcome = negotiate({ ownerMax: 80, basisPrice: 100 }); // floor 90
   assert.equal(outcome.action, 'walk_away');
   assert.equal(outcome.price, null);
+  assert.equal(outcome.round, 5);
 });
 
-test('buyer against simulated vendor: no outcome ever commits above the owner maximum', () => {
-  for (const ownerMax of [60, 85, 90, 100, 120, 400]) {
-    for (const target of [null, 50, 95]) {
-      for (const maxRounds of [2, 4, 6, 9]) {
-        const outcome = negotiate({ ownerMax, target, basisPrice: 100, maxRounds });
-        if (outcome.action === 'accept') {
-          assert.ok(outcome.price <= ownerMax, `max ${ownerMax}, target ${target}, ${maxRounds} rounds: agreed ${outcome.price}`);
-          assert.ok(outcome.price >= outcome.policy.floor);
+test('full loop: whenever the vendor floor is at or under the owner max, a deal lands within the rounds, at or under the ask and the owner max', () => {
+  for (const basisPrice of [0.4, 4.2, 12, 37, 60, 100, 185, 999, 25000]) {
+    for (const ownerFactor of [null, 0.8, 0.9, 0.95, 1, 1.1, 1.5, 3]) {
+      for (const target of [null, basisPrice * 0.5]) {
+        const ownerMax = ownerFactor == null ? null : Math.round(basisPrice * ownerFactor * 100) / 100;
+        const outcome = negotiate({ ownerMax, target, basisPrice });
+        const label = `basis ${basisPrice}, max ${ownerMax}, target ${target}`;
+        const ceiling = ownerMax ?? basisPrice;
+        if (outcome.policy.floor <= ceiling) {
+          assert.equal(outcome.action, 'accept', `${label}: ${JSON.stringify(outcome.trace)}`);
+          assert.ok(outcome.price <= ceiling, `${label}: agreed ${outcome.price}`);
+          assert.ok(outcome.price >= outcome.policy.floor, `${label}: agreed ${outcome.price} below the floor`);
+          assert.ok(outcome.round <= 5, `${label}: took ${outcome.round} rounds`);
         } else {
-          assert.equal(outcome.action, 'walk_away');
+          assert.equal(outcome.action, 'walk_away', `${label}: ${JSON.stringify(outcome.trace)}`);
         }
       }
     }
+  }
+});
+
+test('full loop: typical listings with a generous owner max agree in 3 or 4 rounds', () => {
+  for (const basisPrice of [37, 60, 100, 185, 999]) {
+    const deal = negotiate({ ownerMax: basisPrice * 1.5, basisPrice });
+    assert.equal(deal.action, 'accept');
+    assert.ok(deal.round >= 3 && deal.round <= 4, `basis ${basisPrice}: round ${deal.round} ${JSON.stringify(deal.trace)}`);
   }
 });

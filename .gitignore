@@ -19,3 +19,4 @@ AGENTS.md
 *.wav
 spike/
 skills-lock.json
+.playwright-mcp/

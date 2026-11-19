@@ -174,6 +174,7 @@ export class VoiceCall {
     this.renewing = null;
     this.muted = false;
     this.serverStarted = false;
+    this.serverStarting = false;
   }
 
   get active() {
@@ -284,6 +285,7 @@ export class VoiceCall {
       // 5. Step two: only now that we are subscribed does the server bring the agent in, so
       //    its first sentence (the automated-assistant disclosure) reaches the transcript.
       if (!this.findAgent()) this.setStatus("waiting");
+      this.serverStarting = true;
       try {
         await api.startVoice(s.channel);
       } catch (err) {
@@ -292,6 +294,8 @@ export class VoiceCall {
         if (!(err && err.code === "ALREADY_STARTED")) {
           throw new CallError("start_failed", "Sahay could not join", err.message || "The server could not start the assistant.");
         }
+      } finally {
+        this.serverStarting = false;
       }
       if (this.status === "ending" || !this.active) return;
 
@@ -335,7 +339,7 @@ export class VoiceCall {
     rtc.on("user-left", (user) => {
       if (!this.isAgent(user.uid) || !this.active || this.status === "ending") return;
       this.agentPresent = false;
-      this.end({ note: "Sahay left the call." });
+      this.end({ note: "Sahay left the call.", unexpected: true });
     });
     rtc.on("user-published", async (user, mediaType) => {
       if (mediaType !== "audio") return;
@@ -360,7 +364,7 @@ export class VoiceCall {
         this.setStatus(this.findAgent() ? "live" : "waiting");
       } else if (cur === "DISCONNECTED" && reason !== "LEAVE") {
         const why = typeof reason === "string" && reason ? reason.toLowerCase().replace(/_/g, " ") : "network error";
-        this.failMidCall(new CallError("dropped", "Call disconnected", `The connection to Agora was lost (${why}). Start the call again when the network is back.`));
+        this.failMidCall(new CallError("dropped", "The call ended", `The connection to Agora was lost (${why}). Start a new call to continue.`));
       }
     });
     rtc.on("token-privilege-will-expire", () => { this.renewToken(); });
@@ -374,8 +378,13 @@ export class VoiceCall {
         const r = await this.freshToken();
         await Promise.all([this.rtc.renewToken(r.token), this.rtm.renewToken(r.token)]);
         return r.token;
-      } catch {
-        this.h.onIssue({ source: "token", message: "Could not renew the call token. The call will stop when the current token expires." });
+      } catch (err) {
+        if (err && err.code === "CALL_ENDED") {
+          // The server no longer holds this call; nothing said from here would reach Sahay.
+          this.end({ note: "The call was closed on the server.", unexpected: true });
+        } else {
+          this.h.onIssue({ source: "token", message: "Could not renew the call token. The call will stop when the current token expires." });
+        }
         return null;
       } finally {
         this.renewing = null;
@@ -384,10 +393,11 @@ export class VoiceCall {
     return this.renewing;
   }
 
-  /** Renewal reuses POST /api/voice/token; it must still be this call's channel and uid. */
+  /** Renewal: POST /api/voice/token { channel }; it must still be this call's channel and uid. */
   async freshToken() {
-    const r = await api.getVoiceToken();
     const s = this.session;
+    if (!s) throw new Error("No call to renew.");
+    const r = await api.renewVoiceToken(s.channel);
     if (!r || !r.token || !s || r.channel !== s.channel || String(r.uid) !== String(s.uid)) {
       throw new Error("The server answered for a different call.");
     }
@@ -407,7 +417,7 @@ export class VoiceCall {
       await this.rtm.renewToken(r.token);
       this.setStatus(this.findAgent() ? "live" : "waiting");
     } catch {
-      this.failMidCall(new CallError("expired", "Call session expired", "The call token expired and could not be renewed. Start a new call."));
+      this.failMidCall(new CallError("expired", "The call ended", "The call token expired and could not be renewed. Start a new call to continue."));
     }
   }
 
@@ -477,11 +487,26 @@ export class VoiceCall {
     this.h.onAutoplay(false);
   }
 
-  async end({ note } = {}) {
+  /**
+   * `unexpected`: the owner did not press End (Sahay left, the server closed the call). The
+   * console then shows "The call ended. Start a new call to continue." until the next start.
+   */
+  async end({ note, unexpected = false } = {}) {
     if (!this.active || this.status === "ending") return;
     this.setStatus("ending");
     await this.teardown({ stopServer: true });
-    this.setStatus("idle", { note: note || "Call ended." });
+    this.setStatus("idle", { note: note || "Call ended.", unexpected });
+  }
+
+  /**
+   * The server reported this call's session ended while the browser still holds it (closed
+   * from another tab, or the server stopped it). Only a connected call reacts; a call still
+   * starting reports its own error from start().
+   */
+  endedByServer(channel) {
+    if (!this.session || channel !== this.session.channel) return;
+    if (!["live", "waiting", "reconnecting"].includes(this.status) || this.serverStarting) return;
+    this.end({ note: "The call was closed on the server.", unexpected: true });
   }
 
   // Order from TK App.tsx:1085-1133: release the mic first so it frees even if the

@@ -108,6 +108,38 @@ test('rankVendors breaks a score tie by comparable price, then by rating count, 
   assert.equal(vendors[0].name, 'bag, unknown size', 'input left alone');
 });
 
+test('rankVendors: a score tie goes to the lower per-unit price whatever order the listings were found in (e2e r2 row 13)', () => {
+  const need = { unit: 'kg' };
+  // Round-2 run: five vendors tied at 78; the agent named BS Foods best, the panel showed Arthace first.
+  const tied = [
+    { id: 'ven_a', name: 'Arthace Ariez Global Private Limited', score: 78, listed_price: 80, listed_unit: 'Kg', rating: 4, rating_count: 25 },
+    { id: 'ven_p', name: 'Pansari Industries', score: 78, listed_price: 68, listed_unit: 'Kg', rating: 3.7, rating_count: 443 },
+    { id: 'ven_j', name: 'JMD Enterprises', score: 78, listed_price: 79, listed_unit: 'Kg', rating: 4.4, rating_count: 34 },
+    { id: 'ven_b', name: 'BS Foods', score: 78, listed_price: 60, listed_unit: 'Kg', rating: 4, rating_count: 208 },
+    { id: 'ven_m', name: 'Mithuna Foods', score: 75.41, listed_price: 92, listed_unit: 'Kg', rating: 4.8, rating_count: 900 },
+  ];
+  const expected = ['BS Foods', 'Pansari Industries', 'JMD Enterprises', 'Arthace Ariez Global Private Limited', 'Mithuna Foods'];
+  assert.deepEqual(rankVendors(tied, need).map((v) => v.name), expected);
+  // every arrival order gives the same ranking
+  const orders = [[...tied].reverse(), [tied[2], tied[4], tied[0], tied[3], tied[1]], [tied[1], tied[0], tied[4], tied[2], tied[3]]];
+  for (const order of orders) assert.deepEqual(rankVendors(order, need).map((v) => v.name), expected);
+});
+
+test('rankVendors: equal score and price fall to higher rating, then more ratings, then name', () => {
+  const need = { unit: 'kg' };
+  const base = { score: 70, listed_price: 90, listed_unit: 'kg' };
+  const vendors = [
+    { ...base, id: 'ven_1', name: 'Zeta Traders', rating: 4.2, rating_count: 10 },
+    { ...base, id: 'ven_2', name: 'Beta Traders', rating: null, rating_count: 0 },
+    { ...base, id: 'ven_3', name: 'Alpha Traders', rating: null, rating_count: 0 },
+    { ...base, id: 'ven_4', name: 'Kappa Traders', rating: 4.6, rating_count: 3 },
+    { ...base, id: 'ven_5', name: 'Eta Traders', rating: 4.2, rating_count: 50 },
+  ];
+  const expected = ['Kappa Traders', 'Eta Traders', 'Zeta Traders', 'Alpha Traders', 'Beta Traders'];
+  assert.deepEqual(rankVendors(vendors, need).map((v) => v.name), expected);
+  assert.deepEqual(rankVendors([...vendors].reverse(), need).map((v) => v.name), expected);
+});
+
 test('price: metric units are converted; a per-bag price only through the stated pack size', () => {
   assert.deepEqual(comparableListedPrice({ listed_price: 95000, listed_unit: 'tonne' }, 'kg'), { value: 95, basis: 'unit_converted' });
   assert.equal(scoreVendor(vendor({ listed_price: 115000, listed_unit: 'Tonne' }), requirement).breakdown.price, 0.5);

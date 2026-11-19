@@ -341,3 +341,155 @@ test("narrator queue is bounded: a flood keeps only the newest lines", async (t)
   narrator.detach(businessId);
   assert.ok(spoken.length <= 3, `spoke ${spoken.length}`);
 });
+
+/* ------------------------------------------- E2E round 2 regressions --- */
+
+const restoreNarrator = () =>
+  narrator.configure({
+    speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }),
+    status: (agentId, text) => agent.updateCallStatus(agentId, text),
+    minGapMs: 5000,
+    vendorDebounceMs: 2500,
+    holdMs: 6000,
+  });
+
+test("E2E r2 bug 1: the prompt answers in the language of the owner's last sentence, not the business language", () => {
+  for (const language of ["hi-IN", "kn-IN", "en-IN"]) {
+    const prompt = agent.systemPrompt({ name: "Ganesh Traders", city: "Bengaluru", language });
+    assert.match(prompt, /most recent sentence/);
+    assert.match(prompt, /An English sentence gets an English reply/);
+    assert.match(prompt, /does not decide your reply language/);
+    assert.match(prompt, /Code-mixed: reply in the language most of the owner's words are in/);
+    // Filler examples in every language, not one Hindi example that biases the model.
+    for (const filler of Object.values(agent.FILLER)) assert.ok(prompt.includes(filler), `${language} prompt carries "${filler}"`);
+    assert.doesNotMatch(prompt, /usually speaks/, "no line nudging the model toward the business language");
+  }
+});
+
+test("E2E r2 bug 2: the prompt makes the model call the start tool every time, never answer 'already running' from memory", () => {
+  const prompt = agent.systemPrompt({ name: "Ganesh Traders", language: "hi-IN" });
+  assert.match(prompt, /call start_sourcing or start_negotiation every time, even to try again/);
+  assert.match(prompt, /Never say a search or negotiation is already running, finished or failed from memory/);
+  assert.match(prompt, /Call status/);
+});
+
+test("E2E r2 bug 2: updateCallStatus re-sends the join prompt plus one status message through /update, nothing else", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const session = repo.createSession(businessId, { kind: "owner", channel: "own-cs1", status: "connecting" });
+  const calls = fakeAgora(t, (url) => (url.endsWith("/join") ? { json: { agent_id: "AGCS", create_ts: 1, status: "RUNNING" } } : { json: { agent_id: "AGCS" } }));
+  await agent.startOwnerAgent({ businessId, sessionId: session.id, channel: "own-cs1", agentUid: 1001, userUid: 1002 });
+  const joinPrompt = calls[0].body.properties.llm.system_messages[0].content;
+
+  await agent.updateCallStatus("AGCS", "The last negotiation has ended. No negotiation is running now.");
+  const update = calls[1];
+  assert.equal(update.method, "POST");
+  assert.match(update.url, /\/agents\/AGCS\/update$/);
+  assert.deepEqual(Object.keys(update.body), ["properties"]);
+  assert.deepEqual(Object.keys(update.body.properties), ["llm"], "no token, no params: /update overwrites params entirely");
+  assert.deepEqual(Object.keys(update.body.properties.llm), ["system_messages"]);
+  const messages = update.body.properties.llm.system_messages;
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[0], { role: "system", content: joinPrompt }, "the join prompt is kept word for word");
+  assert.equal(messages[1].role, "system");
+  assert.match(messages[1].content, /^Call status \(from the server, \d{2}:\d{2} IST\): The last negotiation has ended\. No negotiation is running now\.$/);
+
+  await agent.stopAgent("AGCS");
+  await assert.rejects(agent.updateCallStatus("AGCS", "x"), (err) => err.code === "AGENT_UNKNOWN", "a stopped agent's prompt is forgotten");
+});
+
+test("E2E r2 bug 2: narrator tells the owner agent's LLM how a negotiation ended (Call status), with the figures", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const statuses = [];
+  narrator.configure({ speak: async () => {}, status: async (agentId, text) => statuses.push({ agentId, text }), minGapMs: 5, holdMs: 0 });
+  t.after(restoreNarrator);
+  narrator.attach(businessId, { agentId: "AGST", sessionId: null, language: "hi-IN" });
+  t.after(() => narrator.detach(businessId));
+
+  narrator.onEvent({ businessId, type: "job.started", data: { jobId: "job_n1", kind: "negotiation" } });
+  await until(() => statuses.length >= 1, 2000);
+  assert.match(statuses[0].text, /A negotiation is running now/);
+
+  narrator.onEvent({
+    businessId,
+    type: "negotiation.ended",
+    data: { negotiationId: "neg_w", status: "walked_away", outcome: { agreed: false, state: "walked_away", vendorName: "BS Foods", simulated: true, unit: "kg" } },
+  });
+  await until(() => statuses.length >= 2, 2000);
+  const ended = statuses[1].text;
+  assert.equal(statuses[1].agentId, "AGST");
+  assert.match(ended, /The negotiation with BS Foods \(simulated vendor\) has ended with no deal/);
+  assert.match(ended, /No negotiation is running now\./);
+  assert.match(ended, /call start_negotiation/);
+
+  narrator.onEvent({
+    businessId,
+    type: "negotiation.ended",
+    data: { negotiationId: "neg_a", status: "agreed", outcome: { agreed: true, vendorName: "Babu Trading Co.", simulated: true, unitPrice: 88.5, unit: "kg" } },
+  });
+  await until(() => statuses.length >= 3, 2000);
+  assert.match(statuses[2].text, /agreed at 88\.5 rupees per kilogram/);
+});
+
+test("E2E r2 bug 3: a sourcing result the tool already spoke is not narrated again", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), status: async () => {}, minGapMs: 5, vendorDebounceMs: 20, holdMs: 120 });
+  t.after(restoreNarrator);
+  const state = narrator.attach(businessId, { agentId: "AGD", sessionId: null, language: "hi-IN" });
+  state.lastSpokeAt = 0;
+  t.after(() => narrator.detach(businessId));
+
+  narrator.suppress(businessId, "job.started");
+  narrator.onEvent({ businessId, type: "job.started", data: { jobId: "job_d", kind: "sourcing" } });
+  narrator.onEvent({
+    businessId,
+    type: "job.done",
+    data: { jobId: "job_d", kind: "sourcing", result: { requirementId: "req_d", unit: "kg", count: 10, shortlist: [{ name: "BS Foods", comparablePrice: 60 }] } },
+  });
+  // Inside the hold window the model calls get_job_status, whose say is "खोज पूरी हुई, 10 विक्रेता मिले।".
+  narrator.suppress(businessId, "sourcing.done:req_d");
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(spoken, [], "the narration of the same result is dropped");
+
+  // Another requirement's result is still narrated (the suppression is per requirement).
+  narrator.onEvent({
+    businessId,
+    type: "job.done",
+    data: { jobId: "job_e", kind: "sourcing", result: { requirementId: "req_e", unit: "kg", count: 3, shortlist: [{ name: "Babu Trading Co.", comparablePrice: 100 }] } },
+  });
+  await until(() => spoken.length >= 1, 2000);
+  assert.equal(spoken[0], "खोज पूरी हुई, 3 विक्रेता मिले; सबसे अच्छे Babu Trading Co., 100 रुपये प्रति किलो।");
+});
+
+test("E2E r2 bug 3: a suppression that arrives while the line is queued removes it from the queue", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), status: async () => {}, minGapMs: 200, holdMs: 0 });
+  t.after(restoreNarrator);
+  const state = narrator.attach(businessId, { agentId: "AGQ2", sessionId: null, language: "en-IN" });
+  state.lastSpokeAt = Date.now(); // the queue waits minGapMs before speaking
+  t.after(() => narrator.detach(businessId));
+  narrator.onEvent({
+    businessId,
+    type: "job.done",
+    data: { jobId: "job_q", kind: "sourcing", result: { requirementId: "req_q", unit: "kg", count: 4, shortlist: [{ name: "BS Foods", comparablePrice: 60 }] } },
+  });
+  assert.equal(state.queue.length, 1);
+  narrator.suppress(businessId, "sourcing.done:req_q");
+  assert.equal(state.queue.length, 0);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(spoken, []);
+});
+
+test("E2E r2 bug 6: the owner agent's token and MCP bearer last the whole call cap (2 h), not 30 min", async (t) => {
+  assert.ok(agent.OWNER_SESSION_SECONDS >= 2 * 60 * 60, `call cap ${agent.OWNER_SESSION_SECONDS} s`);
+  const businessId = seedBusiness("en-IN");
+  const session = repo.createSession(businessId, { kind: "owner", channel: "own-ttl", status: "connecting" });
+  const calls = fakeAgora(t, () => ({ json: { agent_id: "AGTTL", create_ts: 1, status: "RUNNING" } }));
+  const now = Date.now();
+  await agent.startOwnerAgent({ businessId, sessionId: session.id, channel: "own-ttl", agentUid: 1001, userUid: 1002, now });
+  const bearer = calls[0].body.properties.llm.mcp_servers[0].headers.Authorization.replace(/^Bearer /, "");
+  const { exp } = auth.verifySession(bearer, { scope: "mcp" });
+  assert.equal(exp, Math.floor(now / 1000) + agent.OWNER_SESSION_SECONDS);
+  await agent.stopAgent("AGTTL");
+});

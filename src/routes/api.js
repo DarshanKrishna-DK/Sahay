@@ -93,7 +93,11 @@ function snapshot(businessId) {
     requirement,
     requirements,
     jobs: repo.listJobs(businessId),
-    vendors: forRequirement ? scoring.rankVendors(repo.listVendors(businessId, forRequirement), requirement) : [],
+    // Same order as the get_shortlist tool (scoring.rankVendors); `rank` 1 = best, so the
+    // console shows the vendor the agent calls number one as #1.
+    vendors: forRequirement
+      ? scoring.rankVendors(repo.listVendors(businessId, forRequirement), requirement).map((v, i) => ({ ...v, rank: i + 1 }))
+      : [],
     negotiations: forRequirement ? repo.listNegotiations(businessId, forRequirement) : [],
     quotes: forRequirement ? repo.listQuotes(businessId, forRequirement) : [],
     deals: requirement ? registry.rankedDeals(businessId, requirement.id) : [],
@@ -228,9 +232,16 @@ function createApiRouter() {
 
   router.post(
     "/api/voice/token",
+    json,
     wrap(async (req, res) => {
       const { businessId } = req.auth;
       let v = voice.get(businessId);
+      // Renewal names the call's channel. If that call is gone (ended elsewhere, or the server
+      // restarted), say so instead of quietly opening a new call the browser never joined.
+      const renewing = req.body?.channel;
+      if (renewing !== undefined && (!v || renewing !== v.channel)) {
+        throw new HttpError(409, "CALL_ENDED", "The call ended. Start a new call to continue.");
+      }
       if (!v) {
         const channel = `own-${repo.newId("c").slice(2, 22)}`;
         const session = repo.createSession(businessId, { kind: "owner", channel, status: "connecting" });

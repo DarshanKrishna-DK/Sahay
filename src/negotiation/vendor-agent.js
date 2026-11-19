@@ -21,16 +21,16 @@ const strategy = require("./strategy");
  */
 const VENDOR_VOICE_ID = "hi-IN-chirag";
 
-const DEFAULT_MAX_ROUNDS = 5;
+const DEFAULT_MAX_ROUNDS = strategy.DEFAULT_MAX_ROUNDS;
 
-/** The vendor's private pricing for one negotiation. */
-function vendorPolicy(basisPrice) {
-  return strategy.createVendorSim({ basisPrice });
+/** The vendor's private pricing for one negotiation of `maxRounds` rounds. */
+function vendorPolicy(basisPrice, maxRounds = DEFAULT_MAX_ROUNDS) {
+  return strategy.createVendorSim({ basisPrice, maxRounds });
 }
 
-/** The vendor's ask in each round, 1..maxRounds. */
-function askSchedule(policy, maxRounds = DEFAULT_MAX_ROUNDS) {
-  return Array.from({ length: maxRounds }, (_, i) => strategy.vendorSimAsk(policy, i + 1));
+/** The vendor's ask in each scheduled round, 1..policy.maxRounds; the last one is the floor. */
+function askSchedule(policy) {
+  return strategy.vendorSimSchedule(policy);
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -50,18 +50,19 @@ function introText(language) {
 function vendorPrompt({ language, item, quantity, unit, unitSpoken, schedule, floor }) {
   const script = language === "kn-IN" ? "Kannada script" : language === "en-IN" ? "English" : "Hindi in Devanagari script";
   const asks = schedule.map((price, i) => `round ${i + 1}: ${money(price)} rupees per ${unit}`).join("; ");
+  const last = schedule.length;
   return [
     "You are a SIMULATED vendor in a demo of a procurement assistant. You are not a real business. If anyone asks, say you are a simulated vendor.",
     `You sell ${item}. The buyer, an automated assistant called Sahay, wants ${quantity} ${unit}.`,
     `Speak only ${script}, one or two short sentences per turn, no lists. Say the unit as "${unitSpoken}".`,
-    `Your asking price, per ${unit}, by round of the negotiation: ${asks}. Start with the round 1 price. Each time the buyer counters below your current ask, move to the next price in the list and say it.`,
-    `Your absolute minimum is ${money(floor)} rupees per ${unit}. Never go below it. If the buyer offers your current ask or more, accept that offer and repeat the agreed price per ${unit} in one sentence.`,
-    "When you reach the last price in the list, say it is your final price.",
+    `Your asking price, per ${unit}, by round of the negotiation: ${asks}. Start with the round 1 price. Each time the buyer counters below your current ask, move to the next price in the list (exactly one step) and say it. Say each price as the whole number of rupees in the list.`,
+    `Your absolute minimum is ${money(floor)} rupees per ${unit}. Never go below it. If the buyer offers at least the next price in the list (or your current ask), accept the buyer's offer and repeat that agreed price per ${unit} in one sentence.`,
+    `Only the round ${last} price (${money(schedule[last - 1])} rupees) is your final price; say "final" or "last price" only then. Never call any earlier price final, last, or your best.`,
     "Never mention any other number. If asked about freight, delivery time, minimum order or payment terms, say you will confirm those later.",
   ].join("\n");
 }
 
-/* ---------- lines for the server-driven fallback loop (no model involved) ---------- */
+/* ---------- lines for the server-driven loop, the default mode (no model involved) ---------- */
 
 const VENDOR_LINES = {
   ask: {
@@ -82,12 +83,12 @@ const VENDOR_LINES = {
 };
 
 /**
- * One simulated vendor turn in the fallback loop.
+ * One simulated vendor turn in the server-driven loop. Only the last scheduled ask is final.
  * @returns {{action: 'accept'|'counter', price: number, final: boolean, text: string}}
  */
 function vendorTurn({ policy, round, buyerOffer, language, unitSpoken }) {
   const move = strategy.vendorSimMove({ policy, round, buyerOffer });
-  const final = move.action === "counter" && move.price <= policy.floor;
+  const final = move.action === "counter" && round >= policy.maxRounds;
   const key = move.action === "accept" ? "accept" : final ? "final" : "ask";
   const lines = VENDOR_LINES[key];
   return { action: move.action, price: move.price, final, text: (lines[language] ?? lines["hi-IN"])({ price: money(move.price), unit: unitSpoken }) };

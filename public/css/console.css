@@ -451,6 +451,10 @@ img { max-width: 100%; display: block; }
 .row-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row-title { font-weight: 700; font-size: 16.5px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .row-meta { font-size: 14.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+.row-meta.job-now { color: var(--text); }
+.job-log { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); display: grid; gap: 3px; }
+.job-log li { font-size: 13.5px; color: var(--text-muted); overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; }
+.job-log-time { font-size: 12.5px; color: var(--text-faint); flex: none; }
 .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--amber-fill); transition: width .4s var(--ease); }
 .bar.indeterminate span { width: 35%; animation: slide 1.4s ease-in-out infinite; }

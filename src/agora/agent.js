@@ -27,7 +27,14 @@ const MURF_BASE_URLS = {
 const MURF_MODEL = "FALCON";
 const LLM_MODEL = "gpt-4.1-mini";
 const SPEAK_MAX_BYTES = 500; // docs limit 512 bytes; kept under it on purpose
-const OWNER_SESSION_SECONDS = 30 * 60;
+/**
+ * Hard cap on one owner call. The agent's RTC+RTM token and the MCP bearer both live this long
+ * and are not renewed, so the cap must outlast any real call: with 30 min the agent's token
+ * expired, Agora dropped the agent from the channel and the console ended the call (E2E r2).
+ * The bearer is refused as soon as its sessions row ends (src/mcp-server.js), so a long exp
+ * does not outlive the call.
+ */
+const OWNER_SESSION_SECONDS = 2 * 60 * 60;
 const OWNER_IDLE_TIMEOUT_SECONDS = 120;
 const REQUEST_TIMEOUT_MS = 15000;
 const RETRYABLE = new Set([429, 503, 504]);
@@ -118,6 +125,9 @@ const FAILURE_MESSAGE = {
   "en-IN": "Sorry, I could not get an answer just now. Please say that again.",
 };
 
+const LANGUAGE_NAMES = { "hi-IN": "Hindi", "kn-IN": "Kannada", "en-IN": "English" };
+
+/** Filler before a tool call. The prompt lists all three, so no one language biases the model (E2E r2). */
 const FILLER = {
   "hi-IN": "एक सेकंड, देख रही हूँ।",
   "kn-IN": "ಒಂದು ಕ್ಷಣ, ನೋಡುತ್ತೇನೆ.",
@@ -157,17 +167,19 @@ function systemPrompt(business, { now = new Date() } = {}) {
   return [
     `You are Sahay, an automated procurement assistant working for ${where || "an Indian small business"}. You talk to the owner by voice.`,
     "The system has already told the owner that you are an automated assistant. Do not greet again; answer what the owner says.",
-    `Today's date in India is ${todayInIndia(now)}. The business usually speaks ${language}.`,
-    "Language: reply in the language the owner just spoke. Hindi in Devanagari script, Kannada in Kannada script, English in English. Never write Hindi or Kannada in Latin letters. Code-mixed in, code-mixed out is fine.",
+    `Today's date in India is ${todayInIndia(now)}.`,
+    "Language: choose the language of every reply, filler included, from the owner's most recent sentence only. An English sentence gets an English reply; a Hindi sentence gets Hindi in Devanagari script; a Kannada sentence gets Kannada in Kannada script. Hindi or Kannada words written in Latin letters count as Hindi or Kannada: answer them in their own script. Code-mixed: reply in the language most of the owner's words are in. Never write Hindi or Kannada in Latin letters.",
+    `The greeting was spoken in ${LANGUAGE_NAMES[language]} because that is the business's language. That greeting does not decide your reply language, and neither do your earlier replies or the language of tool results. When the owner switches language, switch with them at once.`,
     "Every tool takes reply_language: always set it to the language of the owner's last sentence (hi-IN for Hindi, kn-IN for Kannada, en-IN for English), so the tool's `say` comes back in that language.",
-    "Voice: you speak with a woman's voice, so in Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
+    "Voice: you speak with a woman's voice, so when you speak Hindi always use feminine first-person forms (मैं देख रही हूँ, बताऊँगी, कर दिया/कर दी as the object requires, मैं कर पाई), never masculine ones.",
     "Style: one or two short spoken sentences per turn. No lists, markdown, emoji, URLs, ids or tables. Use Indian number words (lakh, crore) and say units in full (kilograms, pieces, days).",
-    `Before every tool call, first say a very short filler in the owner's language, for example "${FILLER[language]}", then call the tool.`,
+    `Before every tool call, first say a very short filler in the owner's language, then call the tool: in English "${FILLER["en-IN"]}", in Hindi "${FILLER["hi-IN"]}", in Kannada "${FILLER["kn-IN"]}".`,
     "Never invent a number, price, count, date, vendor or status. They come only from tool results. If a tool has not returned yet, say what is happening and that you will report back.",
-    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total. Never change a figure from a tool.",
+    "Every tool result has a field `say`. Speak it as your answer, word for word when it contains money, a price, a quantity or a total. Never change a figure from a tool. If a `say` is not in the language of the owner's last sentence, say the same thing in the owner's language with every name and figure unchanged.",
     "Ids: never pass an id you did not copy exactly from a tool result in this call, and normally pass none. Every tool works on the current requirement, the best vendor, the best deal, or the one approval or order waiting when its id is left out. To pick a vendor, use vendorRank (1 = best, as get_shortlist ranks them). If a tool answers with several choices, read them to the owner and ask which one.",
     "To understand a purchase, call save_requirement as soon as you know the item, passing the unit and city as the owner said them. To add details later, call save_requirement again without an id. If its result lists missing fields, ask for them, at most two clarifying questions in total, then continue with what you have.",
-    "Sourcing and negotiation take time: start them with start_sourcing or start_negotiation, say that it has started and that you will report back, then stop talking. Progress is announced automatically.",
+    "Sourcing and negotiation take time: start them with start_sourcing or start_negotiation, say that it has started and that you will report back, then stop talking. Progress and results are announced to the owner automatically, so do not call get_job_status or get_shortlist right after starting a job just to report it, and do not repeat an announcement.",
+    "Jobs: when the owner asks to search or to negotiate, call start_sourcing or start_negotiation every time, even to try again after a negotiation ended or failed; the tool itself answers if one is still running. Never say a search or negotiation is already running, finished or failed from memory of earlier turns: that comes only from a tool result in this turn or from the latest Call status system message, which the server keeps current.",
     "Sourcing searches real vendors listed on IndiaMART. Never call those vendors, or the search, simulated.",
     "Negotiation: call start_negotiation without a vendor to negotiate with a simulated vendor priced from the best real listing that has a comparable price, unless the owner names a vendor by rank or asks for a real vendor to join by link (counterpart human). Only that negotiation counterpart is simulated: call it a simulated vendor (सिम्युलेटेड विक्रेता / ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್), and use the word simulated for nothing else.",
     "Approval: before any order call request_approval (no id: it takes the best deal), speak its readback word for word, and wait for the owner's answer. Only when the owner clearly says yes call confirm_approval with decision approve; if they say no call it with decision reject. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words.",
@@ -316,6 +328,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
   // auth scope "mcp"; which tools the bearer may call follows from the sessions row kind ("owner").
   const bearer = auth.signSession({ businessId, sessionId, scope: "mcp", exp });
   const { token } = buildRtcRtmToken(channel, agentUid, OWNER_SESSION_SECONDS);
+  const prompt = systemPrompt({ ...business, language: lang }, { now: new Date(now) });
   const body = buildJoinBody({
     name: `sahay-${sessionId}-${now}`.slice(0, 64),
     channel,
@@ -324,7 +337,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     remoteUids: [userUid],
     language: lang,
     voiceId,
-    prompt: systemPrompt({ ...business, language: lang }, { now: new Date(now) }),
+    prompt,
     mcp: {
       name: OWNER_MCP_SERVER_NAME,
       endpoint: `${config.publicUrl}/mcp`,
@@ -334,12 +347,40 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     labels: { session: sessionId },
   });
   const started = await startAgent(body);
+  callPrompts.set(started.agentId, prompt);
   return { ...started, language: lang, disclosure: disclosureText({ ...business, language: lang }) };
+}
+
+/** agentId -> the system prompt it joined with, so /update can re-send it unchanged. */
+const callPrompts = new Map();
+
+function timeInIndia(now = new Date()) {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+}
+
+/**
+ * Tell a running owner agent's LLM the current state of the call's jobs, so it never answers
+ * "already running" from memory (E2E r2). /speak lines are not documented to enter the LLM
+ * context, so the state goes in as a second system message.
+ *
+ * POST /agents/{id}/update {"properties":{"llm":{"system_messages":[...]}}} (docs: update.md;
+ * system_messages are prepended to every LLM request). Only system_messages is sent: /update
+ * overwrites `params` entirely when it is present. The join prompt is re-sent word for word.
+ */
+async function updateCallStatus(agentId, status, { now = new Date() } = {}) {
+  if (!agentId) throw new AgoraError("AGENT_REQUIRED", "updateCallStatus needs an agent id.");
+  const prompt = callPrompts.get(agentId);
+  if (!prompt) throw new AgoraError("AGENT_UNKNOWN", "No owner agent with that id was started by this server.");
+  const system_messages = [{ role: "system", content: prompt }];
+  const text = String(status ?? "").trim();
+  if (text) system_messages.push({ role: "system", content: `Call status (from the server, ${timeInIndia(now)} IST): ${text}` });
+  return call("POST", `/agents/${encodeURIComponent(agentId)}/update`, { properties: { llm: { system_messages } } });
 }
 
 /** POST /leave. An agent that is already gone (404) counts as stopped. */
 async function stopAgent(agentId) {
   if (!agentId) return { stopped: false };
+  callPrompts.delete(agentId);
   try {
     await call("POST", `/agents/${encodeURIComponent(agentId)}/leave`, undefined, { retry: true });
     return { stopped: true };
@@ -473,6 +514,7 @@ module.exports = {
   startAgent,
   startOwnerAgent,
   stopAgent,
+  updateCallStatus,
   speak,
   think,
   history,

@@ -114,11 +114,16 @@ function scoreVendor(vendor, requirement) {
   return { score: round2(score), breakdown, assumed, flags };
 }
 
+const nameKey = (v) => String(v.name ?? '').toLocaleLowerCase('en-IN');
+
 /**
- * Vendors best first: score, then the lower price per requirement unit (a price that cannot be
- * compared sorts after every comparable one), then the listing with more ratings. Stable, so
- * equal vendors keep the order they were found in. Returns a new array.
- * @param {object[]} vendors     vendors rows (score, listed_price, listed_unit, pack_size?, rating_count)
+ * The one vendor order: the get_shortlist / start_negotiation tools and GET /api/state (and so
+ * the console's vendor panel) all rank with this, so "number 1" means the same vendor
+ * everywhere. Best first: score, then the lower price per requirement unit (a price that
+ * cannot be compared sorts after every comparable one), then the higher average rating, then
+ * more ratings, then name, then id. Deterministic: it does not depend on the order the
+ * listings were found in. Returns a new array.
+ * @param {object[]} vendors     vendors rows (score, listed_price, listed_unit, pack_size?, rating, rating_count, name, id)
  * @param {{unit: string|null}} requirement
  */
 function rankVendors(vendors, requirement) {
@@ -126,7 +131,10 @@ function rankVendors(vendors, requirement) {
     .map((vendor, index) => ({ vendor, index, price: comparableListedPrice(vendor, requirement?.unit)?.value ?? null }))
     .sort((a, b) => descending(a.vendor.score, b.vendor.score)
       || ascending(a.price, b.price)
+      || descending(a.vendor.rating, b.vendor.rating)
       || descending(a.vendor.rating_count, b.vendor.rating_count)
+      || nameKey(a.vendor).localeCompare(nameKey(b.vendor), 'en-IN')
+      || String(a.vendor.id ?? '').localeCompare(String(b.vendor.id ?? ''))
       || a.index - b.index)
     .map(({ vendor }) => vendor);
 }

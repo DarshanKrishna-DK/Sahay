@@ -16,6 +16,15 @@
  * job.done, job.failed) are therefore held until holdMs after the job started;
  * a job.done inside that window replaces the vendor count, so one result is spoken.
  * Lines follow the language the owner last used (useLanguage), else the call's.
+ *
+ * A result a tool already spoke (get_job_status or get_shortlist after the search finished)
+ * is suppressed per requirement ("sourcing.done:<requirementId>"), even while it waits in the
+ * hold window or the queue, so the owner hears "search done" once (E2E r2).
+ *
+ * /speak lines are not documented to enter the owner agent's LLM context, so every job
+ * milestone is also written to the agent as a "Call status" system message
+ * (agent.updateCallStatus). Without it the model answered "already negotiating" after a
+ * negotiation had ended, and did not call start_negotiation again (E2E r2).
  */
 
 const events = require("../events");
@@ -32,6 +41,7 @@ const live = new Map();
 const suppressed = new Map();
 
 let speakImpl = (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true });
+let statusImpl = (agentId, text) => agent.updateCallStatus(agentId, text);
 let unsubscribe = null;
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -94,10 +104,15 @@ const LINES = {
 
 const line = (key, language, vars = {}) => LINES[key][langKey(language)](vars);
 
-/** Tell the narrator a tool already spoke this milestone, so it is not said twice. */
+/**
+ * Tell the narrator a tool already spoke this milestone, so it is not said twice: a line of
+ * this type still waiting in the queue is dropped, and one still held back is never queued.
+ */
 function suppress(businessId, type, ms = settings.suppressMs) {
   if (!suppressed.has(businessId)) suppressed.set(businessId, new Map());
   suppressed.get(businessId).set(type, Date.now() + ms);
+  const state = live.get(businessId);
+  if (state) state.queue = state.queue.filter((item) => item.type !== type);
 }
 
 function isSuppressed(businessId, type) {
@@ -109,10 +124,10 @@ function isSuppressed(businessId, type) {
 
 /* ---------------------------------------------------------------- queue --- */
 
-function enqueue(state, key, text) {
+function enqueue(state, key, text, type = null) {
   const existing = state.queue.findIndex((item) => item.key === key);
   if (existing !== -1) state.queue.splice(existing, 1);
-  state.queue.push({ key, text });
+  state.queue.push({ key, text, type });
   while (state.queue.length > settings.queueLimit) state.queue.shift();
   pump(state);
 }
@@ -133,6 +148,35 @@ function pump(state) {
     pump(state);
   }, wait);
   state.timer.unref?.();
+}
+
+/* ----------------------------------------------------------- call status --- */
+
+/** English for the model, not for speech: what is running and how the last jobs ended. */
+const STATUS = {
+  sourcingRunning: () => "A vendor search is running now; its result will be announced to the owner automatically.",
+  sourcingDone: (v) =>
+    `The vendor search has finished: ${v.count} vendors found${v.name ? `; the best is ${v.name}${v.price ? ` at ${v.price} rupees per ${v.unit}` : ""}` : ""}. No search is running now.`,
+  sourcingFailed: () => "The last vendor search failed. No search is running now; if the owner asks to search again, call start_sourcing.",
+  negotiationRunning: () =>
+    "A negotiation is running now; its result will be announced to the owner automatically. If the owner asks to negotiate before it ends, call start_negotiation anyway: it will say one is running.",
+  negotiationEnded: (v) =>
+    `The negotiation with ${v.vendor}${v.sim ? " (simulated vendor)" : ""} has ended ${v.price ? `with a deal, agreed at ${v.price} rupees per ${v.unit}; get_ranked_deals has the quote` : "with no deal"}. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.`,
+  negotiationFailed: () => "The last negotiation stopped before a result. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.",
+};
+
+/** Write the job state into the owner agent's LLM context; in order, never blocking speech. */
+function setStatus(state, kind, text) {
+  state.callStatus[kind] = text;
+  const combined = [state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
+  state.statusChain = state.statusChain.then(async () => {
+    if (state.closed) return;
+    try {
+      await statusImpl(state.agentId, combined);
+    } catch (err) {
+      console.warn(`[narrator] call status update failed: ${err.message}`);
+    }
+  });
 }
 
 /* --------------------------------------------------------------- events --- */
@@ -163,6 +207,8 @@ function onEvent(event) {
     case "job.started":
       state.jobStartedAt.set(d.jobId, Date.now());
       if (d.kind === "sourcing") state.lastSourcingStartedAt = Date.now();
+      if (d.kind === "negotiation") setStatus(state, "negotiation", STATUS.negotiationRunning());
+      else if (d.kind === "sourcing") setStatus(state, "sourcing", STATUS.sourcingRunning());
       if (isSuppressed(event.businessId, "job.started")) return;
       enqueue(state, "job.started", line(d.kind === "negotiation" ? "negotiation_started" : "sourcing_started", lang));
       return;
@@ -175,7 +221,7 @@ function onEvent(event) {
       if (!batch.timer) {
         batch.timer = setTimeout(() => {
           state.vendorBatches.set(requirementId, "spoken");
-          enqueue(state, `vendors:${requirementId}`, line("vendors_found", state.language, { count: batch.count }));
+          enqueue(state, `vendors:${requirementId}`, line("vendors_found", state.language, { count: batch.count }), `sourcing.done:${requirementId}`);
         }, Math.max(settings.vendorDebounceMs, holdLeft(state, null)));
         batch.timer.unref?.();
       }
@@ -193,22 +239,31 @@ function onEvent(event) {
       if (batch && batch !== "spoken") clearTimeout(batch.timer);
       state.vendorBatches.set(requirementId, "spoken");
       state.queue = state.queue.filter((item) => item.key !== `vendors:${requirementId}`);
-      later(state, holdLeft(state, d.jobId), () =>
-        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, {
-          count: result.count,
-          name: top.name,
-          price: top.comparablePrice != null ? money(top.comparablePrice) : null,
-          unit: unitWord(result.unit, state.language),
-        })));
+      const price = top.comparablePrice != null ? money(top.comparablePrice) : null;
+      setStatus(state, "sourcing", STATUS.sourcingDone({ count: result.count, name: top.name, price, unit: unitWord(result.unit, "en-IN") }));
+      const type = `sourcing.done:${requirementId}`;
+      later(state, holdLeft(state, d.jobId), () => {
+        // get_job_status or get_shortlist already said this result: say it once.
+        if (isSuppressed(event.businessId, type)) return;
+        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, { count: result.count, name: top.name, price, unit: unitWord(result.unit, state.language) }), type);
+      });
       return;
     }
     case "job.failed":
+      if (d.kind === "negotiation") setStatus(state, "negotiation", STATUS.negotiationFailed());
+      else setStatus(state, "sourcing", STATUS.sourcingFailed());
       later(state, holdLeft(state, d.jobId), () => enqueue(state, `failed:${d.jobId}`, line("job_failed", state.language, { kind: d.kind })));
       return;
     case "negotiation.ended": {
       const o = d.outcome ?? {};
       const unit = o.unit ? unitWord(o.unit, lang) : o.unitWord ?? "";
       const vars = { vendor: o.vendorName ?? "", sim: Boolean(d.simulated || o.simulated), price: o.unitPrice != null ? money(o.unitPrice) : null, unit };
+      setStatus(state, "negotiation", STATUS.negotiationEnded({
+        vendor: vars.vendor || "the vendor",
+        sim: vars.sim,
+        price: o.agreed ? vars.price : null,
+        unit: o.unit ? unitWord(o.unit, "en-IN") : "unit",
+      }));
       enqueue(state, `negotiation:${d.negotiationId}`, line(o.agreed && vars.price ? "negotiation_agreed" : "negotiation_no_deal", lang, vars));
       return;
     }
@@ -255,6 +310,8 @@ function attach(businessId, { agentId, sessionId, language }) {
     vendorBatches: new Map(),
     jobStartedAt: new Map(),
     lastSourcingStartedAt: null,
+    callStatus: { sourcing: null, negotiation: null },
+    statusChain: Promise.resolve(),
     closed: false,
   };
   live.set(businessId, state);
@@ -296,9 +353,10 @@ function stop() {
   for (const businessId of [...live.keys()]) detach(businessId);
 }
 
-/** Tests: replace the /speak call and the timing. */
-function configure({ speak, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs } = {}) {
+/** Tests: replace the /speak and /update calls and the timing. */
+function configure({ speak, status, minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs } = {}) {
   if (speak) speakImpl = speak;
+  if (status) statusImpl = status;
   Object.assign(
     settings,
     Object.fromEntries(Object.entries({ minGapMs, vendorDebounceMs, queueLimit, suppressMs, holdMs }).filter(([, v]) => v !== undefined)),

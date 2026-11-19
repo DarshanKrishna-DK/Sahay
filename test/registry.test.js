@@ -409,9 +409,9 @@ test("reply_language switches the say language; the business language is the fal
   const en = await registry.callTool(ctx, "save_requirement", { item: "बासमती चावल", quantity: 200, unit: "किलो", city: "बेंगलुरु", reply_language: "en-IN" });
   assert.equal(en.say, "Noted: 200 kilograms of basmati rice for Bengaluru.", "an English sentence gets an English item name");
   const kn = await registry.callTool(ctx, "get_shortlist", { reply_language: "kn-IN" });
-  assert.equal(kn.say, "ಇನ್ನೂ ಯಾವ ಮಾರಾಟಗಾರರೂ ಸಿಕ್ಕಿಲ್ಲ.");
+  assert.equal(kn.say, "ಮಾರಾಟಗಾರರ ಹುಡುಕಾಟ ಇನ್ನೂ ಶುರುವಾಗಿಲ್ಲ; ಶುರು ಮಾಡಲೇ?", "no search yet: offer to start, never 'none found' (E2E r2)");
   const hi = await registry.callTool(ctx, "get_shortlist", {});
-  assert.equal(hi.say, "अभी कोई विक्रेता नहीं मिला है।");
+  assert.equal(hi.say, "विक्रेताओं की खोज अभी शुरू नहीं हुई है; शुरू करूँ?");
   // errors follow it too
   await assert.rejects(
     registry.callTool(ctx, "save_requirement", { unit: "handful", reply_language: "en-IN" }),
@@ -593,4 +593,159 @@ test("get_job_status with no id reports the running or latest job, and says so w
   const none = await registry.callTool(ctx, "get_job_status", {});
   assert.equal(none.status, "none");
   assert.equal(none.say, "No search or negotiation has been started yet.");
+});
+
+/* ------------------------------------------- E2E round 2 regressions --- */
+
+const narrator = require("../src/agora/narrator");
+
+function restoreNarrator() {
+  narrator.configure({
+    speak: (agentId, text) => agent.speak(agentId, text, { priority: "APPEND", interruptable: true }),
+    status: (agentId, text) => agent.updateCallStatus(agentId, text),
+    minGapMs: 5000,
+    vendorDebounceMs: 2500,
+    holdMs: 6000,
+  });
+}
+
+const SEARCH_RUNNING = {
+  "hi-IN": "विक्रेताओं की खोज अभी चल रही है, मिलते ही बताऊँगी।",
+  "kn-IN": "ಮಾರಾಟಗಾರರ ಹುಡುಕಾಟ ಇನ್ನೂ ನಡೆಯುತ್ತಿದೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.",
+  "en-IN": "The vendor search is still running; I will tell you as soon as I find vendors.",
+};
+
+test("E2E r2 bug 4: while sourcing runs, no tool says that no vendor was found", async (t) => {
+  const started = captureNegotiationStart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const need = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "kg", city: "Bengaluru", max_price: 90, session_id: ctx.sessionId });
+
+  // Nothing started yet: offer to start; do not claim a result.
+  assert.equal((await registry.callTool(ctx, "get_shortlist", {})).say, "विक्रेताओं की खोज अभी शुरू नहीं हुई है; शुरू करूँ?");
+  assert.equal((await registry.callTool(ctx, "get_shortlist", { reply_language: "en-IN" })).say, "The vendor search has not started yet; shall I start it?");
+
+  const job = repo.createJob(businessId, { kind: "sourcing", requirement_id: need.id });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  for (const [language, say] of Object.entries(SEARCH_RUNNING)) {
+    assert.equal((await registry.callTool(ctx, "get_shortlist", { reply_language: language })).say, say, `get_shortlist ${language}`);
+    assert.equal((await registry.callTool(ctx, "get_job_status", { reply_language: language })).say, say, `get_job_status ${language}: no "0 vendors so far"`);
+    await assert.rejects(registry.callTool(ctx, "start_negotiation", { reply_language: language }), (err) => {
+      assert.equal(err.code, "SOURCING_RUNNING");
+      assert.equal(err.say, say);
+      return true;
+    });
+  }
+  assert.equal(started.length, 0);
+
+  // Only a finished search may say that it found nobody.
+  repo.transitionJob(businessId, job.id, "running", "failed", { error: "IndiaMART returned no listings." });
+  assert.equal((await registry.callTool(ctx, "get_shortlist", {})).say, "खोज में कोई विक्रेता नहीं मिला।");
+  assert.equal((await registry.callTool(ctx, "get_shortlist", { reply_language: "en-IN" })).say, "The search found no vendors.");
+});
+
+test("E2E r2 bug 4: while a negotiation runs, deals and approval say it is running, not 'no quotes'", async () => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = ownerCtx(businessId);
+  const need = repo.createRequirement(businessId, { item: "basmati rice", quantity: 200, unit: "kg", city: "Bengaluru", max_price: 90, session_id: ctx.sessionId });
+  const job = repo.createJob(businessId, { kind: "negotiation", requirement_id: need.id });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  const running = "The negotiation is still going on; I will tell you the result as soon as it is in.";
+  assert.equal((await registry.callTool(ctx, "get_ranked_deals", {})).say, running);
+  await assert.rejects(registry.callTool(ctx, "request_approval", {}), (err) => err.code === "NEGOTIATION_RUNNING" && err.say === running);
+  repo.transitionJob(businessId, job.id, "running", "done", { result: { status: "walked_away", outcome: { agreed: false, vendorName: "BS Foods", simulated: true, unit: "kg" } } });
+  assert.equal((await registry.callTool(ctx, "get_ranked_deals", {})).say, "There are no quotes yet.");
+});
+
+test("E2E r2 bug 2: get_job_status tells how a finished negotiation ended, and start_negotiation runs again after it", async (t) => {
+  const started = captureNegotiationStart(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const { need } = seedVendors(businessId, ctx.sessionId);
+  const job = repo.createJob(businessId, { kind: "negotiation", requirement_id: need.id });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  repo.transitionJob(businessId, job.id, "running", "done", {
+    result: { negotiationId: "neg_w", status: "walked_away", outcome: { agreed: false, state: "walked_away", vendorName: "BS Foods", simulated: true, unit: "kg" } },
+  });
+  const hi = await registry.callTool(ctx, "get_job_status", {});
+  assert.equal(hi.say, "BS Foods (सिम्युलेटेड विक्रेता) से मोल-भाव ख़त्म हुआ, सौदा नहीं बना।");
+  const en = await registry.callTool(ctx, "get_job_status", { reply_language: "en-IN" });
+  assert.equal(en.say, "The negotiation with BS Foods (simulated vendor) has ended without a deal.");
+
+  // The owner asks again: the tool starts a new negotiation (the model must call it, not answer from memory).
+  const again = await registry.callTool(ctx, "start_negotiation", {});
+  assert.equal(started.length, 1);
+  assert.match(again.say, /सिम्युलेटेड विक्रेता से मोल-भाव शुरू कर दिया है/);
+
+  const agreedJob = repo.createJob(businessId, { kind: "negotiation", requirement_id: need.id });
+  repo.transitionJob(businessId, agreedJob.id, "queued", "running");
+  repo.transitionJob(businessId, agreedJob.id, "running", "done", {
+    result: { negotiationId: "neg_a", status: "agreed", outcome: { agreed: true, vendorName: "Babu Trading Co.", simulated: true, unitPrice: 88.5, unit: "kg" } },
+  });
+  const done = await registry.callTool(ctx, "get_job_status", { jobId: agreedJob.id, reply_language: "en-IN" });
+  assert.equal(done.say, "The negotiation with Babu Trading Co. (simulated vendor) is done at 88.5 rupees per kilogram.");
+});
+
+test("E2E r2 bug 3: once get_job_status has said the search result, the narrator does not say it again", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), status: async () => {}, minGapMs: 5, vendorDebounceMs: 20, holdMs: 150 });
+  t.after(restoreNarrator);
+  const state = narrator.attach(businessId, { agentId: "AGDUP", sessionId: ctx.sessionId, language: "hi-IN" });
+  state.lastSpokeAt = 0;
+  t.after(() => narrator.detach(businessId));
+
+  const need = repo.createRequirement(businessId, { item: "बासमती चावल", quantity: 200, unit: "kg", city: "Bengaluru", session_id: ctx.sessionId });
+  const job = repo.createJob(businessId, { kind: "sourcing", requirement_id: need.id });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  narrator.suppress(businessId, "job.started");
+  narrator.onEvent({ businessId, type: "job.started", data: { jobId: job.id, kind: "sourcing" } });
+  const result = { requirementId: need.id, unit: "kg", count: 10, shortlist: [{ name: "BS Foods", comparablePrice: 60 }] };
+  repo.transitionJob(businessId, job.id, "running", "done", { result });
+  narrator.onEvent({ businessId, type: "job.done", data: { jobId: job.id, kind: "sourcing", result } });
+
+  const status = await registry.callTool(ctx, "get_job_status", {});
+  assert.equal(status.say, "खोज पूरी हुई, 10 विक्रेता मिले।");
+  await new Promise((r) => setTimeout(r, 350));
+  assert.deepEqual(spoken, [], "one 'search done' line, not two");
+});
+
+test("E2E r2 bug 3: get_shortlist after a finished search also stands in for the narrated result", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const spoken = [];
+  narrator.configure({ speak: async (_a, text) => spoken.push(text), status: async () => {}, minGapMs: 5, holdMs: 150 });
+  t.after(restoreNarrator);
+  const state = narrator.attach(businessId, { agentId: "AGDUP2", sessionId: ctx.sessionId, language: "hi-IN" });
+  state.lastSpokeAt = 0;
+  t.after(() => narrator.detach(businessId));
+  const { need } = seedVendors(businessId, ctx.sessionId);
+  const job = repo.createJob(businessId, { kind: "sourcing", requirement_id: need.id });
+  repo.transitionJob(businessId, job.id, "queued", "running");
+  narrator.onEvent({ businessId, type: "job.started", data: { jobId: job.id, kind: "sourcing" } });
+  const result = { requirementId: need.id, unit: "kg", count: 3, shortlist: [{ name: "Babu Trading Co.", comparablePrice: 100 }] };
+  repo.transitionJob(businessId, job.id, "running", "done", { result });
+  narrator.onEvent({ businessId, type: "job.done", data: { jobId: job.id, kind: "sourcing", result } });
+  await registry.callTool(ctx, "get_shortlist", {});
+  await new Promise((r) => setTimeout(r, 350));
+  assert.ok(!spoken.some((s) => s.startsWith("खोज पूरी हुई")), `narrated: ${JSON.stringify(spoken)}`);
+});
+
+test("E2E r2 bug 5: English and Kannada say lines never carry the Devanagari item name", async () => {
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId);
+  const { need, quote } = seedQuote(businessId);
+  repo.updateRequirement(businessId, need.id, { item: "बासमती चावल" });
+  const en = await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN" });
+  assert.match(en.say, /^Order from Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg\./);
+  assert.doesNotMatch(en.say, /\p{Script=Devanagari}/u);
+  assert.match(repo.getApproval(businessId, en.approvalId).readback, /बासमती चावल/, "the stored readback keeps the owner's words");
+
+  // An item no rule can name in English is not read out in a foreign script.
+  const shirts = await registry.callTool(ctx, "save_requirement", { item: "कॉटन टीशर्ट्स", quantity: 500, unit: "pieces", city: "Bengaluru", reply_language: "en-IN" });
+  assert.doesNotMatch(shirts.say, /\p{Script=Devanagari}/u);
+  assert.match(shirts.say, /^Noted: 500 .* of the requested item for Bengaluru\.$/);
+  const kn = await registry.callTool(ctx, "save_requirement", { quantity: 400, reply_language: "kn-IN" });
+  assert.doesNotMatch(kn.say, /\p{Script=Devanagari}/u);
 });
