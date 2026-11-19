@@ -429,10 +429,8 @@ function confirmDraft(businessId, draftId, { decision, agentId, history, session
   if (!agentId || draft.agent_id !== agentId || !draft.spoken_text) {
     throw new KhataError("READBACK_NOT_SPOKEN", "This payment was not read out to the owner in this call.", { status: 409 });
   }
+  // Also refuses the yes when any other question the server asked (every *_readbacks table) came after this read-back.
   const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: [draft.spoken_text], subject: {} });
-  // A Sell or stock question the server asked after this read-back takes the yes instead.
-  const spoken = require("./spoken");
-  spoken.assertNothingBetween(history, [draft.spoken_text], spoken.otherSpoken(businessId));
   if (approvals.classifyUtterance(text) !== "affirmative") {
     throw new KhataError("NOT_AFFIRMATIVE", "The owner's reply was not a clear yes; the payment is not written down.", { status: 409 });
   }

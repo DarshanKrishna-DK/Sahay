@@ -330,3 +330,41 @@ test("a heard payment is written only after the owner's spoken yes to the read-b
     { code: "READBACK_SUPERSEDED" },
   );
 });
+
+test("a payment's yes is refused when any other question the server asked came after its read-back (shared approvals check, every *_readbacks table)", (t) => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const ramesh = customers.save(businessId, { name: "रमेश" }).customer;
+  issueInvoice(businessId, ramesh.id, 500000);
+  const call = fakeCall(t);
+  const history = () => call.items.slice();
+
+  // An item's HSN/GST read-back spoken after the payment's: the yes answers the item, not the payment.
+  const { draft } = khata.draftReceipt(businessId, { customerId: ramesh.id, amount: 2000, mode: "cash" }, { language: "hi-IN" });
+  call.speak(draft.readback);
+  khata.markDraftSpoken(businessId, draft.id, { agentId: "AGV", text: draft.readback });
+  const tax = "बासमती चावल: एचएसएन 1006, जीएसटी 5 प्रतिशत। सही है?";
+  require("../src/sell/item-tax").recordSpoken(businessId, { itemName: "बासमती चावल", hsn: "1006", gstRate: 5, agentId: "AGV", text: tax });
+  call.speak(tax);
+  call.owner("हाँ");
+  assert.throws(() => khata.confirmDraft(businessId, draft.id, { decision: "confirm", agentId: "AGV", history: history() }), { code: "READBACK_SUPERSEDED" });
+
+  // A rule read-back (a table the Sell-only check never looked at) supersedes it the same way.
+  const second = khata.draftReceipt(businessId, { customerId: ramesh.id, amount: 1000, mode: "upi" }, { language: "hi-IN" }).draft;
+  call.speak(second.readback);
+  khata.markDraftSpoken(businessId, second.id, { agentId: "AGV", text: second.readback });
+  const rules = require("../src/agent/rules");
+  const rule = rules.propose(businessId, { kind: "bargain_style", params: { style: "tough" }, source: "owner_said" });
+  const ruleText = "मैं कड़ा मोलभाव करूँगी। क्या यह नियम रखूँ?";
+  rules.recordSpoken(businessId, rule.id, { agentId: "AGV", text: ruleText });
+  call.speak(ruleText);
+  call.owner("हाँ जी");
+  assert.throws(() => khata.confirmDraft(businessId, second.id, { decision: "confirm", agentId: "AGV", history: history() }), { code: "READBACK_SUPERSEDED" });
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE business_id = ?").get(businessId).n, 0);
+});
+
+test("src/sell/spoken.js is gone: the khata uses only approvals.answerAfterSpoken", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "src", "sell", "spoken.js")), false);
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "..", "src", "sell", "khata.js"), "utf8"), /require\("\.\/spoken"\)/);
+});
