@@ -96,10 +96,13 @@ function contentSecurityPolicy(publicDir = PUBLIC_DIR) {
  * api.razorpay.com. Razorpay publishes no CSP list, so the other origins below are the ones
  * Checkout was seen to need in a real browser (docs/build/evidence/pay-csp-check.txt): every
  * one is a razorpay.com host, and only Sahay's own files and Razorpay's script may run.
+ * cdn.razorpay.com is Razorpay's own static CDN: checkout.js loads its risk-detection script
+ * from https://cdn.razorpay.com/static/cx/razorpay-risk-detection/bundle.js (blocked in the
+ * E2E run of 2026-11-19), so it is allowed for scripts only.
  */
 const PAY_CSP = [
   "default-src 'self'",
-  "script-src 'self' https://checkout.razorpay.com",
+  "script-src 'self' https://checkout.razorpay.com https://cdn.razorpay.com",
   "frame-src https://api.razorpay.com https://checkout.razorpay.com",
   "connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com",
   "style-src 'self' 'unsafe-inline'",

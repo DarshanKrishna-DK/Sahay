@@ -89,11 +89,15 @@ test("the pay page is public, static, not cached, and runs under its own Razorpa
     assert.equal(page.res.headers.get("content-security-policy"), PAY_CSP);
     assert.equal(page.res.headers.get("cache-control"), "no-store");
     assert.equal(page.res.headers.get("cross-origin-opener-policy"), "same-origin-allow-popups");
-    assert.match(PAY_CSP, /script-src 'self' https:\/\/checkout\.razorpay\.com(;|$)/);
-    assert.doesNotMatch(PAY_CSP, /unsafe-eval|script-src[^;]*unsafe-inline/);
+    // Checkout loads Razorpay's own risk-detection script from cdn.razorpay.com (E2E 2026-11-19:
+    // script-src-elem blocked .../static/cx/razorpay-risk-detection/bundle.js). Allowed for scripts only.
+    assert.match(PAY_CSP, /script-src 'self' https:\/\/checkout\.razorpay\.com https:\/\/cdn\.razorpay\.com(;|$)/);
+    assert.equal(PAY_CSP.match(/cdn\.razorpay\.com/g).length, 1, "cdn.razorpay.com is in script-src and nowhere else");
+    assert.doesNotMatch(PAY_CSP, /unsafe-eval|script-src[^;]*unsafe-inline|\*\.razorpay/);
 
     const consolePage = await call(base, "GET", "/");
     assert.notEqual(consolePage.res.headers.get("content-security-policy"), PAY_CSP, "the console keeps its own CSP");
+    assert.doesNotMatch(consolePage.res.headers.get("content-security-policy"), /razorpay/, "only the pay page trusts Razorpay");
     assert.equal(consolePage.res.headers.get("cross-origin-opener-policy"), "same-origin");
   });
 });
