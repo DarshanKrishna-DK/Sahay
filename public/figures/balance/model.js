@@ -20,8 +20,8 @@ export const MAX_DISCS = Object.freeze({
 
 const DEG = Math.PI / 180;
 /** Beam tilt per rupee of difference between the pans, and the stop that limits it. */
-export const TILT_PER_RUPEE = 0.32 * DEG;
-export const MAX_TILT = 7 * DEG;
+export const TILT_PER_RUPEE = 0.4 * DEG;
+export const MAX_TILT = 9 * DEG;
 
 /** The beam swings like a real balance: an underdamped pendulum (period about 1.6 s). */
 export const SWING = Object.freeze({ stiffness: 15.4, damping: 1.7 });
