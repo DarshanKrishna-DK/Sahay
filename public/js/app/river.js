@@ -4,7 +4,8 @@
 // rebuilds the same stations, and live events only move them forward.
 
 import { h, icon, svgEl, scripted, rupees, amount, toDate as toDateSafe } from "./dom.js";
-import { t, when, unitWord, cityWord } from "./i18n.js";
+import { t, lang, when, unitWord, cityWord } from "./i18n.js";
+import { itemLine } from "./item-line.js";
 import { state } from "./store.js";
 
 /** One record per station: { id, icon, status: done|active|needs|upcoming|failed, detail } */
@@ -190,7 +191,8 @@ export function stationDetail(s, model, req, speakButton, extra = {}) {
     rows.push(fact("truck", req.deliveryBy ? t("work.when", { d: req.deliveryBy }) : null));
     rows.push(h("div", { class: "sheet-speak" }, speakButton(`need:${req.id}`)));
   } else if (s.id === "search") {
-    if (!model.vendors.length) rows.push(h("p", { class: "fact muted", text: s.status === "active" ? t("now.searching", { item: req ? req.item : "" }) : t("work.noSellers") }));
+    const searching = itemLine("now.searching", { item: req ? req.item : "" }, lang());
+    if (!model.vendors.length) rows.push(h("p", { class: "fact muted", text: s.status === "active" ? t(searching.key, searching.vars) : t("work.noSellers") }));
     else {
       rows.push(h("p", { class: "fact" }, icon("store", 22), h("span", { text: t("work.sellers", { n: model.vendors.length }) })));
       rows.push(h("ol", { class: "seller-list" }, ...model.vendors.slice().sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99)).slice(0, 10).map((v) =>

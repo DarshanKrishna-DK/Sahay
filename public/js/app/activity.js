@@ -3,6 +3,8 @@
 
 import { state, pendingApprovals, vendorName } from "./store.js";
 import { call } from "./call.js";
+import { lang } from "./i18n.js";
+import { itemLine } from "./item-line.js";
 
 export function runningJobs() {
   return [...state.jobs.values()].filter((j) => j.status === "running" || j.status === "queued");
@@ -12,6 +14,8 @@ export function runningJobs() {
 export function nowLine() {
   const req = state.requirement;
   const item = req && req.item ? req.item : "";
+  // The item is named only when it is in the screen's script (never a Kannada item in a Hindi line).
+  const withItem = (key, vars, tone) => ({ ...itemLine(key, { ...vars, item }, lang()), tone });
   if (pendingApprovals().length) return { key: "now.waitingYes", vars: {}, tone: "needs" };
   const running = runningJobs().sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
   const nego = running.find((j) => j.kind === "negotiation");
@@ -21,15 +25,14 @@ export function nowLine() {
     const name = vendorName(vid);
     if (name) return { key: "now.bargaining", vars: { vendor: name }, tone: "busy" };
   }
-  if (running.some((j) => j.kind === "sourcing")) return { key: "now.searching", vars: { item }, tone: "busy" };
-  if (nego) return { key: "now.searching", vars: { item }, tone: "busy" };
+  if (running.some((j) => j.kind === "sourcing") || nego) return withItem("now.searching", {}, "busy");
   const jobs = [...state.jobs.values()].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
   const orders = [...state.orders.values()].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   const lastOrder = orders[0];
   if (lastOrder && (!req || String(lastOrder.createdAt || "") >= String(req.createdAt || ""))) return { key: "now.ordered", vars: {}, tone: "done" };
   if (jobs[0] && jobs[0].status === "failed") return { key: "now.failed", vars: {}, tone: "bad" };
-  if (req && state.vendors.size) return { key: "now.found", vars: { n: state.vendors.size, item }, tone: "calm" };
-  if (req && item) return { key: "now.heard", vars: { item }, tone: "calm" };
+  if (req && state.vendors.size) return withItem("now.found", { n: state.vendors.size }, "calm");
+  if (req && item) return withItem("now.heard", {}, "calm");
   return { key: "now.idle", vars: {}, tone: "calm" };
 }
 

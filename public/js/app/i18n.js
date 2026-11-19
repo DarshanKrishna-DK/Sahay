@@ -125,6 +125,10 @@ const T = {
   "now.heard": ["Got your need: {item}", "आपकी ज़रूरत समझी: {item}", "ನಿಮ್ಮ ಅಗತ್ಯ ತಿಳಿಯಿತು: {item}"],
   "now.searching": ["Finding sellers for {item}", "{item} के विक्रेता ढूँढ रही हूँ", "{item} ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತಿದ್ದೇನೆ"],
   "now.found": ["Found {n} sellers for {item}", "{item} के {n} विक्रेता मिले", "{item}ಗೆ {n} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕರು"],
+  // The same lines when the item is in another script than the screen's (item-line.js).
+  "now.heardAny": ["Got your need", "आपकी ज़रूरत समझ ली", "ನಿಮ್ಮ ಅಗತ್ಯ ತಿಳಿಯಿತು"],
+  "now.searchingAny": ["Finding sellers", "विक्रेता ढूँढ रही हूँ", "ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತಿದ್ದೇನೆ"],
+  "now.foundAny": ["Found {n} sellers", "{n} विक्रेता मिले", "{n} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕರು"],
   "now.bargaining": ["Bargaining with {vendor}", "{vendor} से मोलभाव कर रही हूँ", "{vendor} ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡುತ್ತಿದ್ದೇನೆ"],
   "now.waitingYes": ["Waiting for your yes", "आपकी हाँ का इंतज़ार है", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗಾಗಿ ಕಾಯುತ್ತಿದ್ದೇನೆ"],
   "now.ordered": ["Order placed", "ऑर्डर हो गया", "ಆರ್ಡರ್ ಆಯಿತು"],
