@@ -32,14 +32,16 @@ const repo = require("../db/repo");
 const events = require("../events");
 const accounts = require("../accounts");
 const { AccountError, store, passkeys } = accounts;
-const { HttpError, RATE, clientIp } = require("./api");
+const { HttpError, RATE } = require("./api");
+const { clientAddress, rateCheck } = require("../client-address");
 
 const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
 const BROWSER_SESSION_SECONDS = 7 * 24 * 60 * 60;
 const MINUTE = 60 * 1000;
+/** Per client address; `untrusted` is the one bucket all callers share when no tunnel header names them. */
 const LIMITS = Object.freeze({
-  pinLoginPerIp: { max: 30, windowMs: 15 * MINUTE },
-  passkeyLoginPerIp: { max: 30, windowMs: 15 * MINUTE },
+  pinLogin: { perIp: { max: 30, windowMs: 15 * MINUTE }, untrusted: { max: 200, windowMs: 15 * MINUTE } },
+  passkeyLogin: { perIp: { max: 30, windowMs: 15 * MINUTE }, untrusted: { max: 300, windowMs: 15 * MINUTE } },
   passkeyRegisterPerAccount: { max: 10, windowMs: 10 * MINUTE },
 });
 
@@ -88,7 +90,7 @@ function asHttp(err, language) {
   return new HttpError(err.status, err.code, err.message, sayIn(err.code, language), { retryAfterSeconds: err.retryAfterSeconds });
 }
 
-function limit(key, { max, windowMs }, language) {
+function limit({ key, max, windowMs }, language) {
   if (!limits.allow(key, max, windowMs)) {
     throw new HttpError(429, "RATE_LIMITED", "Too many requests. Wait a few minutes and try again.", sayIn("RATE_LIMITED", language), {
       retryAfterSeconds: Math.ceil(windowMs / 1000),
@@ -190,7 +192,7 @@ function createAuthRouter() {
         const claimBusinessId = accounts.deviceBusinessToClaim({ device, typedName: business.name, claimDevice: body.claimDevice });
 
         // The same per-IP window as POST /api/session, counted before the access code is checked.
-        limit(`session:${clientIp(req)}`, RATE.newBusiness.perIp, language);
+        limit(rateCheck(req, "session", RATE.newBusiness), language);
         if (!claimBusinessId && config.accessCode && !accessCodeMatches(body.accessCode)) {
           throw new HttpError(403, "ACCESS_CODE_REQUIRED", body.accessCode ? "That access code is not right." : "This Sahay server needs an access code to set up a new business.");
         }
@@ -212,9 +214,9 @@ function createAuthRouter() {
       try {
         const phone = accounts.normalisePhone(body.phone);
         if (!accounts.isPin(body.pin)) throw new AccountError("INVALID_PIN", "The PIN is 4 digits.");
-        const ip = clientIp(req);
-        limit(`login:ip:${ip}`, LIMITS.pinLoginPerIp, language);
-        const { account, businessId } = await accounts.loginWithPin({ phone, pin: body.pin, lockKey: `${phone}|${ip}` });
+        limit(rateCheck(req, "login", LIMITS.pinLogin), language);
+        const who = clientAddress(req);
+        const { account, businessId } = await accounts.loginWithPin({ phone, pin: body.pin, lockKey: `${phone}|${who.trusted ? who.ip : "untrusted"}` });
         signIn(req, res, { account, businessId, via: "pin" });
       } catch (err) {
         throw asHttp(err, language);
@@ -240,7 +242,7 @@ function createAuthRouter() {
     wrap(async (req, res) => {
       const { account, business } = requireAccount(req);
       try {
-        limit(`passkey:register:${account.id}`, LIMITS.passkeyRegisterPerAccount, business.language);
+        limit({ key: `passkey:register:${account.id}`, ...LIMITS.passkeyRegisterPerAccount }, business.language);
         res.json(await passkeys.registrationOptions(account, passkeys.fromRequest(req)));
       } catch (err) {
         throw asHttp(err, business.language);
@@ -269,7 +271,7 @@ function createAuthRouter() {
     wrap(async (req, res) => {
       const body = req.body ?? {};
       try {
-        limit(`passkey:login:${clientIp(req)}`, LIMITS.passkeyLoginPerIp, body.language);
+        limit(rateCheck(req, "passkey:login", LIMITS.passkeyLogin), body.language);
         const rp = passkeys.fromRequest(req);
         if (body.phone === undefined || body.phone === null || body.phone === "") {
           return res.json(await passkeys.authenticationOptions(rp));
@@ -288,7 +290,7 @@ function createAuthRouter() {
     wrap(async (req, res) => {
       const language = req.body?.language;
       try {
-        limit(`passkey:login:${clientIp(req)}`, LIMITS.passkeyLoginPerIp, language);
+        limit(rateCheck(req, "passkey:login", LIMITS.passkeyLogin), language);
         const accountId = await passkeys.verifyAuthentication(req.body);
         signIn(req, res, { account: store.getAccount(accountId), businessId: accounts.primaryBusiness(accountId), via: "passkey" });
       } catch (err) {

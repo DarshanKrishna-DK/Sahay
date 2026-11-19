@@ -25,6 +25,9 @@ where tailscale >nul 2>nul && (
   tailscale funnel --bg 3000 >nul 2>nul && echo   Public link: & tailscale funnel status
 ) || echo   [!] Tailscale not found: only http://localhost:3000 will work.
 
+REM Funnel's proxy (tailscaled) sets X-Forwarded-For to the caller's address: trust it from loopback
+REM only, for rate limits and PIN lockouts (src/client-address.js). cloudflared instead: TRUST_CF_CONNECTING_IP=1.
+set TRUST_PROXY=tailscale
 echo   Starting Sahay on http://localhost:3000  (Ctrl+C to stop)
 node server.js
 endlocal

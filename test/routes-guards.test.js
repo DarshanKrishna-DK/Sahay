@@ -14,6 +14,7 @@ Object.assign(process.env, {
   SAHAY_ACCESS_CODE: "open-sesame-2026",
   SAHAY_MAX_OWNER_CALLS: "1",
   SAHAY_MAX_CALL_SECONDS: "1",
+  TRUST_CF_CONNECTING_IP: "1", // the cloudflared opt-in, so each test can pick its client IP
 });
 
 const assert = require("node:assert/strict");
@@ -150,26 +151,6 @@ test("a valid cookie loads its business without touching the creation limit", as
       assert.equal(again.json.business.id, business.id);
     }
   });
-});
-
-test("clientIp trusts CF-Connecting-IP only from the loopback tunnel, else the socket address", () => {
-  const req = (remoteAddress, cf) => ({ socket: { remoteAddress }, headers: cf === undefined ? {} : { "cf-connecting-ip": cf } });
-  assert.equal(api.clientIp(req("127.0.0.1", "203.0.113.9")), "203.0.113.9");
-  assert.equal(api.clientIp(req("::1", "2001:db8::1")), "2001:db8::1");
-  assert.equal(api.clientIp(req("::ffff:127.0.0.1", "203.0.113.9")), "203.0.113.9");
-  assert.equal(api.clientIp(req("198.51.100.4", "203.0.113.9")), "198.51.100.4", "a remote caller cannot pick its own key");
-  assert.equal(api.clientIp(req("127.0.0.1", "not an ip; drop table")), "127.0.0.1", "garbage header falls back to the socket");
-  assert.equal(api.clientIp(req("127.0.0.1")), "127.0.0.1");
-});
-
-test("behind a trusted hosting proxy (opt-in), clientIp takes the right-most public X-Forwarded-For entry", () => {
-  const req = (remoteAddress, xff) => ({ socket: { remoteAddress }, headers: xff === undefined ? {} : { "x-forwarded-for": xff } });
-  const trust = { trustForwardedFor: true };
-  assert.equal(api.clientIp(req("10.0.3.7", "203.0.113.9"), trust), "203.0.113.9");
-  assert.equal(api.clientIp(req("10.0.3.7", "6.6.6.6, 203.0.113.9, 10.1.1.1"), trust), "203.0.113.9", "spoofed left entries and inner proxies are skipped");
-  assert.equal(api.clientIp(req("10.0.3.7", "junk"), trust), "10.0.3.7", "garbage falls back to the socket");
-  assert.equal(api.clientIp(req("10.0.3.7", "203.0.113.9")), "10.0.3.7", "off by default");
-  assert.equal(api.clientIp(req("198.51.100.4", "203.0.113.9"), trust), "198.51.100.4", "only a private-network peer is a proxy");
 });
 
 /* ------------------------------------------------------ business details --- */

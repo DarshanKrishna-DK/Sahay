@@ -39,6 +39,7 @@ const agentRules = require("../agent/rules");
 const agentMemories = require("../agent/memories");
 const agentPolicy = require("../agent/policy");
 const speakIt = require("../agent/speak");
+const { rateCheck } = require("../client-address");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -47,12 +48,20 @@ const BROWSER_SESSION_SECONDS = 7 * 24 * 60 * 60;
 const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
 const MINUTE = 60 * 1000;
 
-/** Fixed-window limits: {max, windowMs}. Per client IP and, for voice, per business too. */
+/**
+ * Fixed-window limits: {max, windowMs}. Per client address and, for voice, per business too.
+ * `untrusted` is the ONE bucket every caller shares when no trusted tunnel header names the caller
+ * (src/client-address.js): larger than one address's cap, still a hard ceiling.
+ * Pay links are limited per token, so nobody can starve another customer's page or verify; a
+ * request with a token that matches nothing counts against the caller's address (badPayToken).
+ */
 const RATE = Object.freeze({
-  newBusiness: Object.freeze({ perIp: { max: 5, windowMs: 60 * MINUTE } }),
-  voiceToken: Object.freeze({ perBusiness: { max: 20, windowMs: 10 * MINUTE }, perIp: { max: 60, windowMs: 10 * MINUTE } }),
-  voiceStart: Object.freeze({ perBusiness: { max: 6, windowMs: 10 * MINUTE }, perIp: { max: 20, windowMs: 10 * MINUTE } }),
-  pay: Object.freeze({ perIp: { max: 60, windowMs: 10 * MINUTE } }),
+  newBusiness: Object.freeze({ perIp: { max: 5, windowMs: 60 * MINUTE }, untrusted: { max: 30, windowMs: 60 * MINUTE } }),
+  voiceToken: Object.freeze({ perBusiness: { max: 20, windowMs: 10 * MINUTE }, perIp: { max: 60, windowMs: 10 * MINUTE }, untrusted: { max: 300, windowMs: 10 * MINUTE } }),
+  voiceStart: Object.freeze({ perBusiness: { max: 6, windowMs: 10 * MINUTE }, perIp: { max: 20, windowMs: 10 * MINUTE }, untrusted: { max: 60, windowMs: 10 * MINUTE } }),
+  payPage: Object.freeze({ perToken: { max: 60, windowMs: 10 * MINUTE } }),
+  payVerify: Object.freeze({ perToken: { max: 30, windowMs: 10 * MINUTE } }),
+  badPayToken: Object.freeze({ perIp: { max: 60, windowMs: 10 * MINUTE }, untrusted: { max: 600, windowMs: 10 * MINUTE } }),
   speak: Object.freeze({ perBusiness: { max: 30, windowMs: 10 * MINUTE } }),
 });
 /** How often a live owner call's agent is checked with Agora (it may have left on idle_timeout). */
@@ -96,31 +105,18 @@ class HttpError extends Error {
 }
 
 /**
- * The caller's IP for rate limiting. cloudflared runs on this machine, so a request from
- * loopback carries the real client in CF-Connecting-IP; from anywhere else the header is the
- * caller's own claim and is ignored.
+ * Run a public pay-link handler under its per-token limit. A token that matches no link
+ * (PAY_LINK_INVALID) is counted against the caller's address, and past that limit answers 429.
  */
-const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-const IP_TEXT = /^[0-9A-Fa-f:.]{2,45}$/;
-const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|::ffff:(10|127|192\.168)\.|f[cd][0-9a-f]{2}:|fe80:)/i;
-
-/**
- * The caller's address for rate limits. Behind the local cloudflared tunnel: CF-Connecting-IP from
- * loopback. Behind a hosting proxy (opt-in, TRUST_FORWARDED_FOR=1, e.g. Hugging Face Spaces): the
- * right-most public X-Forwarded-For entry, which the proxy appended and the client cannot forge.
- */
-function clientIp(req, { trustForwardedFor = config.trustForwardedFor } = {}) {
-  const peer = req.socket?.remoteAddress ?? "unknown";
-  if (trustForwardedFor && PRIVATE_IP.test(peer)) {
-    const hops = String(req.headers["x-forwarded-for"] ?? "").split(",").map((h) => h.trim()).reverse();
-    const client = hops.find((h) => IP_TEXT.test(h) && !PRIVATE_IP.test(h));
-    if (client) return client;
+const payTokenKey = (token) => crypto.createHash("sha256").update(String(token)).digest("base64url").slice(0, 22);
+async function payLimited(req, kind, run) {
+  rateLimit([{ key: `pay:${kind}:token:${payTokenKey(req.params.token)}`, ...RATE[kind].perToken }]);
+  try {
+    return await run();
+  } catch (err) {
+    if (err?.code === "PAY_LINK_INVALID") rateLimit([rateCheck(req, "pay:bad-token", RATE.badPayToken)]);
+    throw err;
   }
-  if (LOOPBACK.has(peer)) {
-    const forwarded = req.headers["cf-connecting-ip"];
-    if (typeof forwarded === "string" && IP_TEXT.test(forwarded.trim())) return forwarded.trim();
-  }
-  return peer;
 }
 
 /** Throw 429 RATE_LIMITED unless every {key, max, windowMs} is under its limit. */
@@ -341,8 +337,7 @@ function createApiRouter() {
           language,
         };
         // Counted before the access code is checked, so the same window also caps guessing it.
-        const { perIp } = RATE.newBusiness;
-        rateLimit([{ key: `session:${clientIp(req)}`, ...perIp }], sayIn(SAY.newBusinessLimited, language));
+        rateLimit([rateCheck(req, "session", RATE.newBusiness)], sayIn(SAY.newBusinessLimited, language));
         if (config.accessCode && !accessCodeMatches(body.accessCode)) {
           throw new HttpError(403, "ACCESS_CODE_REQUIRED", body.accessCode ? "That access code is not right." : "This Sahay server needs an access code to set up a new business.");
         }
@@ -636,7 +631,6 @@ const PAY_PAGE = path.join(__dirname, "..", "..", "public", "pay.html");
 function createPayRouter() {
   const router = express.Router();
   const json = express.json({ limit: "4kb" });
-  const limitPay = (req) => rateLimit([{ key: `pay:ip:${clientIp(req)}`, ...RATE.pay.perIp }]);
 
   router.get("/pay/:token", (_req, res) => {
     res.set("Cache-Control", "no-store");
@@ -645,16 +639,15 @@ function createPayRouter() {
   router.get(
     "/api/pay/:token",
     wrap(async (req, res) => {
-      limitPay(req);
-      res.set("Cache-Control", "no-store").json(payments.checkoutForToken(req.params.token));
+      const page = await payLimited(req, "payPage", () => payments.checkoutForToken(req.params.token));
+      res.set("Cache-Control", "no-store").json(page);
     }),
   );
   router.post(
     "/api/pay/:token/verify",
     json,
     wrap(async (req, res) => {
-      limitPay(req);
-      const { status, poNumber, already } = payments.verifyCheckoutPayment(req.params.token, req.body ?? {});
+      const { status, poNumber, already } = await payLimited(req, "payVerify", () => payments.verifyCheckoutPayment(req.params.token, req.body ?? {}));
       res.set("Cache-Control", "no-store").json({ status, poNumber, already });
     }),
   );
@@ -663,12 +656,12 @@ function createPayRouter() {
 
 /** Per-business and per-client-IP limits on a voice route; 429 with a line in the business's language. */
 function limitVoice(req, kind) {
-  const { perBusiness, perIp } = RATE[kind];
+  const { perBusiness } = RATE[kind];
   const language = repo.getBusiness(req.auth.businessId)?.language;
   rateLimit(
     [
       { key: `${kind}:biz:${req.auth.businessId}`, ...perBusiness },
-      { key: `${kind}:ip:${clientIp(req)}`, ...perIp },
+      rateCheck(req, kind, RATE[kind]),
     ],
     sayIn(SAY.voiceLimited, language),
   );
@@ -713,6 +706,6 @@ function errorHandler(err, req, res, _next) {
 }
 
 module.exports = {
-  createApiRouter, createVendorRouter, createPayRouter, errorHandler, stopAllVoice, checkAgents, clientIp,
+  createApiRouter, createVendorRouter, createPayRouter, errorHandler, stopAllVoice, checkAgents, payLimited,
   voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, RENEW_KEY_HEADER, USER_UID, AGENT_UID, JOIN_RETRY_MS,
 };

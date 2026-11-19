@@ -42,6 +42,17 @@ function positiveInt(value, fallback, name) {
   return n;
 }
 
+/** Tunnels whose forwarding header src/client-address.js may trust (TRUST_PROXY). */
+const TRUST_PROXIES = ["tailscale"];
+function trustProxy(value) {
+  if (value === null) return null;
+  const name = value.toLowerCase();
+  if (!TRUST_PROXIES.includes(name)) {
+    throw new ConfigError("INVALID_TRUST_PROXY", `TRUST_PROXY must be one of ${TRUST_PROXIES.join(", ")} (cloudflared: TRUST_CF_CONNECTING_IP=1).`);
+  }
+  return name;
+}
+
 function negotiationMode(value) {
   const mode = (value ?? "loop").toLowerCase();
   if (!NEGOTIATION_MODES.includes(mode)) {
@@ -139,7 +150,12 @@ function loadConfig(env = process.env) {
       port,
       // Loopback by default: the tunnel (cloudflared) runs on this machine. A host such as Render needs HOST=0.0.0.0.
       host: read("HOST") ?? "127.0.0.1",
-      // Behind a hosting proxy on a private network (Hugging Face Spaces): trust its X-Forwarded-For.
+      // Which forwarding header names the real caller (src/client-address.js). All off by default:
+      // TRUST_PROXY=tailscale (Funnel/Serve on this machine: X-Forwarded-For from loopback),
+      // TRUST_CF_CONNECTING_IP=1 (cloudflared on this machine), TRUST_FORWARDED_FOR=1 (a hosting
+      // proxy on a private network, e.g. Hugging Face Spaces).
+      trustProxy: trustProxy(read("TRUST_PROXY")),
+      trustCfConnectingIp: read("TRUST_CF_CONNECTING_IP") === "1",
       trustForwardedFor: read("TRUST_FORWARDED_FOR") === "1",
       publicUrl,
       dbFile,

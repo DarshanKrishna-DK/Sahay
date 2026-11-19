@@ -69,7 +69,7 @@ npm test                  # node:test suite
 npm start                 # http://localhost:3000  (landing at /, app at /app)
 ```
 
-On Windows, `run.bat` starts the server and shares it through Tailscale Funnel (a stable public https link; set `PUBLIC_URL` to it).
+On Windows, `run.bat` starts the server and shares it through Tailscale Funnel (a stable public https link; set `PUBLIC_URL` to it) with `TRUST_PROXY=tailscale`, so rate limits and PIN lockouts see each caller's address. With cloudflared set `TRUST_CF_CONNECTING_IP=1` instead; with neither, every caller behind the tunnel shares one global limit.
 
 ## Honest limits
 - Vendors in a negotiation are **simulated** (labelled everywhere); seller discovery uses **real** public IndiaMART listings.

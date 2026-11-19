@@ -11,6 +11,7 @@ Object.assign(process.env, {
   MURF_VOICE_KN: "kn-IN-harshitha",
   TELEGRAM_BOT_TOKEN: FAKE.TELEGRAM_BOT_TOKEN,
   SAHAY_ACCESS_CODE: "open-sesame-2026",
+  TRUST_CF_CONNECTING_IP: "1", // the cloudflared opt-in, so each test can pick its client IP
 });
 
 const assert = require("node:assert/strict");
@@ -53,7 +54,7 @@ async function withApp(run) {
   }
 }
 
-/** The server trusts CF-Connecting-IP from loopback (the local tunnel), so tests can pick the client IP. */
+/** TRUST_CF_CONNECTING_IP=1: the server trusts CF-Connecting-IP from loopback, so tests can pick the client IP. */
 async function call(base, method, urlPath, { cookie, body, ip = "198.51.100.7" } = {}) {
   const res = await fetch(base + urlPath, {
     method,
