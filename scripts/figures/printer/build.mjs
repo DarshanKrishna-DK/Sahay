@@ -187,7 +187,7 @@ export async function build() {
   // Tear bar in front of the slot, its serrated edge a zigzag along its front top edge.
   {
     const zig = [];
-    const n = 23;
+    const n = 24;
     for (let i = 0; i <= n; i++) zig.push(at([TEARBAR.x + TEARBAR.w, TEARBAR.y + 0.8 + (i / n) * (TEARBAR.d - 1.6), TOP + (i % 2 ? 1.0 : 1.6)]));
     slabItem("printer.tearbar", TEARBAR, TOP, 1.6, {}, { steps: 3, extra: L(k.pathOf(zig), { tone: "lo" }) + D([at([TEARBAR.x + 1.3, TEARBAR.y + 2, TOP + 1.6]), at([TEARBAR.x + 1.3, TEARBAR.y + TEARBAR.d - 2, TOP + 1.6])], { size: 0.4 }) });
   }
@@ -233,7 +233,7 @@ export async function build() {
     const s1 = ROLL.y1 - ROLL.y0;
     const shape = rec(A_ring(RF, 0, s1, ROLL.core, ROLL.r, { name: "roll", owner: "cradle" }));
     const layers = [7.2, 9.6, 11.6].map((r) => G.circleOf(RF, s1, r, P)).join("");
-    put("roll", [ROLL.x, (ROLL.y0 + ROLL.y1) / 2, ROLL.z], S(G.ringBand(0, s1, ROLL.core, ROLL.r, RF, P), { tone: "hi", inner: "" }) + L(layers, { tone: "faint" }), [shape]);
+    put("roll", [ROLL.x, (ROLL.y0 + ROLL.y1) / 2, ROLL.z], S(G.ringBand(0, s1, ROLL.core, ROLL.r, RF, P), { tone: "mid" }) + L(layers, { tone: "faint" }), [shape]);
     // The cardboard core shows only where it stands proud of the roll's near end.
     const core = rec(A_ring(RF, s1, s1 + 0.6, ROLL.bore, ROLL.core, { name: "roll.core", owner: "cradle" }));
     put("roll.core", [ROLL.x, ROLL.y1 + 0.3, ROLL.z], S(G.ringBand(s1, s1 + 0.6, ROLL.bore, ROLL.core, RF, P), { tone: "mid" }), [core]);
@@ -243,7 +243,7 @@ export async function build() {
     const knobF = alongY([ROLL.x, ARM_NEAR.y + ARM_NEAR.d + 2, ROLL.z]);
     const ribs = G.ribsOf(knobF, 0, 4.4, 4.2, 28, P, { fade: [0.1, 0.55], seams: true });
     discItem("spindle.knob", knobF, 0, 4.4, 4.2, {}, { owner: "cradle", bevel: 0.3, extra: k.fadedSvg(ribs, { tone: "lo" }) });
-    slabItem("web", WEB, TOP, ROLL.z - TOP, { tone: "hi" }, { steps: 2 });
+    slabItem("web", WEB, TOP, ROLL.z - TOP, { tone: "mid" }, { steps: 2 });
   }
 
   // Counter dial on the lid: one division per invoice issued.
