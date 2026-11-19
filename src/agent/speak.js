@@ -2,7 +2,7 @@
 
 /**
  * Speak-it: every card in the app has a 🔊 that reads it aloud, so reading is never required.
- * The browser sends only a key ("now", "customers", "rule:<id>", "memory:<id>", "approval:<id>",
+ * The browser sends only a key ("now", "customers", "khata", "rule:<id>", "memory:<id>", "approval:<id>",
  * "order:<id>", "need:<id>", "invoice:<id>", "item:<id>", "owed:<customerId>"); the sentence is
  * always built here from this business's own rows, in its current reply language and script.
  * Free text from a client is never spoken.
@@ -36,7 +36,7 @@ const RATE = Object.freeze({ slow: -20, normal: 0 });
 const REQUEST_TIMEOUT_MS = 15000;
 const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
 /** A whole-screen key (no id), or a card key "<kind>:<id>". */
-const KEY = /^(?:(now|customers)|(rule|memory|approval|order|need|invoice|item|owed):([A-Za-z0-9_]{1,64}))$/;
+const KEY = /^(?:(now|customers|khata)|(rule|memory|approval|order|need|invoice|item|owed):([A-Za-z0-9_]{1,64}))$/;
 /** Names read out by the customers key; the rest are counted ("and 3 more"). */
 const CUSTOMER_NAMES_READ = 10;
 
@@ -97,6 +97,20 @@ const CUSTOMERS = {
     "hi-IN": (v) => `${v.n} ग्राहक: ${v.names}${v.more ? ` और ${v.more} अन्य` : ""}।`,
     "kn-IN": (v) => `${v.n} ${v.n === 1 ? "ಗ್ರಾಹಕ" : "ಗ್ರಾಹಕರು"}: ${v.names}${v.more ? ` ಮತ್ತು ಇನ್ನೂ ${v.more} ಜನ` : ""}.`,
     "en-IN": (v) => `${v.n} ${v.n === 1 ? "customer" : "customers"}: ${v.names}${v.more ? `, and ${v.more} more` : ""}.`,
+  },
+};
+
+/** The Money screen's header: the total owed, from how many customers, and who owes the most. */
+const KHATA = {
+  one: {
+    "hi-IN": (v) => `कुल ${v.total} बाकी हैं, एक ग्राहक से: ${v.name}।`,
+    "kn-IN": (v) => `ಒಟ್ಟು ${v.total} ಬಾಕಿ ಇದೆ, ಒಬ್ಬ ಗ್ರಾಹಕರಿಂದ: ${v.name}.`,
+    "en-IN": (v) => `In all ${v.total} is due, from one customer: ${v.name}.`,
+  },
+  many: {
+    "hi-IN": (v) => `कुल ${v.total} बाकी हैं, ${v.n} ग्राहकों से। सबसे ज़्यादा ${v.name} के, ${v.amount}।`,
+    "kn-IN": (v) => `ಒಟ್ಟು ${v.total} ಬಾಕಿ ಇದೆ, ${v.n} ಗ್ರಾಹಕರಿಂದ. ಹೆಚ್ಚು ಬಾಕಿ ${v.name} ಅವರದು, ${v.amount}.`,
+    "en-IN": (v) => `In all ${v.total} is due from ${v.n} customers. The most is from ${v.name}, ${v.amount}.`,
   },
 };
 
@@ -181,6 +195,17 @@ function customersSentence(businessId, language) {
   return CUSTOMERS.list[language]({ n: names.length, names: read.join(", "), more: names.length - read.length });
 }
 
+/** Same rows and amounts as who_owes_me (khata.owed: largest first), so screen, call and speaker agree. */
+function khataSentence(businessId, language) {
+  const khata = require("../sell/khata");
+  const rows = khata.owed(businessId);
+  if (!rows.length) return require("../tools/khata").PHRASES.owed_none[language]();
+  const total = khata.spokenRupees(rows.reduce((s, r) => s + r.amount_paise, 0), language);
+  const [top] = rows;
+  if (rows.length === 1) return KHATA.one[language]({ total, name: top.customer.name });
+  return KHATA.many[language]({ total, n: rows.length, name: top.customer.name, amount: khata.spokenRupees(top.amount_paise, language) });
+}
+
 function itemSentence(businessId, id, language) {
   const item = require("../stock/items").get(businessId, id);
   if (!item) throw notFound();
@@ -205,6 +230,7 @@ function sentenceFor(businessId, key) {
   let text;
   if (screen === "now") text = nowSentence(businessId, language);
   else if (screen === "customers") text = customersSentence(businessId, language);
+  else if (screen === "khata") text = khataSentence(businessId, language);
   else if (kind === "rule") {
     const rule = rules.get(businessId, id);
     if (!rule) throw notFound();

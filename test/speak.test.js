@@ -357,3 +357,41 @@ test("POST /api/speak with key customers is Murf audio under the per-business sp
     assert.match(calls.at(-1).body.text, /Ramesh Traders/);
   });
 });
+
+/* ------------------------------------------- khata header (E2E regress bug 4) --- */
+
+test("khata reads the Money header: total owed, how many customers, the largest debtor; this business only, in the reply language", () => {
+  const { biz, customer, invoice } = seedSale("en-IN");
+  assert.equal(speak.sentenceFor(biz, "khata").text, "Nobody owes you anything right now.");
+  const { approval } = gate.requestInvoiceApproval(biz, invoice.id);
+  gate.confirmInvoice(biz, approval.id, { decision: "approve", via: "button" });
+  assert.equal(speak.sentenceFor(biz, "khata").text, "In all 4 thousand 725 rupees is due, from one customer: Ramesh Traders.");
+
+  const { customer: lakshmi } = sellCustomers.save(biz, { name: "Lakshmi Stores" });
+  const rice = sellInvoices.get(biz, invoice.id).lines[0].itemId;
+  const second = sellInvoices.draft(biz, { customerId: lakshmi.id, lines: [{ itemId: rice, quantity: 10, rate: 90 }] });
+  gate.confirmInvoice(biz, gate.requestInvoiceApproval(biz, second.id).approval.id, { decision: "approve", via: "button" });
+  assert.equal(speak.sentenceFor(biz, "khata").text, "In all 5 thousand 670 rupees is due from 2 customers. The most is from Ramesh Traders, 4 thousand 725 rupees.");
+  assert.ok(customer.id);
+
+  const other = seedBusiness("en-IN");
+  assert.equal(speak.sentenceFor(other, "khata").text, "Nobody owes you anything right now.", "another business's khata is never read");
+
+  const hi = rules.propose(biz, { kind: "reply_language", params: { language: "hi-IN" }, source: "owner_said" });
+  rules.decide(biz, hi.id, "keep", { via: "button" });
+  const text = speak.sentenceFor(biz, "khata").text;
+  assert.equal(text, "कुल 5 हज़ार 670 रुपये बाकी हैं, 2 ग्राहकों से। सबसे ज़्यादा Ramesh Traders के, 4 हज़ार 725 रुपये।");
+  assert.deepEqual(scriptProblems(text, "hi-IN", { allow: ["Ramesh Traders"] }), NATIVE, text);
+  for (const key of ["khata:x", "Khata", "khatas"]) assert.throws(() => speak.sentenceFor(biz, key), (err) => err.code === "SPEAK_KEY_NOT_FOUND", key);
+});
+
+test("POST /api/speak with key khata is Murf audio under the per-business speak limit (E2E regress: it was 404)", async (t) => {
+  const calls = fakeMurf(t);
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    const res = await post(base, me.cookie, { key: "khata" });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "audio/mpeg");
+    assert.ok(calls.at(-1).body.text.length > 0);
+  });
+});

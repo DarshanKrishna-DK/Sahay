@@ -32,7 +32,7 @@ test("the browser's list of server read-aloud keys is the server's own list", ()
   for (const kind of ["invoice", "item", "owed"]) assert.ok(server.includes(kind), kind);
   const screens = kindsOf(read("src/agent/speak.js"), SERVER_SCREENS);
   assert.deepEqual(kindsOf(read("public/js/app/sell-kit.js"), BROWSER_SCREENS), screens);
-  assert.deepEqual(screens, ["customers", "now"], "the Sell screen's customer list is read by the server (E2E 2026-11-19: it was 404)");
+  assert.deepEqual(screens, ["customers", "khata", "now"], "the Sell screen's customer list and the Money header are read by the server (E2E 2026-11-19 and regress: they were 404)");
 });
 
 test("cards with a server key pass no device sentence; the device voice is only a fallback for keys the server does not know", () => {

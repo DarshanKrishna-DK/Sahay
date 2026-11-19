@@ -163,7 +163,6 @@ const T = {
   "mpad.saved": ["Saved", "लिख लिया", "ಉಳಿಸಲಾಗಿದೆ"],
 
   /* --------------------------------------------------- spoken sentences -- */
-  "say.totals": ["People owe you {amt} in all.", "कुल {amt} लेना है।", "ಒಟ್ಟು {amt} ಬರಬೇಕು."],
 };
 
 addStrings(T);

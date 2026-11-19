@@ -35,7 +35,7 @@ function totals() {
     h("div", { class: "mb-total mb-total-owed" },
       h("div", { class: "mb-total-head" },
         h("span", { class: "mb-total-word" }, icon("moneyIn", 22), h("span", { text: st("money.owedTotal") })),
-        readButton("khata", () => st("say.totals", { amt: money(owed) || "₹0" }))),
+        readButton("khata")),
       h("span", { class: "mb-total-num", text: money(owed) || "₹0" }),
       h("span", { class: "mb-total-sub", text: count("money.people", sell.owed.length) })),
     h("div", { class: "mb-total mb-total-got" },
