@@ -5,7 +5,7 @@
 // another tab (or by voice) closes it here too.
 
 import { h, icon, fill, rupees, amount, scripted } from "./dom.js";
-import { t } from "./i18n.js";
+import { t, unitWord } from "./i18n.js";
 import * as api from "../api.js";
 import { state, pendingApprovals, approvalView, touch } from "./store.js";
 import { speakButton } from "./speak.js";
@@ -45,8 +45,8 @@ export function createYesLayer() {
     const a = v.approval;
     const id = String(a.id);
     const u = ui.get(id) || {};
-    const per = v.unitPrice !== null && v.unitPrice !== undefined ? `${rupees(v.unitPrice)}${v.unit ? `/${v.unit}` : ""}` : null;
-    const qty = v.quantity !== null && v.quantity !== undefined ? `${amount(v.quantity)}${v.unit ? ` ${v.unit}` : ""}` : null;
+    const per = v.unitPrice !== null && v.unitPrice !== undefined ? `${rupees(v.unitPrice)}${v.unit ? `/${unitWord(v.unit)}` : ""}` : null;
+    const qty = v.quantity !== null && v.quantity !== undefined ? `${amount(v.quantity)}${v.unit ? ` ${unitWord(v.unit)}` : ""}` : null;
     const titleId = `yes-title-${id}`;
     return h("section", { class: "yes-card glass", role: "region", "aria-labelledby": titleId, dataset: { id } },
       h("div", { class: "yes-head" },

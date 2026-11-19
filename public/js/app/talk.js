@@ -5,7 +5,7 @@
 import { h, icon, fill, patch, scripted } from "./dom.js";
 import { t } from "./i18n.js";
 import { state } from "./store.js";
-import { call, inCall, busy, startCall, endCall, setMuted, setMode, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
+import { call, inCall, startCall, endCall, setMuted, setMode, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { createOrb } from "./orb.js";
 import { nowLine, runningJobs } from "./activity.js";
 import { speakButton } from "./speak.js";
@@ -15,9 +15,11 @@ const YES_WORDS = /^\s*(yes|yeah|ok|okay|haan|han|ha|हाँ|हां|जी 
 export function createTalk() {
   const el = h("section", { class: "talk", "aria-labelledby": "talk-title" });
   const title = h("h1", { class: "sr-only", id: "talk-title" });
+  // The orb always answers a tap: start when idle (or after an error, or when an old call is
+  // stuck ending), otherwise end or cancel the call. call.js drops a call object that hangs.
   const orb = createOrb({ onPress: () => {
-    if (call.status === "idle" || call.status === "error") startCall(call.mode === "text" ? "text" : "voice");
-    else if (inCall()) endCall();
+    if (call.status === "idle" || call.status === "error" || call.status === "ending") startCall(call.mode === "text" ? "text" : "voice");
+    else endCall();
   } });
   const orbLabel = h("p", { class: "orb-label", "aria-live": "polite" });
   const now = h("div", { class: "now" });
@@ -55,7 +57,8 @@ export function createTalk() {
   function orbView() {
     const s = call.status;
     const working = runningJobs().length > 0;
-    if (s === "error") return ["error", call.error ? errorText(call.error) : t("call.failed")];
+    if (s === "error") return ["idle", call.error ? errorText(call.error) : t("call.failed"), "bad"];
+    if (s === "idle" && call.ended) return ["idle", t("talk.callEnded"), "bad"];
     if (s === "mic") return ["connecting", t("talk.mic")];
     if (s === "connecting") return ["connecting", t("talk.connecting")];
     if (s === "waiting") return ["connecting", t("talk.waiting")];
@@ -73,18 +76,20 @@ export function createTalk() {
   }
 
   function errorText(err) {
+    // Owner language only: a known code has its own line, anything else is "could not start".
     const k = `call.${err.code}`;
     const tr = t(k);
-    return tr !== k ? tr : (err.message || t("call.failed"));
+    return tr !== k ? tr : t("call.failed");
   }
 
   function renderOrb() {
-    const [st, label] = orbView();
-    const live = inCall();
-    orb.set(st, live ? `${label}. ${t("talk.end")}` : label, runningJobs().length > 0);
-    orb.el.disabled = busy();
+    const [st, label, tone] = orbView();
+    const ends = inCall() || call.status === "mic" || call.status === "connecting";
+    orb.set(st, ends ? `${label}. ${t("talk.end")}` : label, runningJobs().length > 0);
+    orb.el.disabled = false;
     orbLabel.textContent = label;
     orbLabel.dataset.state = st;
+    if (tone) orbLabel.dataset.tone = tone; else delete orbLabel.dataset.tone;
   }
 
   function renderNow() {
@@ -100,11 +105,12 @@ export function createTalk() {
 
   function renderIssues() {
     const items = [];
-    if (call.status === "error" && call.error) {
-      items.push(h("div", { class: "issue issue-bad", role: "alert" }, icon("alert", 22), h("span", { text: errorText(call.error) }),
-        call.error.retry !== false ? h("button", { class: "btn btn-ghost btn-sm", type: "button", on: { click: () => startCall(call.mode) } }, icon("refresh", 20), h("span", { text: t("retry") })) : null));
+    if (call.status === "error" && call.error && call.error.retry !== false) {
+      items.push(h("button", { class: "btn btn-ghost", type: "button", on: { click: () => startCall(call.mode) } }, icon("refresh", 20), h("span", { text: t("retry") })));
     }
-    if (call.status === "idle" && call.ended) items.push(h("div", { class: "issue", role: "status" }, icon("phoneOff", 22), h("span", { text: t("talk.ended") })));
+    if (call.status === "idle" && call.ended && (call.ended.reason === "offline" || call.ended.reason === "stuck")) {
+      items.push(h("div", { class: "issue issue-bad", role: "status" }, icon(call.ended.reason === "offline" ? "alert" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
+    }
     if ((call.status === "idle" || call.status === "error") && state.voiceServer && state.voiceServer.active) {
       items.push(h("div", { class: "issue issue-warn" }, icon("alert", 22), h("span", { text: t("talk.otherTab") }),
         h("button", { class: "btn btn-ghost btn-sm", type: "button", disabled: call.endingOther ? true : undefined, on: { click: endServerCall } },
@@ -143,6 +149,8 @@ export function createTalk() {
       extra.cut ? h("span", { class: "bubble-flag", text: t("talk.interrupted") }) : null);
   }
 
+  let showEarlier = false;
+
   function renderConvo() {
     const biz = (state.business && state.business.name) || "";
     const turns = call.transcript.filter((x) => x.role === "owner" || x.role === "agent");
@@ -150,12 +158,23 @@ export function createTalk() {
     // speaks it first on every call), otherwise the same sentence written here.
     const first = turns.find((x) => x.role === "agent");
     const pinned = first ? first.text : t("talk.disclosure", { biz });
-    const last = turns.filter((x) => x !== first).slice(-3);
-    const key = JSON.stringify([document.documentElement.lang, pinned, last.map((x) => [x.key, x.text, x.live, x.interrupted])]);
+    const rest = turns.filter((x) => x !== first);
+    const older = rest.slice(0, -3);
+    const last = rest.slice(-3);
+    if (!older.length) showEarlier = false;
+    const shown = showEarlier ? rest : last;
+    const key = JSON.stringify([document.documentElement.lang, pinned, showEarlier, older.length, shown.map((x) => [x.key, x.text, x.live, x.interrupted])]);
     convo.setAttribute("aria-label", t("talk.convo"));
     patch(convo, key, () => {
       const items = [bubble("agent", pinned, { pinned: true })];
-      for (const x of last) items.push(bubble(x.role, x.text, { live: x.live, cut: x.interrupted, typed: x.via === "text" }));
+      if (older.length) {
+        items.push(h("li", { class: "convo-earlier" },
+          h("button", {
+            class: "btn btn-ghost btn-sm earlier-toggle", type: "button", "aria-expanded": String(showEarlier),
+            on: { click: () => { showEarlier = !showEarlier; renderConvo(); requestAnimationFrame(() => { const b = convo.querySelector(".earlier-toggle"); if (b) b.focus({ preventScroll: true }); }); } },
+          }, icon(showEarlier ? "chevronUp" : "history", 20), h("span", { text: showEarlier ? t("talk.earlierHide") : t("talk.earlier", { n: older.length }) }))));
+      }
+      for (const x of shown) items.push(bubble(x.role, x.text, { live: x.live, cut: x.interrupted, typed: x.via === "text" }));
       return items;
     });
     const showHint = !turns.length || hintKey;

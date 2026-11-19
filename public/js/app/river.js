@@ -4,7 +4,7 @@
 // rebuilds the same stations, and live events only move them forward.
 
 import { h, icon, svgEl, scripted, rupees, amount, toDate as toDateSafe } from "./dom.js";
-import { t, when } from "./i18n.js";
+import { t, when, unitWord, cityWord } from "./i18n.js";
 import { state } from "./store.js";
 
 /** One record per station: { id, icon, status: done|active|needs|upcoming|failed, detail } */
@@ -128,30 +128,33 @@ export function renderRiver(model, { vertical, onStation, freshVendorIds = new S
     list.append(h("li", { class: "station-item", style: `--x:${x};--y:${y}` }, btn));
   });
 
-  // Seller bubbles sit on the river itself, like beads, between "Searching" and "Bargaining".
+  // Seller names hang under the Searching station, in the free space before Bargaining: up to
+  // three short names (the full name in the tooltip and in the Searching sheet), or two and "+N".
   const extra = vendors.length > 3 ? 1 : 0;
   const shown = vendors.slice(0, 3 - extra);
-  const beads = shown.length + extra;
-  const bub = h("div", { class: "river-vendors", "aria-hidden": "true" });
-  const at = (k) => onCurve(pts[1], pts[2], (vertical ? 0.3 : 0.25) + (beads > 1 ? (k / (beads - 1)) * (vertical ? 0.4 : 0.5) : (vertical ? 0.2 : 0.25)), vertical);
+  const [sx, sy] = pts[1];
+  const sellers = h("ul", { class: "river-sellers", style: `--x:${sx};--y:${sy}`, "aria-label": t("work.sellers", { n: vendors.length }) });
   shown.forEach((v, i) => {
-    const [x, y] = at(i);
-    bub.append(h("span", { class: `vbub${freshVendorIds.has(String(v.id)) ? " pop" : ""}${v.simulated ? " sim" : ""}`, style: `--x:${x};--y:${y};--i:${i}` }, initials(v.name)));
+    const full = String(v.name || "");
+    const label = v.simulated ? `${full} (${t("simulated")})` : full;
+    sellers.append(h("li", {
+      class: `vname${freshVendorIds.has(String(v.id)) ? " pop" : ""}${v.simulated ? " sim" : ""}`,
+      style: `--i:${i}`, title: label,
+    }, scripted("span", shortName(full), { "aria-hidden": "true" }), h("span", { class: "sr-only", text: label })));
   });
-  if (extra) {
-    const [x, y] = at(beads - 1);
-    bub.append(h("span", { class: "vbub more", style: `--x:${x};--y:${y}` }, `+${vendors.length - shown.length}`));
-  }
-  return h("div", { class: `river${vertical ? " river-v" : ""}` }, svg, bub, list);
+  if (extra) sellers.append(h("li", { class: "vname more", "aria-hidden": "true" }, `+${vendors.length - shown.length}`));
+  return h("div", { class: `river${vertical ? " river-v" : ""}` }, svg, list, vendors.length ? sellers : null);
 }
 
-/** A point at t on the same cubic segment curve() draws between two stations (unit coordinates). */
-function onCurve([x0, y0], [x1, y1], t, vertical) {
-  const u = 1 - t;
-  const b = (a, c1, c2, d) => u * u * u * a + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * d;
-  if (vertical) { const my = (y0 + y1) / 2; return [b(x0, x0, x1, x1), b(y0, my, my, y1)]; }
-  const mx = (x0 + x1) / 2;
-  return [b(x0, mx, mx, x1), b(y0, y0, y1, y1)];
+const HONORIFIC = new Set(["m/s", "ms", "m/s.", "shri", "shree", "sri", "sree", "the", "new", "श्री", "ಶ್ರೀ"]);
+
+/** A short, readable seller name: the first real word, at most 10 characters. */
+export function shortName(name) {
+  const words = String(name || "").split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")).filter(Boolean);
+  const word = words.find((w, i) => i === words.length - 1 || !HONORIFIC.has(w.toLowerCase())) || "";
+  if (!word) return "?";
+  const chars = [...word];
+  return chars.length > 10 ? `${chars.slice(0, 9).join("")}…` : word;
 }
 
 function stateIcon(status) {
@@ -171,9 +174,9 @@ export function stationDetail(s, model, req, speakButton, extra = {}) {
   const rows = [];
   const fact = (ic, text) => text ? h("p", { class: "fact" }, icon(ic, 22), scripted("span", String(text))) : null;
   if (s.id === "heard" && req) {
-    rows.push(h("p", { class: "sheet-big" }, scripted("span", [amount(req.quantity), req.unit, req.item].filter(Boolean).join(" "))));
-    rows.push(fact("rupee", req.maxPrice !== null && req.maxPrice !== undefined ? t("work.upTo", { p: `${rupees(req.maxPrice)}${req.unit ? `/${req.unit}` : ""}` }) : null));
-    rows.push(fact("pin", req.city));
+    rows.push(h("p", { class: "sheet-big" }, scripted("span", [amount(req.quantity), unitWord(req.unit), req.item].filter(Boolean).join(" "))));
+    rows.push(fact("rupee", req.maxPrice !== null && req.maxPrice !== undefined ? t("work.upTo", { p: `${rupees(req.maxPrice)}${req.unit ? `/${unitWord(req.unit)}` : ""}` }) : null));
+    rows.push(fact("pin", req.city ? cityWord(req.city) : null));
     rows.push(fact("truck", req.deliveryBy ? t("work.when", { d: req.deliveryBy }) : null));
     rows.push(h("div", { class: "sheet-speak" }, speakButton(`need:${req.id}`)));
   } else if (s.id === "search") {
@@ -184,7 +187,7 @@ export function stationDetail(s, model, req, speakButton, extra = {}) {
         h("li", { class: "seller" },
           h("span", { class: `vbub static${v.simulated ? " sim" : ""}`, "aria-hidden": "true" }, initials(v.name)),
           h("span", { class: "seller-main" }, scripted("span", v.name || "", { class: "seller-name" }),
-            h("span", { class: "seller-sub" }, [v.city, v.listedPrice !== null && v.listedPrice !== undefined ? `${rupees(v.listedPrice)}${v.listedUnit ? `/${v.listedUnit}` : ""}` : v.listedPriceText].filter(Boolean).join(", "))),
+            h("span", { class: "seller-sub" }, [v.city ? cityWord(v.city) : null, v.listedPrice !== null && v.listedPrice !== undefined ? `${rupees(v.listedPrice)}${v.listedUnit ? `/${unitWord(v.listedUnit)}` : ""}` : v.listedPriceText].filter(Boolean).join(", "))),
           v.simulated ? h("span", { class: "sim-pill" }, h("span", { text: t("simulated") })) : null))));
     }
     if (req) rows.push(h("div", { class: "sheet-speak" }, speakButton(`need:${req.id}`)));

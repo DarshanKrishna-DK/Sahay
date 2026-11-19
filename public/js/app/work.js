@@ -4,14 +4,14 @@
 // river with no duplicate stations.
 
 import { h, icon, patch, scripted, rupees, amount } from "./dom.js";
-import { t } from "./i18n.js";
-import { state, isSimulatedVendor, vendorName } from "./store.js";
+import { t, unitWord, cityWord } from "./i18n.js";
+import { state, isSimulatedVendor, vendorName, dismissRequirement } from "./store.js";
 import { NegotiationListener } from "../voice.js";
 import { stationsFor, renderRiver, stationDetail } from "./river.js";
 import { renderLadder } from "./ladder.js";
 import { stateView, talkAction } from "./empty.js";
 import { speakButton } from "./speak.js";
-import { openSheet } from "./sheet.js";
+import { openSheet, closeSheet } from "./sheet.js";
 
 const wide = matchMedia("(min-width: 900px)");
 
@@ -79,10 +79,10 @@ export function createWork() {
     const key = JSON.stringify([req, document.documentElement.lang]);
     patch(head, key, () => {
       if (!req) return [];
-      const line = [amount(req.quantity), req.unit, req.item].filter(Boolean).join(" ");
+      const line = [amount(req.quantity), unitWord(req.unit), req.item].filter(Boolean).join(" ");
       const meta = [
-        req.maxPrice !== null && req.maxPrice !== undefined ? h("span", { class: "need-meta" }, icon("rupee", 20), h("span", { text: t("work.upTo", { p: `${rupees(req.maxPrice)}${req.unit ? `/${req.unit}` : ""}` }) })) : null,
-        req.city ? h("span", { class: "need-meta" }, icon("pin", 20), scripted("span", req.city)) : null,
+        req.maxPrice !== null && req.maxPrice !== undefined ? h("span", { class: "need-meta" }, icon("rupee", 20), h("span", { text: t("work.upTo", { p: `${rupees(req.maxPrice)}${req.unit ? `/${unitWord(req.unit)}` : ""}` }) })) : null,
+        req.city ? h("span", { class: "need-meta" }, icon("pin", 20), scripted("span", cityWord(req.city))) : null,
       ];
       return [
         h("div", { class: "need" },
@@ -119,12 +119,65 @@ export function createWork() {
     patch(ladderBox, key, () => ladderFor(model) || []);
   }
 
+  // Earlier needs, each with a small ✕ (only when no work is running for it) that asks first.
+  const dismissUi = new Map(); // need id -> { busy, error }
+  let dismissSheet = null;
+
+  function needLine(r) { return [amount(r.quantity), unitWord(r.unit), r.item].filter(Boolean).join(" "); }
+  function needBusy(r) { return [...state.jobs.values()].some((j) => String(j.requirementId) === String(r.id) && (j.status === "running" || j.status === "queued")); }
+
+  function dismissBody(r) {
+    const ui = dismissUi.get(String(r.id)) || {};
+    return [
+      scripted("p", needLine(r), { class: "sheet-big" }),
+      h("p", { class: "fact muted", text: t("work.dismissWhy") }),
+      h("div", { class: "rule-actions" },
+        h("button", { class: "yes-btn yes-btn-no", type: "button", "aria-label": t("work.dismissNo"), disabled: ui.busy ? true : undefined, on: { click: () => { closeSheet(); dismissSheet = null; } } },
+          icon("x", 36), h("span", { class: "yes-btn-word", text: t("work.dismissNo") })),
+        h("button", { class: "yes-btn yes-btn-yes", type: "button", "aria-label": t("work.dismissYes"), disabled: ui.busy ? true : undefined, on: { click: () => confirmDismiss(r) } },
+          ui.busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("check", 44), h("span", { class: "yes-btn-word", text: t("work.dismissYes") }))),
+      ui.error ? h("p", { class: "yes-error", role: "alert" }, icon("alert", 20), h("span", { text: ui.error })) : null,
+    ].filter(Boolean);
+  }
+
+  function askDismiss(r, opener) {
+    dismissUi.delete(String(r.id));
+    dismissSheet = { id: String(r.id), api: openSheet({ title: t("work.dismissAsk"), body: dismissBody(r), opener }) };
+  }
+
+  async function confirmDismiss(r) {
+    const id = String(r.id);
+    dismissUi.set(id, { busy: true });
+    if (dismissSheet && dismissSheet.api.isOpen()) dismissSheet.api.setBody(dismissBody(r));
+    try {
+      await dismissRequirement(id);
+      dismissUi.delete(id);
+      closeSheet(false);
+      dismissSheet = null;
+      requestAnimationFrame(() => { const t0 = earlier.querySelector(".earlier-x") || main(); if (t0) t0.focus({ preventScroll: true }); });
+    } catch (err) {
+      const code = err && err.code;
+      dismissUi.set(id, { error: code === "REQUIREMENT_BUSY" ? t("work.dismissBusy") : code === "REQUIREMENT_ORDERED" ? t("work.dismissOrdered") : t("work.dismissFail") });
+      if (dismissSheet && dismissSheet.api.isOpen()) dismissSheet.api.setBody(dismissBody(r));
+    }
+  }
+
+  function main() { return document.getElementById("main"); }
+
   function renderEarlier(req) {
-    const others = state.requirements.filter((r) => !req || String(r.id) !== String(req.id)).slice().reverse();
-    patch(earlier, JSON.stringify([others.map((r) => r.id), document.documentElement.lang]), () => others.length ? [
+    const others = state.requirements.filter((r) => r.status !== "dismissed" && (!req || String(r.id) !== String(req.id))).slice().reverse().slice(0, 8);
+    const key = JSON.stringify([others.map((r) => [r.id, needBusy(r)]), document.documentElement.lang]);
+    patch(earlier, key, () => others.length ? [
       h("h2", { class: "earlier-title", text: t("work.earlier") }),
-      h("ul", { class: "earlier-list" }, ...others.slice(0, 8).map((r) => h("li", { class: "earlier-need" },
-        icon("box", 20), scripted("span", [amount(r.quantity), r.unit, r.item].filter(Boolean).join(" "))))),
+      h("ul", { class: "earlier-list" }, ...others.map((r) => {
+        const text = needLine(r);
+        return h("li", { class: "earlier-need" },
+          icon("box", 20), scripted("span", text, { class: "earlier-text" }),
+          needBusy(r) ? null : h("button", {
+            class: "earlier-x", type: "button", "aria-label": t("work.dismiss", { item: text }), dataset: { tip: t("work.dismissYes") },
+            on: { click: (e) => askDismiss(r, e.currentTarget) },
+          }, icon("x", 18)));
+      })),
     ] : []);
   }
 
@@ -134,6 +187,7 @@ export function createWork() {
     const req = state.requirement;
     const has = Boolean(req);
     empty.hidden = has;
+    if (!has) el.classList.remove("has-ladder");
     for (const b of [head, riverBox, listenBox, ladderBox]) b.hidden = !has;
     if (!has) {
       patch(empty, `empty|${document.documentElement.lang}`, () => [
@@ -144,6 +198,8 @@ export function createWork() {
       return;
     }
     const model = currentModel();
+    const bargain = model.stations.find((x) => x.id === "bargain");
+    el.classList.toggle("has-ladder", Boolean(bargain && bargain.negotiation));
     renderHead(req);
     renderRiverBox(model);
     renderListen();

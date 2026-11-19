@@ -336,9 +336,10 @@ svg { flex: none; }
   .edge { top: 46%; }
   .edge-trigger { width: 48px; height: 96px; top: -48px; padding-left: 9px; }
   .edge-core { width: 30px; height: 30px; }
-  .edge-fan { --r: 142px; right: 24px; }
-  .edge-bubble { width: 80px; height: 80px; left: -40px; top: -40px; font-size: .85rem; }
-  .edge-bubble .eb-word { max-width: 72px; }
+  /* 5 bubbles 34deg apart: chord 2r*sin(17deg) = 103px for 78px bubbles, so they never touch. */
+  .edge-fan { --r: 176px; right: 22px; }
+  .edge-bubble { width: 78px; height: 78px; left: -39px; top: -39px; font-size: .85rem; }
+  .edge-bubble .eb-word { max-width: 70px; }
 }
 
 /* ------------------------------------------------------------ welcome -- */
@@ -473,7 +474,7 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .orb-label { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.2rem); line-height: 1.2; }
 :lang(hi) .orb-label { font-family: var(--font-deva); }
 :lang(kn) .orb-label { font-family: var(--font-kn); }
-.orb-label[data-state="error"] { color: var(--coral-text); font-size: 1.3rem; max-width: 30ch; }
+.orb-label[data-state="error"], .orb-label[data-tone="bad"] { color: var(--coral-text); font-size: 1.3rem; max-width: 30ch; }
 
 .now { display: flex; align-items: center; gap: 10px; justify-content: center; max-width: 100%; }
 .now-line {
@@ -524,6 +525,8 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .who-orb { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 34% 30%, #FFE3A3 0 10%, var(--marigold) 40%, var(--saffron)); }
 .bubble-text { font-size: 1.2rem; line-height: 1.45; overflow-wrap: anywhere; }
 .bubble-flag { font-size: .9rem; color: var(--coral-text); }
+.convo-earlier { align-self: center; }
+.earlier-toggle { color: var(--text-lo); }
 .talk-hint { color: var(--text-lo); padding: 4px 8px; font-size: var(--fs-body); }
 .type-row { display: flex; flex-direction: column; gap: 6px; }
 .type-pill { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 22px; border-radius: var(--r-pill); background: var(--ink-1); border: 2px solid var(--edge); }
@@ -623,7 +626,10 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .need-meta { display: inline-flex; align-items: center; gap: 6px; }
 
 /* The river */
-.river { position: relative; width: 100%; height: 320px; }
+.river { position: relative; width: 100%; height: 300px; }
+/* While a price talk exists, the river gives room so the ladder starts above the fold (1440x900). */
+.work.has-ladder { gap: 20px; }
+.work.has-ladder .river:not(.river-v) { height: 250px; }
 .river-v { height: 900px; max-width: 420px; margin: 0 auto; }
 .river-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .river-base { fill: none; stroke: var(--ink-3); stroke-width: 6; stroke-linecap: round; stroke-dasharray: .012 .012; }
@@ -662,6 +668,21 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
   font: 700 .85rem/1 var(--font-body);
 }
 .vbub.sim { border-style: dashed; }
+/* Seller names hang under the Searching station label, in the free space before Bargaining. */
+.river-sellers {
+  position: absolute; left: calc(var(--x) * 100%); top: calc(var(--y) * 100%); transform: translate(-50%, 98px);
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.vname {
+  display: inline-flex; align-items: center; height: 30px; max-width: 116px; padding: 0 12px;
+  border-radius: var(--r-pill); background: var(--ink-1); border: 1px solid var(--cyan); color: var(--cyan-text);
+  font: 700 .9rem/1 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; cursor: default;
+}
+.vname [lang="hi"] { font-family: var(--font-deva); }
+.vname [lang="kn"] { font-family: var(--font-kn); }
+.vname.sim { border-style: dashed; }
+.vname.more { border-color: var(--edge); color: var(--text-hi); background: var(--ink-2); }
+.vname.pop { animation: rise var(--t-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
 .vbub.more { background: var(--ink-2); color: var(--text-hi); border-color: var(--edge); }
 .vbub.pop { animation: pop var(--t-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
 .vbub.static { position: static; transform: none; flex: none; }
@@ -712,7 +733,20 @@ body[data-boot="loading"] .edge, body[data-boot="error"] .edge { display: none; 
 .earlier { display: flex; flex-direction: column; gap: 12px; }
 .earlier-title { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--text-lo); }
 .earlier-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
-.earlier-need { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--r-pill); background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-lo); }
+.earlier-need { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 4px 18px; border-radius: var(--r-pill); background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-lo); max-width: 100%; }
+.earlier-need:has(.earlier-x) { padding-right: 4px; }
+.earlier-text { overflow-wrap: anywhere; min-width: 0; }
+.earlier-x {
+  display: grid; place-items: center; flex: none; width: 40px; height: 40px; margin-left: 2px;
+  border-radius: 50%; border: 1px solid transparent; background: transparent; color: var(--text-lo);
+  transition: background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.earlier-x:hover { background: var(--ink-2); color: var(--coral-text); border-color: var(--coral); }
+.earlier-x:focus-visible { border-radius: 50%; }
+@media (min-width: 900px) {
+  .work.has-ladder .ladder { padding: 18px 24px; gap: 8px; }
+  .work.has-ladder .ladder-plot { height: 200px; margin: 30px 28px 18px; }
+}
 @media (max-width: 760px) {
   .ladder { padding: 18px 16px; }
   .ladder-plot { height: 220px; margin: 8px 24px; }

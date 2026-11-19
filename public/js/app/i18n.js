@@ -234,6 +234,7 @@ const T = {
 
   "hist.title": ["History", "इतिहास", "ಇತಿಹಾಸ"],
   "hist.requirement.saved": ["Heard your need", "आपकी ज़रूरत सुनी", "ನಿಮ್ಮ ಅಗತ್ಯ ಕೇಳಿತು"],
+  "hist.requirement.dismissed": ["You removed a need", "आपने एक ज़रूरत हटाई", "ನೀವು ಒಂದು ಅಗತ್ಯ ತೆಗೆದಿರಿ"],
   "hist.job.started": ["Started work", "काम शुरू किया", "ಕೆಲಸ ಪ್ರಾರಂಭಿಸಿತು"],
   "hist.job.done": ["Finished work", "काम पूरा किया", "ಕೆಲಸ ಮುಗಿಸಿತು"],
   "hist.job.failed": ["Work stopped", "काम रुक गया", "ಕೆಲಸ ನಿಂತಿತು"],
@@ -260,7 +261,58 @@ const T = {
   "call.mic_missing": ["No microphone found.", "कोई माइक नहीं मिला।", "ಮೈಕ್ ಸಿಗಲಿಲ್ಲ."],
   "call.dropped": ["The call dropped. Tap to call again.", "कॉल कट गई। फिर कॉल के लिए छुएँ।", "ಕರೆ ಕಡಿತವಾಯಿತು. ಮತ್ತೆ ಕರೆಗೆ ಒತ್ತಿ."],
   "call.failed": ["The call could not start.", "कॉल शुरू नहीं हो सकी।", "ಕರೆ ಪ್ರಾರಂಭವಾಗಲಿಲ್ಲ."],
+  "call.offline": ["This device lost the internet.", "इंटरनेट चला गया।", "ಇಂಟರ್ನೆಟ್ ಹೋಯಿತು."],
+  "call.stuck": ["The call stopped answering.", "कॉल ने जवाब देना बंद कर दिया।", "ಕರೆ ಉತ್ತರಿಸುವುದನ್ನು ನಿಲ್ಲಿಸಿತು."],
+  "talk.callEnded": ["Call ended. Tap to call again.", "कॉल बंद हो गई। फिर से कॉल के लिए छुएँ।", "ಕರೆ ಮುಗಿಯಿತು. ಮತ್ತೆ ಕರೆಗೆ ಒತ್ತಿ."],
+  "talk.earlier": ["Earlier ({n})", "पहले की बातें ({n})", "ಹಿಂದಿನ ಮಾತುಗಳು ({n})"],
+  "talk.earlierHide": ["Hide earlier", "पहले की बातें छिपाएँ", "ಹಿಂದಿನ ಮಾತು ಮುಚ್ಚಿ"],
+
+  "work.dismiss": ["Remove {item}", "{item} हटाएँ", "{item} ತೆಗೆಯಿರಿ"],
+  "work.dismissAsk": ["Remove?", "हटाएँ?", "ತೆಗೆಯಬೇಕೆ?"],
+  "work.dismissWhy": ["Sahay will forget this need. Nothing was bought for it.", "सहाय यह ज़रूरत भूल जाएगी। इसके लिए कुछ नहीं खरीदा गया।", "ಸಹಾಯ್ ಈ ಅಗತ್ಯವನ್ನು ಮರೆಯುತ್ತದೆ. ಇದಕ್ಕಾಗಿ ಏನನ್ನೂ ಖರೀದಿಸಿಲ್ಲ."],
+  "work.dismissYes": ["Remove", "हटाएँ", "ತೆಗೆಯಿರಿ"],
+  "work.dismissNo": ["Keep", "रहने दें", "ಇರಲಿ"],
+  "work.dismissBusy": ["Sahay is still working on this need, so it stays.", "सहाय अभी इस ज़रूरत पर काम कर रही है, यह रहेगी।", "ಸಹಾಯ್ ಇನ್ನೂ ಈ ಅಗತ್ಯದ ಮೇಲೆ ಕೆಲಸ ಮಾಡುತ್ತಿದೆ, ಇದು ಇರುತ್ತದೆ."],
+  "work.dismissOrdered": ["This need already has an order, so it stays.", "इस ज़रूरत का ऑर्डर बन चुका है, यह रहेगी।", "ಈ ಅಗತ್ಯಕ್ಕೆ ಆರ್ಡರ್ ಆಗಿದೆ, ಇದು ಇರುತ್ತದೆ."],
+  "work.dismissFail": ["Could not remove it. Try again.", "हटा नहीं पाए। फिर कोशिश करें।", "ತೆಗೆಯಲಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
 };
+
+/* Units as stored (canonical codes from src/procurement/units.js) in the owner's script. */
+const UNITS = {
+  kg: ["kg", "किलो", "ಕಿಲೋ"],
+  g: ["g", "ग्राम", "ಗ್ರಾಂ"],
+  quintal: ["quintal", "क्विंटल", "ಕ್ವಿಂಟಾಲ್"],
+  tonne: ["tonne", "टन", "ಟನ್"],
+  litre: ["litre", "लीटर", "ಲೀಟರ್"],
+  ml: ["ml", "मिलीलीटर", "ಮಿಲಿಲೀಟರ್"],
+  metre: ["metre", "मीटर", "ಮೀಟರ್"],
+  piece: ["piece", "पीस", "ಪೀಸ್"],
+  bag: ["bag", "बोरी", "ಚೀಲ"],
+  box: ["box", "डिब्बा", "ಬಾಕ್ಸ್"],
+  pack: ["pack", "पैक", "ಪ್ಯಾಕ್"],
+  packet: ["packet", "पैकेट", "ಪ್ಯಾಕೆಟ್"],
+  dozen: ["dozen", "दर्जन", "ಡಜನ್"],
+};
+
+/* Common cities in the owner's script; any other city is shown as it was stored. */
+const CITIES = [
+  [["Bengaluru", "बेंगलुरु", "ಬೆಂಗಳೂರು"], ["bangalore", "bengaluru city", "बैंगलोर", "बंगलौर", "बेंगलूरु"]],
+  [["Mumbai", "मुंबई", "ಮುಂಬೈ"], ["bombay", "मुम्बई"]],
+  [["New Delhi", "नई दिल्ली", "ನವದೆಹಲಿ"], ["new-delhi"]],
+  [["Delhi", "दिल्ली", "ದೆಹಲಿ"], ["दिल्ली एनसीआर"]],
+  [["Chennai", "चेन्नई", "ಚೆನ್ನೈ"], ["madras"]],
+  [["Hyderabad", "हैदराबाद", "ಹೈದರಾಬಾದ್"], []],
+  [["Pune", "पुणे", "ಪುಣೆ"], ["poona"]],
+  [["Kolkata", "कोलकाता", "ಕೋಲ್ಕತ್ತಾ"], ["calcutta"]],
+  [["Mysuru", "मैसूरु", "ಮೈಸೂರು"], ["mysore", "मैसूर"]],
+  [["Ahmedabad", "अहमदाबाद", "ಅಹಮದಾಬಾದ್"], []],
+  [["Jaipur", "जयपुर", "ಜೈಪುರ"], []],
+  [["Lucknow", "लखनऊ", "ಲಕ್ನೋ"], []],
+  [["Hubballi", "हुबली", "ಹುಬ್ಬಳ್ಳಿ"], ["hubli"]],
+  [["Mangaluru", "मंगलुरु", "ಮಂಗಳೂರು"], ["mangalore"]],
+];
+const CITY_INDEX = new Map();
+for (const [names, extra] of CITIES) for (const n of [...names, ...extra]) CITY_INDEX.set(n.toLowerCase(), names);
 
 const IDX = { en: 0, hi: 1, kn: 2 };
 const LISTENERS = new Set();
@@ -297,6 +349,23 @@ export function t(key, vars, inLang = current) {
   let s = row ? (row[IDX[inLang]] || row[0]) : key;
   if (vars) s = s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] === undefined || vars[k] === null ? "" : String(vars[k])));
   return s;
+}
+
+/** A stored unit code ("kg") in the owner's script (किलो, ಕಿಲೋ); an unknown unit as stored. */
+export function unitWord(u, inLang = current) {
+  if (u === null || u === undefined || u === "") return "";
+  const row = UNITS[String(u).trim().toLowerCase()];
+  return row ? row[IDX[inLang]] : String(u);
+}
+
+/** A stored city ("Bengaluru", "bangalore") in the owner's script; an unknown city as stored. */
+export function cityWord(city, inLang = current) {
+  if (city === null || city === undefined) return "";
+  const text = String(city).trim();
+  const [head, ...rest] = text.split(",");
+  const names = CITY_INDEX.get(head.trim().toLowerCase());
+  if (!names) return text;
+  return [names[IDX[inLang]], ...rest.map((r) => r.trim())].filter(Boolean).join(", ");
 }
 
 export function has(key) { return Object.prototype.hasOwnProperty.call(T, key); }

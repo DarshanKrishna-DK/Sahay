@@ -264,6 +264,17 @@ export function applyEvent(evt, { live = true } = {}) {
     case "requirement.saved": {
       const r = normRequirement(d);
       if (!r) break;
+      if (r.status === "dismissed") {
+        // The owner removed this need: it leaves every list. If it was the current one, the
+        // server's snapshot names the next current need (live only; a replay is followed by it).
+        state.requirements = state.requirements.filter((x) => String(x.id) !== String(r.id));
+        if (state.requirement && String(state.requirement.id) === String(r.id)) {
+          state.requirement = null;
+          if (live) resync();
+        }
+        touch("work");
+        break;
+      }
       const prev = state.requirement;
       if (prev && live && String(prev.id) !== String(r.id)) clearRequirementScoped();
       state.requirement = { ...(prev && String(prev.id) === String(r.id) ? prev : {}), ...r };
@@ -584,6 +595,13 @@ export async function decideRule(ruleId, decision) {
   if (r.rule && r.rule.id !== undefined) state.agent.rules.set(String(r.rule.id), r.rule);
   touch("agent");
   return r.rule;
+}
+
+/** The ✕ on an earlier need: POST /api/requirements/:id/dismiss. Throws ApiError (409 REQUIREMENT_BUSY / _ORDERED). */
+export async function dismissRequirement(requirementId) {
+  const r = await agentRequest("POST", `/api/requirements/${encodeURIComponent(requirementId)}/dismiss`, {});
+  if (r.requirement) applyEvent({ type: "requirement.saved", data: r.requirement });
+  return r.requirement;
 }
 
 /** Business language, overridden by the agent profile. */

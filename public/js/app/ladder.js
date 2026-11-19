@@ -3,7 +3,7 @@
 // only from negotiation.turn offers; "simulated vendor" is shown whenever it is one.
 
 import { h, icon, svgEl, rupees } from "./dom.js";
-import { t } from "./i18n.js";
+import { t, unitWord } from "./i18n.js";
 
 export function renderLadder(n, { vendor, simulated }) {
   const turns = (n && n.turns ? n.turns : []).filter((x) => x.offer !== null && x.offer !== undefined);
@@ -54,7 +54,7 @@ export function renderLadder(n, { vendor, simulated }) {
     h("span", { class: "lg lg-offer" }, h("span", { class: "lg-dot", "aria-hidden": "true" }), h("span", { text: t("ladder.offers") })));
   const result = n.endedAt
     ? (agreed !== null
-      ? h("p", { class: "ladder-result is-agreed" }, icon("check", 22), h("span", { text: t("ladder.agreed", { p: `${rupees(agreed)}${unit ? `/${unit}` : ""}` }) }))
+      ? h("p", { class: "ladder-result is-agreed" }, icon("check", 22), h("span", { text: t("ladder.agreed", { p: `${rupees(agreed)}${unit ? `/${unitWord(unit)}` : ""}` }) }))
       : h("p", { class: "ladder-result is-nodeal" }, icon("x", 22), h("span", { text: t("ladder.noDeal") })))
     : null;
   return h("section", { class: "ladder" }, head, legend, h("div", { class: "ladder-plot" }, svg, chips), result);

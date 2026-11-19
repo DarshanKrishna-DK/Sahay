@@ -4,7 +4,7 @@
 // keeps a rule. "Teach me" opens Talk with the teaching hint; History is one tap away.
 
 import { h, icon, patch, scripted } from "./dom.js";
-import { t, LANGS } from "./i18n.js";
+import { t, LANGS, cityWord } from "./i18n.js";
 import { state, loadAgent, updateProfile, decideRule, ownerLanguage } from "./store.js";
 import { stateView, loadingView } from "./empty.js";
 import { speakButton } from "./speak.js";
@@ -50,7 +50,7 @@ export function createMe() {
       h("span", { class: "me-orb", "aria-hidden": "true" }),
       h("div", { class: "me-who" },
         h("h1", { class: "screen-title", id: "me-title", text: t("me.title") }),
-        b.name ? scripted("p", [b.name, b.city].filter(Boolean).join(", "), { class: "me-shop" }) : null),
+        b.name ? scripted("p", [b.name, b.city ? cityWord(b.city) : null].filter(Boolean).join(", "), { class: "me-shop" }) : null),
     ]);
   }
 

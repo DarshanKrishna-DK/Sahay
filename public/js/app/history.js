@@ -2,7 +2,7 @@
 // One icon and one short line per step, newest first; no ids, no raw data.
 
 import { h, icon, patch, scripted, rupees, toDate } from "./dom.js";
-import { t, when } from "./i18n.js";
+import { t, when, unitWord } from "./i18n.js";
 import { state } from "./store.js";
 import { stateView, talkAction } from "./empty.js";
 
@@ -28,7 +28,8 @@ function line(r) {
     if (d.decided_via || d.decidedVia) detail = t((d.decided_via || d.decidedVia) === "voice" ? "hist.byVoice" : "hist.byButton");
   } else if (r.type === "requirement.saved") {
     const q = d.requirement || d;
-    detail = [q.quantity, q.unit, q.item].filter((x) => x !== null && x !== undefined && x !== "").join(" ");
+    if (q.status === "dismissed") key = "hist.requirement.dismissed";
+    detail = [q.quantity, unitWord(q.unit), q.item].filter((x) => x !== null && x !== undefined && x !== "").join(" ");
   } else if (r.type === "vendor.found") {
     detail = d.vendor && d.vendor.name ? d.vendor.name : null;
   } else if (r.type === "order.created") {
@@ -38,7 +39,7 @@ function line(r) {
     detail = rupees(d.total_amount ?? d.totalAmount);
     tone = "needs";
   } else if (r.type === "quote.recorded") {
-    detail = d.unit_price !== undefined ? `${rupees(d.unit_price)}${d.unit ? `/${d.unit}` : ""}` : null;
+    detail = d.unit_price !== undefined ? `${rupees(d.unit_price)}${d.unit ? `/${unitWord(d.unit)}` : ""}` : null;
   } else if (r.type === "followup.fired") {
     detail = d.message || null;
   } else if (r.type === "job.failed" || r.type === "error") {
