@@ -142,6 +142,21 @@ const KINDS = {
     scope: () => "bargain_style",
     sentence: (p) => ({ ...STYLE_WORDS[p.style] }),
   },
+  // STK: when stock of the item falls to `level` (in `unit`) or below, Sahay asks whether to buy more.
+  // It only asks: buying still goes through the owner's yes, sourcing and the approval gate.
+  reorder_level: {
+    fields: ["item", "level", "unit"],
+    clean: (p) => ({ item: cleanName(p.item, "item"), level: cleanAmount(p.level, "level", QUANTITY_MAX), unit: cleanUnit(p.unit) }),
+    scope: (p) => `reorder_level:${require("../stock/items").nameKey(p.item) || fold(p.item)}`,
+    sentence: (p) => {
+      const many = p.level !== 1;
+      return {
+        "hi-IN": `जब ${p.item} ${money(p.level)} ${unitWord(p.unit, "hi-IN", many)} या उससे कम बचेगा, मैं आपसे पूछूँगी कि और मँगाऊँ या नहीं।`,
+        "kn-IN": `${p.item} ${money(p.level)} ${unitWord(p.unit, "kn-IN", many)} ಅಥವಾ ಅದಕ್ಕಿಂತ ಕಡಿಮೆ ಉಳಿದಾಗ, ಇನ್ನಷ್ಟು ತರಿಸಲೇ ಎಂದು ನಾನು ನಿಮ್ಮನ್ನು ಕೇಳುತ್ತೇನೆ.`,
+        "en-IN": `When ${p.item} is down to ${money(p.level)} ${unitWord(p.unit, "en-IN", many)} or less, I will ask you whether to buy more.`,
+      };
+    },
+  },
 };
 
 /** Checked, cleaned params and everything built from them. Throws INVALID_RULE. */

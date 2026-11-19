@@ -369,7 +369,7 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
 CREATE TABLE IF NOT EXISTS agent_rules (
   id           TEXT PRIMARY KEY,
   business_id  TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-  kind         TEXT NOT NULL CHECK (kind IN ('max_price', 'prefer_vendor', 'avoid_vendor', 'usual_quantity', 'reply_language', 'bargain_style')),
+  kind         TEXT NOT NULL CHECK (kind IN ('max_price', 'prefer_vendor', 'avoid_vendor', 'usual_quantity', 'reply_language', 'bargain_style', 'reorder_level')),
   scope_key    TEXT NOT NULL,
   params       TEXT NOT NULL,
   sentence_hi  TEXT NOT NULL,

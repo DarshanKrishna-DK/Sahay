@@ -44,6 +44,7 @@ function open(file = config.dbFile) {
       );
     }
     handle.exec(SCHEMA);
+    require("./migrate").widenRuleKinds(handle, SCHEMA);
     handle.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   } catch (err) {
     handle.close();

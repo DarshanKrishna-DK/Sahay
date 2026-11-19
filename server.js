@@ -148,6 +148,7 @@ function createApp({ publicDir = PUBLIC_DIR } = {}) {
   app.use(require("./src/routes/auth").createAuthRouter()); // before /vendor/:code and the api router's requireSession
   app.use(createVendorRouter());
   app.use(createPayRouter());
+  app.use(require("./src/routes/stock").createStockRouter()); // STK: /api/stock, delivered, reorder decision
   app.use(createApiRouter());
   app.use("/api", (_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "No such API route." }));
   const sendApp = (_req, res, next) => res.sendFile(path.join(publicDir, "app.html"), { maxAge: "5m" }, (err) => err && next(err.status === 404 ? undefined : err));
@@ -191,6 +192,7 @@ function boot() {
   const stopNarrator = narrator.start();
   const stopFollowups = followups.start();
   const stopLearning = require("./src/agent").start(); // learned rule suggestions and memories
+  require("./src/stock/reorder").start(); // STK: low-stock watcher (asks the owner; never buys)
   const telegramAbort = new AbortController();
   if (telegram.isConfigured()) telegram.startPolling({ signal: telegramAbort.signal });
 
