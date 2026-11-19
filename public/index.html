@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=Noto+Sans+Devanagari:wght@400..700&family=Noto+Sans+Kannada:wght@400..700&display=swap">
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/landing.css">
+  <link rel="stylesheet" href="/figures/figures.css">
   <!-- Saved theme and language before first paint (classic script: the page allows no inline script). -->
   <script src="/js/landing/boot.js"></script>
   <!-- Motion libraries: exact pinned files with Subresource Integrity, listed in server.js CDN_SCRIPTS.
@@ -38,6 +39,7 @@
     <nav class="pill-links" aria-label="Page" data-i18n-attr="aria-label:navLabel">
       <a href="#say" data-i18n="navHow">How it works</a>
       <a href="#yes" data-i18n="navYes">Your yes</a>
+      <a href="#sell" data-i18n="navSell">Bills and stock</a>
     </nav>
     <div class="lang-seg" role="group" aria-label="Language" data-i18n-attr="aria-label:langLabel">
       <button type="button" class="lang-btn" data-lang="hi" lang="hi" aria-pressed="false">हिन्दी</button>
@@ -94,7 +96,9 @@
       <li><a href="#find" data-step="find"><span class="station" aria-hidden="true">2</span><span class="station-name" data-i18n="st2">Finding sellers</span></a></li>
       <li><a href="#bargain" data-step="bargain"><span class="station" aria-hidden="true">3</span><span class="station-name" data-i18n="st3">Bargaining</span></a></li>
       <li><a href="#yes" data-step="yes"><span class="station" aria-hidden="true">4</span><span class="station-name" data-i18n="st4">Your yes</span></a></li>
-      <li><a href="#learn" data-step="learn"><span class="station" aria-hidden="true">5</span><span class="station-name" data-i18n="st5">Learns you</span></a></li>
+      <li><a href="#sell" data-step="sell"><span class="station" aria-hidden="true">5</span><span class="station-name" data-i18n="st6">Bills and khata</span></a></li>
+      <li><a href="#stock" data-step="stock"><span class="station" aria-hidden="true">6</span><span class="station-name" data-i18n="st7">Stock</span></a></li>
+      <li><a href="#learn" data-step="learn"><span class="station" aria-hidden="true">7</span><span class="station-name" data-i18n="st5">Learns you</span></a></li>
     </ol>
   </nav>
 
@@ -201,23 +205,19 @@
       <figure class="scene scene-bargain">
         <span class="example-tag" data-i18n="example">Example</span>
         <p class="talk-bubble talk-sahay" data-i18n="disclose">“Hello, I am Sahay, an automated assistant for Mango Tree Kirana.”</p>
-        <div class="ladder" aria-hidden="true">
-          <svg class="ladder-lines">
-            <line class="l-seller" data-at="2" pathLength="1" x1="84%" y1="4%" x2="76%" y2="22%"/>
-            <line class="l-sahay" data-at="3" pathLength="1" x1="14%" y1="95%" x2="28%" y2="76%"/>
-            <line class="l-seller" data-at="4" pathLength="1" x1="76%" y1="22%" x2="68%" y2="38%"/>
-            <line class="l-seller" data-at="5" pathLength="1" x1="68%" y1="38%" x2="50%" y2="56%"/>
-            <line class="l-sahay" data-at="5" pathLength="1" x1="28%" y1="76%" x2="50%" y2="56%"/>
-          </svg>
-          <span class="pt" style="--x:84;--y:4"><span class="rung r-seller">₹62</span></span>
-          <span class="pt" style="--x:14;--y:95"><span class="rung r-sahay">₹50</span></span>
-          <span class="pt" style="--x:76;--y:22"><span class="rung r-seller">₹58</span></span>
-          <span class="pt" style="--x:28;--y:76"><span class="rung r-sahay">₹53</span></span>
-          <span class="pt" style="--x:68;--y:38"><span class="rung r-seller">₹56</span></span>
-          <span class="pt" style="--x:50;--y:56"><span class="deal-glow"></span><span class="rung deal"><span data-i18n="deal">Deal</span> ₹55</span></span>
-          <span class="ladder-key key-seller"><span class="key-dot" aria-hidden="true"></span><span data-i18n="sellerAsks">Seller asks</span></span>
-          <span class="ladder-key key-sahay"><span class="key-dot" aria-hidden="true"></span><span data-i18n="sahayOffers">Sahay offers</span></span>
-        </div>
+        <figure class="iso iso-figure fig-card" data-figure="balance">
+          <div class="iso-plate">
+            <div class="iso-plate-corners">
+              <span class="iso-plate-corner" data-corner="fig" aria-hidden="true">Fig 1</span>
+              <span class="iso-plate-corner" data-corner="title">Bargaining balance</span>
+              <span class="iso-plate-corner" data-corner="hint" aria-hidden="true"></span>
+              <span class="iso-plate-corner" data-corner="readout" data-readout></span>
+            </div>
+            <div class="iso-stage" tabindex="0" aria-label="Bargaining balance, example"></div>
+            <p class="fig-status" role="status"></p>
+          </div>
+          <figcaption class="iso-legend"><span class="fig-keys" aria-hidden="true"><span class="fig-key fig-key-ask"><span class="fig-key-mark"></span><span data-i18n="sellerAsks">Seller asks</span></span><span class="fig-key fig-key-offer"><span class="fig-key-mark"></span><span data-i18n="sahayOffers">Sahay offers</span></span></span><span class="iso-caption"></span></figcaption>
+        </figure>
         <figcaption class="sr-only" data-i18n="bargainAlt">Example: Sahay first says it is an automated assistant. The seller asks 62 rupees a kilo, Sahay offers 50, then 53; the seller comes down to 58, then 56, and they agree at 55 rupees a kilo.</figcaption>
       </figure>
     </section>
@@ -252,10 +252,74 @@
       </figure>
     </section>
 
-    <!-- 6. Your Sahay learns you -->
+    <!-- 6. Bills and khata: the bill is made only after the owner's yes -->
+    <section class="beat" id="sell" data-beat="sell" aria-labelledby="sell-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">5</span><span data-i18n="st6">Bills and khata</span></p>
+        <h2 id="sell-title" data-i18n="sellTitle">It writes the bill after your yes</h2>
+        <p class="beat-body" data-i18n="sellBody">Say who bought what. Sahay reads the bill back, makes it only after your yes, and keeps your khata of who owes you.</p>
+        <ul class="beat-points">
+          <li><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 8h6M9 12h6M9 16h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="sellPoint1">GST bill as a PDF, ready to share</span></li>
+          <li><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="sellPoint2">Khata: who owes you, with a polite reminder</span></li>
+        </ul>
+      </div>
+      <div class="scene scene-sell">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <figure class="iso iso-figure fig-card" data-figure="printer">
+          <div class="iso-plate">
+            <div class="iso-plate-corners">
+              <span class="iso-plate-corner" data-corner="fig" aria-hidden="true">Fig 2</span>
+              <span class="iso-plate-corner" data-corner="title">Your yes</span>
+              <span class="iso-plate-corner" data-corner="hint" aria-hidden="true"></span>
+              <span class="iso-plate-corner" data-corner="readout" data-readout></span>
+            </div>
+            <div class="iso-stage" tabindex="0" aria-label="Receipt printer with a yes stamp, example"></div>
+            <p class="fig-status" role="status"></p>
+          </div>
+          <figcaption class="iso-legend"><span class="iso-caption"></span></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 7. Stock: every sale takes stock out; below the owner's level Sahay asks to buy again -->
+    <section class="beat" id="stock" data-beat="stock" aria-labelledby="stock-title">
+      <div class="beat-copy">
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">6</span><span data-i18n="st7">Stock</span></p>
+        <h2 id="stock-title" data-i18n="stockTitle">When stock runs low, it offers to buy again</h2>
+        <p class="beat-body" data-i18n="stockBody">Every bill takes stock out. Below your level, Sahay asks before it starts buying.</p>
+      </div>
+      <figure class="scene scene-stock">
+        <span class="example-tag" data-i18n="example">Example</span>
+        <svg class="loop-ring" viewBox="0 0 400 400" aria-hidden="true">
+          <path class="loop-track" d="M200 52a148 148 0 1 1 0 296a148 148 0 1 1 0-296"/>
+          <path class="loop-flow" pathLength="1" d="M200 52a148 148 0 1 1 0 296a148 148 0 1 1 0-296"/>
+          <path class="loop-arrow" d="M333 117L331 131L318 125M211 356L200 348L211 340M57 136L69 131L71 144"/>
+        </svg>
+        <span class="pt" style="--x:50;--y:52"><span class="stock-gauge" aria-hidden="true">
+          <span class="gauge-tube"><span class="gauge-fill"></span><span class="gauge-level"></span></span>
+          <span class="gauge-name" data-i18n="rice">Rice</span>
+          <span class="gauge-num" data-i18n="kg8">8 kg</span>
+        </span></span>
+        <span class="pt" style="--x:50;--y:13"><span class="loop-node node-sell">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 8h6M9 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <strong data-i18n="nodeSell">Sold</strong><span data-i18n="stockSold">12 kg rice on a bill</span>
+        </span></span>
+        <span class="pt" style="--x:81;--y:76"><span class="loop-node node-low">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 3 2.5 20h19Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.3" fill="currentColor"/></svg>
+          <strong data-i18n="nodeLow">Stock low</strong><span data-i18n="stockLow">8 kg left, your level is 10</span>
+        </span></span>
+        <span class="pt" style="--x:19;--y:76"><span class="loop-node node-buy">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M3 4h2.5l2.2 11h10.6L20.5 7H7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19" r="1.6" fill="currentColor"/><circle cx="16.5" cy="19" r="1.6" fill="currentColor"/></svg>
+          <strong data-i18n="nodeBuy">Buy again?</strong><span data-i18n="stockAsk">Sahay asks: 50 kg again?</span>
+        </span></span>
+        <figcaption class="sr-only" data-i18n="stockAlt">Example: a bill sells 12 kilos of rice, stock falls to 8 kilos, below the owner's level of 10, and Sahay asks whether to buy 50 kilos again. Nothing is bought until the owner says yes.</figcaption>
+      </figure>
+    </section>
+
+    <!-- 8. Your Sahay learns you -->
     <section class="beat" id="learn" data-beat="learn" aria-labelledby="learn-title">
       <div class="beat-copy">
-        <p class="beat-step"><span class="beat-num" aria-hidden="true">5</span><span data-i18n="st5">Learns you</span></p>
+        <p class="beat-step"><span class="beat-num" aria-hidden="true">7</span><span data-i18n="st5">Learns you</span></p>
         <h2 id="learn-title" data-i18n="learnTitle">Your Sahay learns you</h2>
         <p class="beat-body" data-i18n="learnBody">Teach it by talking. It keeps your rules and shows you why.</p>
       </div>
@@ -272,13 +336,13 @@
         <span class="pt" style="--x:50;--y:88"><span class="memory m-suggest tilt">
           <span class="suggest-ring" aria-hidden="true"></span>
           <span data-i18n="keepRule">Keep this rule?</span>
-          <span class="suggest-btns" aria-hidden="true"><span class="sb-yes">✓</span><span class="sb-no">✕</span></span>
+          <span class="suggest-btns" aria-hidden="true"><span class="sb-yes"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="sb-no"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span></span>
         </span></span>
         <figcaption class="sr-only" data-i18n="learnAlt">Example: Sahay remembers that rice is never bought above 56 rupees, the usual 50 kilos, a liked seller and a gentle bargaining style, and asks before keeping a new rule.</figcaption>
       </figure>
     </section>
 
-    <!-- 7. Built on real voice, three languages, start -->
+    <!-- 9. Built on real voice, three languages, start -->
     <section class="finale" id="start" aria-labelledby="finale-title">
       <h2 id="finale-title" data-i18n="finaleTitle">Speak in your language. Sahay does the running around.</h2>
       <ul class="credits">

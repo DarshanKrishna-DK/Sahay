@@ -1581,6 +1581,7 @@ const TOOLS = [
     },
   },
 ];
+TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields })); // STK: stock tools
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 

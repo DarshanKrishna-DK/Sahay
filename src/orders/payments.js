@@ -294,4 +294,4 @@ function verifyCheckoutPayment(token, payment, { razorpay = config.razorpay, now
   });
 }
 
-module.exports = { PaymentError, createPaymentLink, checkoutForToken, verifyCheckoutPayment, CHECKOUT_TTL_MS };
+module.exports = { PaymentError, createPaymentLink, checkoutForToken, verifyCheckoutPayment, CHECKOUT_TTL_MS, credentials, razorpayCall, hashToken, pageBase, timingSafeHexEqual };

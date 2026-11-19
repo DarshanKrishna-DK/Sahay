@@ -225,6 +225,8 @@ const STATUS = {
   negotiationEnded: (v) =>
     `The negotiation with ${v.sim ? "the simulated vendor" : "the vendor"} has ended ${v.price ? `with a quote of ${v.price} rupees per ${v.unit}, which the owner has not approved; get_ranked_deals has it` : "with no deal"}. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.`,
   negotiationFailed: () => "The last negotiation stopped before a result. No negotiation is running now. If the owner asks to negotiate again, call start_negotiation.",
+  reorderAsked: () =>
+    "The server has just asked the owner whether to buy more of an item that is low in stock. The owner's next clear yes or no answers it: call confirm_reorder with no item (decision yes or no). It only starts a vendor search, never an order.",
   // final-2 B: after a "maybe", the model forgot a read-back was waiting and asked "shall I ask for approval?".
   approvalWaiting: () =>
     "A deal has been read out to the owner by the server and is waiting for the owner's answer. The owner's next clear yes or no answers it: call confirm_approval with no id (approve on a yes, reject on a no). Do not call request_approval again and do not ask whether to ask for approval. A maybe or a question is not an answer: say there is no hurry.",
@@ -235,7 +237,7 @@ const STATUS = {
 /** Write the job state into the owner agent's LLM context; in order, never blocking speech. */
 function setStatus(state, kind, text) {
   state.callStatus[kind] = text;
-  const combined = [state.callStatus.approval, state.callStatus.order, state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
+  const combined = [state.callStatus.approval, state.callStatus.order, state.callStatus.stock, state.callStatus.negotiation, state.callStatus.sourcing].filter(Boolean).join(" ");
   state.statusChain = state.statusChain.then(async () => {
     if (state.closed) return;
     try {
@@ -402,6 +404,16 @@ function onEvent(event) {
       if (hold && (hold.approvalId ? hold.approvalId === d.approvalId : !d.reason)) endHold(state);
       return;
     }
+    // STK: the server asked whether to buy more of a low item (src/stock/reorder.js): hold other
+    // lines until the owner answers, and tell the model which tool the answer goes to.
+    case "stock.reorder_spoken":
+      startHold(state, `reorder:${d.proposalId}`);
+      setStatus(state, "stock", STATUS.reorderAsked());
+      return;
+    case "stock.reorder_decided":
+      if (state.approvalHold?.approvalId === `reorder:${d.proposalId}`) endHold(state);
+      if (state.callStatus.stock) setStatus(state, "stock", null);
+      return;
     case "rule.spoken":
       startHold(state, `rule:${d.ruleId}`);
       return;
@@ -481,6 +493,12 @@ function useLanguage(businessId, language) {
   if (state) state.language = langKey(language);
 }
 
+/** The live owner call of a business: {agentId, sessionId, language}, or null (STK asks through it). */
+function liveCall(businessId) {
+  const state = live.get(businessId);
+  return state && !state.closed ? { agentId: state.agentId, sessionId: state.sessionId, language: state.language } : null;
+}
+
 function isLive(businessId) {
   return live.has(businessId);
 }
@@ -508,4 +526,4 @@ function configure({ speak, status, rules, minGapMs, vendorDebounceMs, queueLimi
   );
 }
 
-module.exports = { start, stop, attach, detach, isLive, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };
+module.exports = { start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS };

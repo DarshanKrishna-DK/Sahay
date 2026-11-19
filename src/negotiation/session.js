@@ -43,6 +43,7 @@ const vendorAgent = require("./vendor-agent");
 const limits = require("../limits");
 const { ToolError, sayFor, langKey } = require("../tools/errors");
 const policy = require("../agent/policy");
+const variety = require("../agora/variety");
 
 const UIDS = Object.freeze({ negotiator: 2001, vendor: 2002, listener: 2003, human: 2004, nobody: 2999 });
 const MAX_ROUNDS = vendorAgent.DEFAULT_MAX_ROUNDS;
@@ -95,10 +96,24 @@ const BUYER_LINES = {
     "kn-IN": (v) => `ನಮಗೆ ${v.quantity} ${v.unit} ${v.item} ಬೇಕು${v.city ? `, ${registry().knDative(v.city)} ಡೆಲಿವರಿ` : ""}; ಒಂದು ${v.unitOne}ಗೆ ನಿಮ್ಮ ಉತ್ತಮ ಬೆಲೆ ಎಷ್ಟು?`,
     "en-IN": (v) => `We need ${v.quantity} ${v.unit} of ${v.item}${v.city ? `, delivered in ${v.city}` : ""}; what is your best price per ${v.unitOne}?`,
   },
+  // Several phrasings, walked in turn per negotiation (src/agora/variety.js); the price is the code's.
   counter: {
-    "hi-IN": (v) => `हम ${v.price} रुपये प्रति ${v.unit} दे सकते हैं, क्या इस पर बात बनेगी?`,
-    "kn-IN": (v) => `ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ ಕೊಡಬಹುದು, ಇದಕ್ಕೆ ಒಪ್ಪುತ್ತೀರಾ?`,
-    "en-IN": (v) => `We can pay ${v.price} rupees per ${v.unit}; can you do that?`,
+    "hi-IN": [
+      (v) => `हम ${v.price} रुपये प्रति ${v.unit} दे सकते हैं, क्या इस पर बात बनेगी?`,
+      (v) => `भैया, थोड़ा कम कीजिए; ${v.price} रुपये प्रति ${v.unit} चलेगा?`,
+      (v) => `हम्म, यह ज़्यादा है जी; ${v.price} रुपये प्रति ${v.unit} कर दीजिए।`,
+      (v) => `देखिए, मात्रा अच्छी-ख़ासी है; ${v.price} रुपये प्रति ${v.unit} ठीक रहेगा?`,
+    ],
+    "kn-IN": [
+      (v) => `ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ ಕೊಡಬಹುದು, ಇದಕ್ಕೆ ಒಪ್ಪುತ್ತೀರಾ?`,
+      (v) => `ಸ್ವಲ್ಪ ಕಡಿಮೆ ಮಾಡಿ ಸಾರ್; ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ ಆಗುತ್ತಾ?`,
+      (v) => `ಹೂಂ, ಅದು ಜಾಸ್ತಿ ಆಯ್ತು; ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿಗೆ ಮಾಡಿ.`,
+    ],
+    "en-IN": [
+      (v) => `We can pay ${v.price} rupees per ${v.unit}; can you do that?`,
+      (v) => `Hmm, that's a bit high. Could you do ${v.price} rupees per ${v.unit}?`,
+      (v) => `It's a good-sized order; ${v.price} rupees per ${v.unit} would work for us.`,
+    ],
   },
   // Not an acceptance: only the owner accepts a rate (CLAUDE.md rule 3, security review r1 #3).
   accept: {
@@ -107,9 +122,9 @@ const BUYER_LINES = {
     "en-IN": (v) => `I will confirm ${v.price} rupees per ${v.unit} with the owner and send the order. Thank you.`,
   },
   walk_away: {
-    "hi-IN": () => "माफ़ कीजिए, इस भाव पर हम आगे नहीं बढ़ पाएँगे, धन्यवाद।",
-    "kn-IN": () => "ಕ್ಷಮಿಸಿ, ಈ ಬೆಲೆಗೆ ನಾವು ಮುಂದುವರಿಯಲು ಆಗುವುದಿಲ್ಲ, ಧನ್ಯವಾದ.",
-    "en-IN": () => "Sorry, we cannot go ahead at that price. Thank you.",
+    "hi-IN": [() => "माफ़ कीजिए, इस भाव पर हम आगे नहीं बढ़ पाएँगे, धन्यवाद।", () => "अच्छा जी, इस भाव पर बात नहीं बन पाएगी; फिर कभी, धन्यवाद।"],
+    "kn-IN": [() => "ಕ್ಷಮಿಸಿ, ಈ ಬೆಲೆಗೆ ನಾವು ಮುಂದುವರಿಯಲು ಆಗುವುದಿಲ್ಲ, ಧನ್ಯವಾದ.", () => "ಆಯ್ತು ಸಾರ್, ಈ ಬೆಲೆಗೆ ಆಗಲ್ಲ; ಇನ್ನೊಮ್ಮೆ ನೋಡೋಣ, ಧನ್ಯವಾದ."],
+    "en-IN": [() => "Sorry, we cannot go ahead at that price. Thank you.", () => "Ah, that price doesn't work for us, so we'll leave it there. Thank you."],
   },
   clarify_unit: {
     "hi-IN": (v) => `कृपया प्रति ${v.unit} का भाव बताइए।`,
@@ -123,7 +138,8 @@ const BUYER_LINES = {
   },
 };
 
-const buyerLine = (key, language, vars = {}) => BUYER_LINES[key][langKey(language)](vars);
+/** One buyer line; a line with several phrasings varies per `scope` (the negotiation). */
+const buyerLine = (key, language, vars = {}, scope = "") => variety.pick(BUYER_LINES[key][langKey(language)], { scope, key: `buyer.${key}`, vars });
 
 /* ------------------------------------------------------------ prompts --- */
 
@@ -268,10 +284,10 @@ function applyVendorOffer(rt, args) {
     rt.state = "walked_away";
     rt.walkReason = move.reason;
     rt.decidedAt = Date.now();
-    say = buyerLine("walk_away", rt.language);
+    say = buyerLine("walk_away", rt.language, {}, rt.negotiationId);
   } else {
     rt.lastBuyerOffer = move.price;
-    say = buyerLine("counter", rt.language, { price: money(move.price), unit });
+    say = buyerLine("counter", rt.language, { price: money(move.price), unit }, rt.negotiationId);
   }
   if (move.action === "accept") rt.acceptSay = say.trim();
   spokenLine(rt, say, move.price);
@@ -540,6 +556,7 @@ async function runLoop(rt, job) {
       buyerOffer: rt.lastBuyerOffer ?? null,
       language: rt.language,
       unitSpoken: unitSpoken(rt),
+      scope: rt.negotiationId,
     });
     await say("vendor", seller, turn.text, turn.price);
     const move = applyVendorOffer(rt, { price_per_unit: turn.price, is_final: turn.final, vendor_sentence: turn.text });

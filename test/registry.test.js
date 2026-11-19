@@ -132,6 +132,7 @@ test("every tool has a JSON-schema input, a description and one scope; owner and
     "get_business_profile", "save_requirement", "start_sourcing", "get_job_status", "get_shortlist", "start_negotiation",
     "get_ranked_deals", "request_approval", "confirm_approval", "create_order", "create_payment_link", "get_order_status",
     "teach_rule", "confirm_rule", "forget_rule", "get_my_agent",
+    "set_opening_stock", "get_stock", "mark_order_delivered", "set_reorder_level", "confirm_reorder",
   ]);
   assert.deepEqual(registry.toolNames("negotiation"), ["get_negotiation_brief", "record_vendor_offer"]);
 });

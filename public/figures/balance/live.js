@@ -9,7 +9,7 @@ export const META = {
   css: false,
   words: {
     title: { en: "Bargaining balance", hi: "मोलभाव का तराज़ू", kn: "ಚೌಕಾಸಿಯ ತಕ್ಕಡಿ" },
-    hint: { en: "Hover or use arrows to step rounds", hi: "दौर बदलने के लिए ऊपर ले जाएँ या तीर दबाएँ", kn: "ಸುತ್ತು ಬದಲಿಸಲು ಮೇಲೆ ತನ್ನಿ ಅಥವಾ ಬಾಣ ಒತ್ತಿ" },
+    hint: { en: "Tap for the next round", hi: "अगले दौर के लिए दबाएँ", kn: "ಮುಂದಿನ ಸುತ್ತಿಗೆ ಒತ್ತಿ" },
     caption: {
       en: "Example. Left pan: the seller's ask. Right pan: Sahay's offer. Each weight is five rupees. The heavier side goes down; when ask and offer meet, the beam hangs level and the dial reads the agreed price.",
       hi: "उदाहरण। बायाँ पलड़ा: विक्रेता का दाम। दायाँ पलड़ा: सहाय का दाम। हर बाट पाँच रुपये का है। भारी पलड़ा नीचे जाता है; दोनों दाम मिलते ही डंडी सीधी हो जाती है और डायल तय दाम दिखाता है।",

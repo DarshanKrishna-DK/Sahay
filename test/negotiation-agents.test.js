@@ -303,7 +303,9 @@ async function humanRun(t, { terms }) {
   const counter = await registry.callTool(ctx, "record_vendor_offer", { price_per_unit: 64, unit: "kg" });
   assert.equal(counter.action, "counter");
   assert.ok(counter.price < 64 && counter.price <= 65);
-  assert.equal(counter.say, `हम ${counter.price} रुपये प्रति किलो दे सकते हैं, क्या इस पर बात बनेगी?`);
+  // The counter is one of several phrasings (Track POLISH), always with the code's price and in Devanagari.
+  assert.ok(counter.say.includes(`${counter.price} रुपये प्रति किलो`), counter.say);
+  assert.ok(require("../src/agora/script").isNativeScript(counter.say, "hi-IN"), counter.say);
   said(history, "assistant", counter.say);
   said(history, "user", "ठीक है, पचपन रुपये किलो दे दूँगा, तीन दिन में डिलीवरी");
 
