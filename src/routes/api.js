@@ -57,6 +57,14 @@ const RATE = Object.freeze({
 });
 /** How often a live owner call's agent is checked with Agora (it may have left on idle_timeout). */
 const AGENT_WATCH_MS = 30 * 1000;
+/** Wait before the one server-side retry of a transient /join failure (E2E 2026-11-19: one 502, the owner's retry worked). */
+const JOIN_RETRY_MS = 700;
+
+/**
+ * A /join failure worth one more try: Agora not answering, rate limited or a 5xx. A 4xx (bad
+ * body, bad credentials, conflict) would fail the same way again, so it is reported at once.
+ */
+const transientJoinFailure = (err) => err?.name === "AgoraError" && (err.code === "AGORA_UNREACHABLE" || [429, 500, 502, 503, 504].includes(err.status));
 
 /** Business, owner and place names: letters and marks of any script, digits, space, . , & ' - ( ), and ZWNJ/ZWJ (Kannada, Devanagari). */
 const NAME_CHARS = /^[\p{L}\p{M}\p{N} .,&'()\p{Join_Control}-]+$/u;
@@ -399,14 +407,28 @@ function createApiRouter() {
       v.release = release;
       v.starting = true;
       try {
-        const started = await agent.startOwnerAgent({
+        // One `now` for both tries: the agent's /join name is built from it, so when a first /join
+        // that seemed to fail did start an agent, Agora refuses the retry (409) instead of a second agent.
+        const now = Date.now();
+        const join = () => agent.startOwnerAgent({
           businessId,
           sessionId: v.sessionId,
           channel: v.channel,
           agentUid: v.agentUid,
           userUid: v.userUid,
           language: business.language,
+          now,
         });
+        let started;
+        try {
+          started = await join();
+        } catch (err) {
+          if (!transientJoinFailure(err)) throw err;
+          console.warn(`[voice] /join failed (${err.message}); trying once more in ${JOIN_RETRY_MS} ms.`);
+          await new Promise((resolve) => setTimeout(resolve, JOIN_RETRY_MS));
+          if (voice.get(businessId) !== v) throw new HttpError(409, "CALL_ENDED", "The call was ended while the assistant was joining.");
+          started = await join(); // a second failure is the honest error the owner sees
+        }
         // The owner may have pressed End while /join was in flight: stop the agent we just
         // started instead of attaching it to a call record that no longer exists.
         if (voice.get(businessId) !== v) {
@@ -697,5 +719,5 @@ function errorHandler(err, req, res, _next) {
 
 module.exports = {
   createApiRouter, createVendorRouter, createPayRouter, errorHandler, stopAllVoice, checkAgents, clientIp,
-  voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, RENEW_KEY_HEADER, USER_UID, AGENT_UID,
+  voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, RENEW_KEY_HEADER, USER_UID, AGENT_UID, JOIN_RETRY_MS,
 };

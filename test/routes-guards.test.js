@@ -253,6 +253,54 @@ test("a start that fails (Agora /join refused, or disclosure not spoken) gives t
   assert.equal(limits.usage().owner_call.inUse, 0, "shutdown (stopAllVoice) released it");
 });
 
+test("a transient /join failure (503, or Agora not answering) is retried once server-side, with the same agent name", async (t) => {
+  for (const first of [{ status: 503, json: { reason: "busy" } }, "network"]) {
+    let joins = 0;
+    const calls = fakeAgora(t, (url) => {
+      if (!url.endsWith("/join")) return { json: {} };
+      joins += 1;
+      if (joins > 1) return { json: { agent_id: "AGRETRY" } };
+      if (first === "network") throw new TypeError("fetch failed");
+      return first;
+    });
+    await withApp(async (base) => {
+      const { cookie } = await signUp(base);
+      await call(base, "POST", "/api/voice/token", { cookie, body: {} });
+      const startedAt = Date.now();
+      const out = await call(base, "POST", "/api/voice/start", { cookie, body: {} });
+      assert.equal(out.status, 200, JSON.stringify(out.json));
+      assert.equal(out.json.agentId, "AGRETRY");
+      assert.ok(Date.now() - startedAt >= api.JOIN_RETRY_MS, "after a short backoff");
+      const bodies = calls.filter((c) => c.url.endsWith("/join")).map((c) => c.body);
+      assert.equal(bodies.length, 2);
+      // Same name: if the first /join did start an agent, Agora answers the retry with a conflict instead of a second agent.
+      assert.equal(bodies[1].name, bodies[0].name);
+      assert.equal(limits.usage().owner_call.inUse, 1);
+    });
+  }
+});
+
+test("a /join that is refused for good (401) or fails twice is not retried again, and the error stays honest", async (t) => {
+  let status = 401;
+  const calls = fakeAgora(t, (url) => (url.endsWith("/join") ? { status, json: { reason: "invalid credentials" } } : { json: {} }));
+  await withApp(async (base) => {
+    const { cookie } = await signUp(base);
+    await call(base, "POST", "/api/voice/token", { cookie, body: {} });
+    const refused = await call(base, "POST", "/api/voice/start", { cookie, body: {} });
+    assert.equal(refused.status, 502);
+    assert.equal(refused.json.code, "AGORA_UNAUTHORIZED");
+    assert.equal(calls.filter((c) => c.url.endsWith("/join")).length, 1, "a 401 is not transient");
+
+    status = 504;
+    const twice = await call(base, "POST", "/api/voice/start", { cookie, body: {} });
+    assert.equal(twice.status, 502);
+    assert.equal(twice.json.code, "AGORA_REQUEST_FAILED");
+    assert.match(twice.json.message, /answered 504/);
+    assert.equal(calls.filter((c) => c.url.endsWith("/join")).length, 3, "one retry, no more");
+    assert.equal(limits.usage().owner_call.inUse, 0);
+  });
+});
+
 test("server-side call cap: after SAHAY_MAX_CALL_SECONDS the agent is stopped and session.ended (max_duration) is emitted", async (t) => {
   const calls = fakeAgora(t);
   await withApp(async (base) => {
