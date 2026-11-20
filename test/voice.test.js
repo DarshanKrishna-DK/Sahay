@@ -476,24 +476,73 @@ test('text mode: rejoining after token expiry publishes no microphone', async (t
 
 /* --------------------------------------- restrictive networks: Agora Cloud Proxy --- */
 
-// Short connect timeouts for the fakes; the module instance is shared, so every test sets them.
+// Short connect timeouts for the fakes (a fake connect takes ~10 ms; the margin absorbs a busy
+// machine); the module instance is shared, so every test sets them.
 async function loadWithShortTimeouts() {
   const mod = await loadVoiceWithFakes();
-  mod.CONNECT_TIMEOUT_MS.direct = 60;
-  mod.CONNECT_TIMEOUT_MS.proxy = 60;
+  mod.CONNECT_TIMEOUT_MS.direct = 500;
+  mod.CONNECT_TIMEOUT_MS.proxy = 500;
   return mod;
 }
 
-const blockedRtm = { rtm: 'hang' }; // the laptop network on 2026-11-20: RTM 9591/9593 time out, login never answers
+/** Resolve once cond() is true (polled), so a test acts after a fake step really happened. */
+async function until(cond, ms = 2000) {
+  const end = Date.now() + ms;
+  while (!cond()) { if (Date.now() > end) throw new Error('condition not reached'); await wait(2); }
+}
 
-test('routePlan: direct first with one proxy retry; remembered proxy first with one direct retry; ?proxy=1 forces proxy only', async () => {
+const blockedRtm = { rtm: 'hang' }; // the laptop network on 2026-11-20: RTM 9591/9593 time out, login never answers; RTC joins
+const blockedRtc = { rtc: 'hang' }; // a network where RTC itself cannot reach Agora
+const errorsOf = (h) => JSON.stringify(h.seen.errors.map((x) => [x.code, x.message]));
+
+test('routePlan: direct first; remembered RTM proxy first; ?proxy=1 forces the RTM proxy only; ?rtcproxy=1 opts into the RTC proxy', async () => {
   const { routePlan } = await loadVoice();
-  assert.deepEqual(routePlan('', false), { first: 'direct', fallback: true, forced: false });
-  assert.deepEqual(routePlan('', true), { first: 'proxy', fallback: true, forced: false });
-  assert.deepEqual(routePlan('?proxy=1', false), { first: 'proxy', fallback: false, forced: true });
-  assert.deepEqual(routePlan('?x=2&proxy=1', true), { first: 'proxy', fallback: false, forced: true });
-  assert.deepEqual(routePlan('?proxy=0', false), { first: 'direct', fallback: true, forced: false });
-  assert.deepEqual(routePlan(undefined, false), { first: 'direct', fallback: true, forced: false });
+  const direct = { rtm: false, rtc: false };
+  assert.deepEqual(routePlan('', false), { first: direct, fallback: true, forced: false, rtcProxy: false });
+  assert.deepEqual(routePlan('', true), { first: { rtm: true, rtc: false }, fallback: true, forced: false, rtcProxy: false });
+  assert.deepEqual(routePlan('?proxy=1', false), { first: { rtm: true, rtc: false }, fallback: false, forced: true, rtcProxy: false });
+  assert.deepEqual(routePlan('?x=2&proxy=1', true), { first: { rtm: true, rtc: false }, fallback: false, forced: true, rtcProxy: false });
+  assert.deepEqual(routePlan('?proxy=1&rtcproxy=1', false), { first: { rtm: true, rtc: true }, fallback: false, forced: true, rtcProxy: true });
+  assert.deepEqual(routePlan('?rtcproxy=1', false), { first: direct, fallback: true, forced: false, rtcProxy: true }, 'opt-in alone starts direct');
+  assert.deepEqual(routePlan('?rtcproxy=1', true), { first: { rtm: true, rtc: false }, fallback: true, forced: false, rtcProxy: true }, 'the RTC proxy is never remembered');
+  assert.deepEqual(routePlan('?proxy=0&rtcproxy=0', false), { first: direct, fallback: true, forced: false, rtcProxy: false });
+  assert.deepEqual(routePlan(undefined, false), { first: direct, fallback: true, forced: false, rtcProxy: false });
+});
+
+test('nextRoute: RTM failure flips RTM only; RTC failure goes to the RTC proxy only on opt-in; one retry, network-class only', async () => {
+  const { nextRoute, routePlan } = await loadVoice();
+  const e = (code, leg) => Object.assign(new Error('x'), { code, leg });
+  const plain = routePlan('', false);
+  const optIn = routePlan('?rtcproxy=1', false);
+  const direct = { rtm: false, rtc: false };
+  assert.deepEqual(nextRoute(plain, direct, e('connect_timeout', 'rtm')), { rtm: true, rtc: false }, 'RTM blocked: RTM proxy, RTC stays direct');
+  assert.deepEqual(nextRoute(plain, direct, e(-10023, 'rtm')), { rtm: true, rtc: false });
+  assert.deepEqual(nextRoute(plain, { rtm: true, rtc: false }, e(-10011, 'rtm')), { rtm: false, rtc: false }, 'remembered RTM proxy failed: direct RTM once');
+  assert.equal(nextRoute(plain, direct, e('connect_timeout', 'rtc')), null, 'RTC blocked without opt-in: no RTC proxy');
+  assert.equal(nextRoute(plain, direct, e('NETWORK_ERROR', 'rtc')), null);
+  assert.deepEqual(nextRoute(optIn, direct, e('connect_timeout', 'rtc')), { rtm: true, rtc: true }, 'RTC blocked with ?rtcproxy=1');
+  assert.equal(nextRoute(optIn, { rtm: true, rtc: true }, e('connect_timeout', 'rtc')), null, 'RTC proxy already in use');
+  assert.deepEqual(nextRoute(optIn, direct, e('connect_timeout', 'rtm')), { rtm: true, rtc: false }, 'opt-in does not move a joined RTC to the proxy');
+  assert.equal(nextRoute(plain, direct, e(-10005, 'rtm')), null, 'invalid token: no retry');
+  assert.equal(nextRoute(routePlan('?proxy=1', false), { rtm: true, rtc: false }, e('connect_timeout', 'rtm')), null, 'forced: no fallback');
+});
+
+test('networkBlockedError: names the safer route only when one was tried; CAN_NOT_GET_PROXY_SERVER on the RTC proxy is proxy_unavailable', async () => {
+  const { networkBlockedError } = await loadVoice();
+  const e = (code, leg) => Object.assign(new Error('x'), { code, leg });
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const rtcBlocked = networkBlockedError(e('connect_timeout', 'rtc'), { rtm: false, rtc: false }, false);
+    assert.equal(rtcBlocked.code, 'network_blocked');
+    assert.doesNotMatch(rtcBlocked.message, /safer route/, 'no proxy was tried, so the message does not claim one');
+    const rtmBlocked = networkBlockedError(e('connect_timeout', 'rtm'), { rtm: true, rtc: false }, true);
+    assert.equal(rtmBlocked.code, 'network_blocked');
+    assert.match(rtmBlocked.message, /even through the safer route/);
+    assert.equal(networkBlockedError(e('CAN_NOT_GET_PROXY_SERVER', 'rtc'), { rtm: true, rtc: true }, true).code, 'proxy_unavailable');
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test('isNetworkFailure: timeouts and RTC/RTM connection codes are network-class; token and parameter errors are not', async () => {
@@ -530,38 +579,35 @@ test('start on an open network: one direct attempt, no proxy, nothing remembered
   assert.equal(call.status, 'waiting');
 });
 
-test('start: a blocked RTM login times out, then RTC and RTM retry once through Cloud Proxy (TLS 443) with the same channel and token', async (t) => {
+test('start: RTM blocked (the 2026-11-20 network): RTM retries once through Cloud Proxy, the joined RTC client is kept direct', async (t) => {
   const { VoiceCall } = await loadWithShortTimeouts();
   const log = fakeEnvironment({ attempts: [blockedRtm] });
   const h = handlers();
   const call = new VoiceCall(h);
   t.after(() => call.teardown({ stopServer: false }));
   await call.start();
-  assert.equal(call.status, 'waiting', JSON.stringify(h.seen.errors.map((x) => [x.code, x.message])));
-  assert.equal(log.clients.length, 2, 'a fresh RTC client for the retry');
-  const [first, second] = log.clients;
-  assert.equal(first.proxyMode, null);
-  assert.equal(second.proxyMode, 5, 'startProxyServer(5): forced TCP over TLS 443');
-  assert.ok(log.indexOf('rtc1.startProxy:5') < log.indexOf('rtc1.join:5'), `proxy set before join: ${log.join(', ')}`);
+  assert.equal(call.status, 'waiting', errorsOf(h));
+  assert.equal(log.clients.length, 1, 'no second RTC client: the joined one is kept');
+  assert.equal(log.clients[0].proxyMode, null);
+  assert.equal(log.clients[0].joins.length, 1, 'RTC joined once');
+  assert.ok(!log.some((l) => /startProxy/.test(l)), `RTC never uses startProxyServer: ${log.join(', ')}`);
+  assert.ok(!log.slice(0, log.indexOf('startVoice')).includes('rtc.leave'), `the kept RTC client is not left: ${log.join(', ')}`);
   assert.deepEqual(log.rtms.map((r) => r.config), [undefined, { cloudProxy: true }]);
-  assert.deepEqual(second.joins[0], first.joins[0], 'same app id, channel, token and uid');
-  assert.equal(log.rtms[1].loginToken, log.rtms[0].loginToken);
-  assert.ok(log.includes('rtm0.logout') && log.indexOf('rtm0.logout') < log.indexOf('rtc1.join:5'), `the failed attempt is released first: ${log.join(', ')}`);
-  assert.equal(log.filter((l) => l === 'startVoice').length, 1, 'the agent is started once, after the proxy connect');
+  assert.equal(log.rtms[1].loginToken, log.rtms[0].loginToken, 'same token');
+  assert.equal(log.rtms[1].channel, 'own-1', 'same channel');
+  assert.ok(log.indexOf('rtm0.logout') >= 0 && log.indexOf('rtm0.logout') < log.indexOf('rtm.login'), `the failed RTM is logged out first: ${log.join(', ')}`);
+  assert.equal(log.filter((l) => l === 'startVoice').length, 1, 'the agent is started once, after the RTM proxy connect');
   assert.ok(!log.includes('stopVoice'), 'the server call entry is kept across the retry');
-  assert.ok(h.seen.details.some((d) => d.route === 'proxy'), 'the console is told about the safer route');
+  assert.ok(h.seen.details.some((d) => d.route === 'proxy' && d.rtcProxy === false), 'the console is told about the safer route');
   assert.equal(call.route, 'proxy');
+  assert.equal(call.rtcProxy, false);
   assert.ok(Number.isFinite(call.marks.proxy));
   assert.equal(log.store.get('sahay.voice.cloudProxy'), '1', 'remembered for this browser session');
-  // An event from the abandoned first client must not end the live call.
-  first.emit('connection-state-change', 'DISCONNECTED', 'CONNECTED', 'NETWORK_ERROR');
-  await wait(5);
-  assert.equal(call.status, 'waiting');
   await call.end();
-  assert.ok(log.includes('rtc1.stopProxy'), `stopProxyServer after leave: ${log.join(', ')}`);
+  assert.ok(!log.some((l) => /stopProxy/.test(l)), 'no RTC proxy to stop');
 });
 
-test('start: when the Cloud Proxy retry also fails the owner gets an honest network error and the server entry is released', async () => {
+test('start: when the RTM proxy retry also fails the owner gets an honest network error and the server entry is released', async () => {
   const { VoiceCall } = await loadWithShortTimeouts();
   const log = fakeEnvironment({ attempts: [blockedRtm, blockedRtm] });
   const h = handlers();
@@ -569,21 +615,83 @@ test('start: when the Cloud Proxy retry also fails the owner gets an honest netw
   await call.start();
   assert.equal(call.status, 'error');
   assert.equal(h.seen.errors[0].code, 'network_blocked');
-  assert.match(h.seen.errors[0].message, /network/i);
-  assert.equal(log.clients.length, 2, 'exactly one retry');
+  assert.match(h.seen.errors[0].message, /even through the safer route/);
+  assert.equal(log.rtms.length, 2, 'exactly one retry');
+  assert.equal(log.clients.length, 1);
+  assert.ok(!log.some((l) => /startProxy/.test(l)));
   assert.ok(!log.includes('startVoice'), 'no agent is started, so no voice minutes are spent');
   assert.ok(log.includes('stopVoice'));
   assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'nothing remembered after a failure');
 });
 
-test('start: Cloud Proxy refused for the project (CAN_NOT_GET_PROXY_SERVER) is reported as proxy_unavailable', async () => {
+test('start: RTC itself blocked: no RTC Cloud Proxy (paid toggle) by default, one attempt, honest network_blocked', async () => {
   const { VoiceCall } = await loadWithShortTimeouts();
-  const refused = Object.assign(new Error('AgoraRTCError CAN_NOT_GET_PROXY_SERVER'), { code: 'CAN_NOT_GET_PROXY_SERVER' });
-  const log = fakeEnvironment({ attempts: [blockedRtm, { rtc: refused }] });
+  const log = fakeEnvironment({ attempts: [blockedRtc] });
   const h = handlers();
   const call = new VoiceCall(h);
+  const warn = console.warn;
+  const warnings = [];
+  console.warn = (...a) => warnings.push(a.join(' '));
+  try { await call.start(); } finally { console.warn = warn; }
+  assert.equal(call.status, 'error');
+  assert.equal(h.seen.errors[0].code, 'network_blocked');
+  assert.doesNotMatch(h.seen.errors[0].message, /safer route/, 'no safer route was tried');
+  assert.equal(log.clients.length, 1, 'no retry');
+  assert.equal(log.rtms.length, 1);
+  assert.ok(!log.some((l) => /startProxy/.test(l)), log.join(', '));
+  assert.ok(!h.seen.details.some((d) => d.route === 'proxy'));
+  assert.ok(!log.includes('startVoice'));
+  assert.ok(log.includes('stopVoice'));
+  assert.ok(warnings.some((w) => /rtcproxy=1/.test(w)), 'the console log says how to opt in');
+});
+
+test('start: an RTC join that fails fast with a network code is blamed on RTC, not retried through the RTM proxy', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const gateway = Object.assign(new Error('AgoraRTCError CAN_NOT_GET_GATEWAY_SERVER: no active status'), { code: 'CAN_NOT_GET_GATEWAY_SERVER' });
+  const log = fakeEnvironment({ attempts: [{ rtc: gateway }] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await call.start(); } finally { console.warn = warn; }
+  assert.equal(h.seen.errors[0].code, 'network_blocked');
+  assert.equal(log.rtms.length, 1);
+  assert.equal(log.clients.length, 1);
+});
+
+test('start with ?rtcproxy=1: RTC blocked retries once with RTC (mode 5, before join) and RTM through Cloud Proxy', async (t) => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ search: '?rtcproxy=1', attempts: [blockedRtc] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
   await call.start();
+  assert.equal(call.status, 'waiting', errorsOf(h));
+  assert.deepEqual(log.clients.map((c) => c.proxyMode), [null, 5]);
+  assert.ok(log.indexOf('rtc1.startProxy:5') < log.indexOf('rtc1.join:5'), `proxy set before join: ${log.join(', ')}`);
+  assert.deepEqual(log.clients[1].joins[0], log.clients[0].joins[0], 'same app id, channel, token and uid');
+  assert.deepEqual(log.rtms.map((r) => r.config), [undefined, { cloudProxy: true }]);
+  assert.equal(call.rtcProxy, true);
+  assert.ok(h.seen.details.some((d) => d.route === 'proxy' && d.rtcProxy === true));
+  // An event from the abandoned first client must not end the live call.
+  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'CONNECTED', 'NETWORK_ERROR');
+  await wait(5);
+  assert.equal(call.status, 'waiting');
+  await call.end();
+  assert.ok(log.includes('rtc1.stopProxy'), `stopProxyServer after leave: ${log.join(', ')}`);
+});
+
+test('start with ?rtcproxy=1: Cloud Proxy refused for the project (CAN_NOT_GET_PROXY_SERVER) is reported as proxy_unavailable', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const refused = Object.assign(new Error('AgoraRTCError CAN_NOT_GET_PROXY_SERVER'), { code: 'CAN_NOT_GET_PROXY_SERVER' });
+  const log = fakeEnvironment({ search: '?rtcproxy=1', attempts: [blockedRtc, { rtc: refused }] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await call.start(); } finally { console.warn = warn; }
   assert.equal(h.seen.errors[0].code, 'proxy_unavailable');
+  assert.equal(log.clients.length, 2);
   assert.ok(!log.includes('startVoice'));
 });
 
@@ -594,10 +702,11 @@ test('start: a non-network failure (invalid token) is not retried through the pr
   const call = new VoiceCall(h);
   await call.start();
   assert.equal(log.clients.length, 1);
+  assert.equal(log.rtms.length, 1);
   assert.equal(h.seen.errors[0].code, 'join_failed');
 });
 
-test('start: a browser that needed the proxy before starts with it, and falls back to direct (forgetting it) if the proxy fails', async (t) => {
+test('start: a browser whose RTM needed the proxy starts with it (RTC direct), and falls back to direct RTM (forgetting it) if the proxy fails', async (t) => {
   const { VoiceCall } = await loadWithShortTimeouts();
   {
     const log = fakeEnvironment({ remembered: true });
@@ -606,9 +715,10 @@ test('start: a browser that needed the proxy before starts with it, and falls ba
     t.after(() => call.teardown({ stopServer: false }));
     await call.start();
     assert.equal(log.clients.length, 1);
-    assert.equal(log.clients[0].proxyMode, 5);
+    assert.equal(log.clients[0].proxyMode, null, 'RTC stays direct');
     assert.deepEqual(log.rtms[0].config, { cloudProxy: true });
     assert.equal(h.seen.details[h.seen.statuses.indexOf('connecting')].route, 'proxy', 'the safer-route line shows from the first connecting status');
+    assert.equal(log.store.get('sahay.voice.cloudProxy'), '1');
     await call.end();
   }
   {
@@ -617,26 +727,47 @@ test('start: a browser that needed the proxy before starts with it, and falls ba
     t.after(() => call.teardown({ stopServer: false }));
     await call.start();
     assert.equal(call.status, 'waiting');
-    assert.deepEqual(log.clients.map((c) => c.proxyMode), [5, null]);
+    assert.deepEqual(log.rtms.map((r) => r.config), [{ cloudProxy: true }, undefined]);
+    assert.equal(log.clients.length, 1, 'the joined RTC client is kept');
+    assert.equal(call.route, 'direct');
     assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'direct worked, so the memory is cleared');
   }
 });
 
-test('start with ?proxy=1: proxy from the first attempt and no fallback to direct', async () => {
+test('start with ?proxy=1: RTM proxy from the first attempt, RTC direct, no fallback, not remembered', async () => {
   const { VoiceCall } = await loadWithShortTimeouts();
   const log = fakeEnvironment({ search: '?proxy=1', attempts: [blockedRtm] });
   const h = handlers();
   const call = new VoiceCall(h);
   await call.start();
   assert.equal(log.clients.length, 1);
-  assert.equal(log.clients[0].proxyMode, 5);
+  assert.equal(log.clients[0].proxyMode, null);
+  assert.deepEqual(log.rtms.map((r) => r.config), [{ cloudProxy: true }]);
+  assert.ok(!log.some((l) => /startProxy/.test(l)));
   assert.equal(h.seen.errors[0].code, 'network_blocked');
   assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'a forced test run is not remembered');
 });
 
+test('start with ?proxy=1&rtcproxy=1: both proxies from the first attempt', async (t) => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ search: '?proxy=1&rtcproxy=1' });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
+  await call.start();
+  assert.equal(call.status, 'waiting', errorsOf(h));
+  assert.equal(log.clients.length, 1);
+  assert.equal(log.clients[0].proxyMode, 5);
+  assert.ok(log.indexOf('rtc0.startProxy:5') < log.indexOf('rtc0.join:5'), log.join(', '));
+  assert.deepEqual(log.rtms[0].config, { cloudProxy: true });
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined);
+  await call.end();
+  assert.ok(log.includes('rtc0.stopProxy'));
+});
+
 test('start: pressing End while the first attempt hangs ends cleanly, with no proxy retry', async () => {
   const { VoiceCall, CONNECT_TIMEOUT_MS } = await loadWithShortTimeouts();
-  CONNECT_TIMEOUT_MS.direct = 500;
+  CONNECT_TIMEOUT_MS.direct = 2000;
   const log = fakeEnvironment({ attempts: [blockedRtm] });
   const h = handlers();
   const call = new VoiceCall(h);
@@ -646,14 +777,65 @@ test('start: pressing End while the first attempt hangs ends cleanly, with no pr
   await started;
   assert.equal(call.status, 'idle');
   assert.equal(log.clients.length, 1);
+  assert.equal(log.rtms.length, 1);
   assert.equal(h.seen.errors.length, 0);
+});
+
+test('start: an RTC client that dropped during the attempt is not kept; the RTM retry gets a fresh direct RTC client', async (t) => {
+  const { VoiceCall, CONNECT_TIMEOUT_MS } = await loadWithShortTimeouts();
+  CONNECT_TIMEOUT_MS.direct = 2000;
+  const log = fakeEnvironment({ attempts: [blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
+  const started = call.start();
+  await until(() => log.includes('rtc.join')); // RTC joined; RTM login still hangs
+  log.clients[0].emit('connection-state-change', 'RECONNECTING', 'CONNECTED', 'NETWORK_ERROR');
+  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'RECONNECTING', 'NETWORK_ERROR');
+  await started;
+  assert.equal(call.status, 'waiting', errorsOf(h));
+  assert.equal(call.route, 'proxy');
+  assert.ok(!h.seen.statuses.includes('reconnecting'), `events during connect do not pre-empt the retry: ${h.seen.statuses.join(', ')}`);
+  assert.deepEqual(log.clients.map((c) => c.proxyMode), [null, null], 'a fresh RTC client, still direct');
+  assert.deepEqual(log.rtms.map((r) => r.config), [undefined, { cloudProxy: true }]);
+  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'CONNECTED', 'NETWORK_ERROR');
+  await wait(5);
+  assert.equal(call.status, 'waiting', 'the abandoned client cannot end the call');
 });
 
 /* --------------------------------------- NegotiationListener on restrictive networks --- */
 
-test('NegotiationListener: a join that times out retries once through Cloud Proxy and listens', async (t) => {
+test('NegotiationListener: a join that times out is an honest network error, with no RTC proxy by default', async () => {
   const { NegotiationListener } = await loadWithShortTimeouts();
-  const log = fakeEnvironment({ attempts: [{ rtc: 'hang' }] });
+  const log = fakeEnvironment({ attempts: [blockedRtc] });
+  const changes = [];
+  const listener = new NegotiationListener((s) => changes.push({ ...s }));
+  const warn = console.warn;
+  console.warn = () => {};
+  try { await listener.start('n1'); } finally { console.warn = warn; }
+  assert.equal(listener.status, 'error');
+  assert.match(listener.error, /network/i);
+  assert.doesNotMatch(listener.error, /safer route/);
+  assert.equal(log.clients.length, 1);
+  assert.ok(!log.some((l) => /startProxy/.test(l)));
+  assert.ok(!changes.some((c) => c.route === 'proxy'));
+});
+
+test('NegotiationListener: the tab\'s RTM proxy memory and ?proxy=1 do not move its RTC to the proxy', async (t) => {
+  const { NegotiationListener } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ remembered: true, search: '?proxy=1' });
+  const listener = new NegotiationListener(() => {});
+  t.after(() => listener.stop());
+  await listener.start('n1');
+  assert.equal(listener.status, 'listening');
+  assert.equal(log.clients[0].proxyMode, null);
+  assert.equal(listener.route, 'direct');
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), '1', 'the listener leaves the RTM memory alone');
+});
+
+test('NegotiationListener with ?rtcproxy=1: a join that times out retries once through RTC Cloud Proxy and listens', async (t) => {
+  const { NegotiationListener } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ search: '?rtcproxy=1', attempts: [blockedRtc] });
   const changes = [];
   const listener = new NegotiationListener((s) => changes.push({ ...s }));
   t.after(() => listener.stop());
@@ -662,34 +844,19 @@ test('NegotiationListener: a join that times out retries once through Cloud Prox
   assert.deepEqual(log.clients.map((c) => c.proxyMode), [null, 5]);
   assert.deepEqual(log.clients[1].joins[0], log.clients[0].joins[0]);
   assert.ok(changes.some((c) => c.status === 'joining' && c.route === 'proxy'));
-  assert.equal(log.store.get('sahay.voice.cloudProxy'), '1');
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'nothing remembered by the listener');
   log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'CONNECTING', 'NETWORK_ERROR');
   assert.equal(listener.status, 'listening', 'the abandoned client cannot fail the listener');
+  await listener.stop();
+  assert.ok(log.includes('rtc1.stopProxy'));
 });
 
-test('NegotiationListener: proxy also failing ends in an honest error after one retry', async () => {
+test('NegotiationListener with ?rtcproxy=1: proxy also failing ends in an honest error after one retry', async () => {
   const { NegotiationListener } = await loadWithShortTimeouts();
-  const log = fakeEnvironment({ attempts: [{ rtc: 'hang' }, { rtc: 'hang' }] });
+  const log = fakeEnvironment({ search: '?rtcproxy=1', attempts: [blockedRtc, blockedRtc] });
   const listener = new NegotiationListener(() => {});
   await listener.start('n1');
   assert.equal(listener.status, 'error');
-  assert.match(listener.error, /network/i);
+  assert.match(listener.error, /even through the safer route/);
   assert.equal(log.clients.length, 2);
-});
-
-test('start: RTC connection-state events during a connect attempt do not pre-empt the proxy retry', async (t) => {
-  const { VoiceCall, CONNECT_TIMEOUT_MS } = await loadWithShortTimeouts();
-  CONNECT_TIMEOUT_MS.direct = 120;
-  const log = fakeEnvironment({ attempts: [blockedRtm] });
-  const h = handlers();
-  const call = new VoiceCall(h);
-  t.after(() => call.teardown({ stopServer: false }));
-  const started = call.start();
-  await wait(40);
-  log.clients[0].emit('connection-state-change', 'RECONNECTING', 'CONNECTED', 'NETWORK_ERROR');
-  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'RECONNECTING', 'NETWORK_ERROR');
-  await started;
-  assert.equal(call.status, 'waiting', JSON.stringify(h.seen.errors.map((x) => [x.code, x.message])));
-  assert.equal(call.route, 'proxy');
-  assert.ok(!h.seen.statuses.includes('reconnecting'), h.seen.statuses.join(', '));
 });
