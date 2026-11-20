@@ -52,7 +52,7 @@ backdrop root and the hex field stops showing through). Screens live inside `#ma
 - Z-layers `--z-hex 0`, `--z-content 1`, `--z-column 20`, `--z-nav 40`, `--z-calldock 44`,
   `--z-banner 46`, `--z-pill 48`, `--z-popover 60`, `--z-toast 65`, `--z-sheet 80`, `--z-skip 100`.
 - Hex field `--hex-rgb`, `--hex-alpha`, `--hex-pitch`, `--hex-dot` (read by `hex-field.js`).
-- Layout `--safe-t/r/b/l`, `--nav-w` (88 / 104), `--nav-inset 16`, `--rail-w 72`, `--dock-h 68`,
+- Layout `--safe-t/r/b/l`, `--nav-w` (92 / 112: body 60/72 + belly 32/40), `--nav-inset 16`, `--rail-w 72`, `--dock-h 68`,
   `--dock-gap 12`, `--dock-orb 64`, `--dock-lift 18`, `--capsule-h 56`, `--agent-col 380/420`,
   `--content-max 1120`, `--pad-x 16/24/32`.
 - Compat names kept with v3 values (fine to use): `--ink-0..3`, `--glass`, `--glass-strong`,
