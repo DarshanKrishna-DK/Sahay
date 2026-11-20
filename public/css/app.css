@@ -77,19 +77,19 @@
 }
 .tabbar-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0;
-  min-height: var(--tabbar-h); padding: 6px 2px; color: var(--text-muted); text-decoration: none;
+  min-height: calc(var(--tabbar-h) - 12px); padding: 4px 2px; color: var(--text-muted); text-decoration: none;
 }
 .tabbar-item-ico { position: relative; display: grid; place-items: center; width: 52px; height: 30px; border-radius: var(--r-pill); transition: background-color var(--t-fast) var(--ease); }
 .tabbar-item-word { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-label); font-weight: 700; }
-.tabbar-item[aria-current="page"] { color: var(--text); }
-.tabbar-item[aria-current="page"] .tabbar-item-ico { background: var(--pink); color: var(--on-pink); }
+/* Stitch v5: the active tab is one pink pill around its icon and word. */
+.tabbar-item { margin: 6px 3px; border-radius: 28px; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.tabbar-item[aria-current="page"] { background: var(--pink); color: var(--on-pink); }
 .tabbar-item:active .tabbar-item-ico { background: var(--surface-2); }
 .tabbar-item .tab-badge { top: -6px; right: 2px; }
 
 /* Phone: logo, language, account in the bar; "Needs you" shows as a count only. */
 @media (max-width: 599px) {
   .topbar-in { gap: 8px; }
-  .topbar .brand-word { display: none; }
   .needs-btn { padding: 0 12px; }
   .needs-word { display: none; }
   .needs-n { color: var(--text); }
