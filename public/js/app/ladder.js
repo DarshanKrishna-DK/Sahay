@@ -1,61 +1,64 @@
-// Price ladder: the negotiation as a staircase of price chips. The seller's asks step down
-// from above, Sahay's offers step up from below, and the meeting point glows. Prices come
-// only from negotiation.turn offers; "simulated vendor" is shown whenever it is one.
+// The price ladder (UI v3): vendor asks on the left (cyan), Sahay's offers on the right (lime),
+// rung by rung as they were said, each with the words that came with the price. Wide, ask k sits
+// beside offer k; narrow, the rungs read top to bottom in the order said, asks left and offers
+// right. Prices come only from negotiation turns (buy-model ladderRows); the agreed price is
+// locked at the top; "simulated vendor" is shown whenever the seller is one.
 
-import { h, icon, svgEl, rupees } from "./dom.js";
+import { h, icon, scripted, rupees } from "./dom.js";
 import { t, unitWord } from "./i18n.js";
+import { simPill } from "./buy-kit.js";
 
-export function renderLadder(n, { vendor, simulated }) {
-  const turns = (n && n.turns ? n.turns : []).filter((x) => x.offer !== null && x.offer !== undefined);
-  const head = h("div", { class: "ladder-head" },
-    h("h3", { class: "ladder-title", text: t("ladder.title") }),
-    vendor ? h("span", { class: "ladder-vendor" }, icon("store", 18), h("span", { text: vendor })) : null,
-    simulated ? h("span", { class: "sim-pill" }, icon("robot", 16), h("span", { text: t("simulated") })) : null);
-  if (!turns.length) {
-    return h("section", { class: "ladder" }, head, h("p", { class: "ladder-empty" }, h("span", { class: "wait-dot", "aria-hidden": "true" }), h("span", { text: t("ladder.empty") })));
+const perUnit = (p, unit) => `${rupees(p)}${unit ? ` / ${unitWord(unit)}` : ""}`;
+
+function badge(lad, live) {
+  if (lad.agreed !== null) {
+    return h("p", { class: "b3-lad-badge is-agreed" }, icon("lock", 20), h("span", { text: t("ladder.agreed", { p: perUnit(lad.agreed, lad.unit) }) }));
   }
-  const asks = turns.filter((x) => x.speaker === "vendor");
-  const offers = turns.filter((x) => x.speaker === "agent");
-  const prices = turns.map((x) => x.offer);
-  const max = Math.max(...prices), min = Math.min(...prices);
-  const span = Math.max(1, max - min);
-  const rounds = Math.max(...turns.map((x) => x.round || 1));
-  const outcome = n.outcome && typeof n.outcome === "object" ? n.outcome : null;
-  const agreed = outcome && outcome.agreed && outcome.unitPrice !== null && outcome.unitPrice !== undefined ? outcome.unitPrice : null;
-  const unit = (turns[0] && turns[0].unit) || (outcome && outcome.unit) || "";
+  if (lad.noDeal) return h("p", { class: "b3-lad-badge is-nodeal" }, icon("x", 20), h("span", { text: t("ladder.noDeal") }));
+  if (live) return h("p", { class: "b3-lad-badge is-live", role: "status" }, h("span", { class: "b3-live-dot", "aria-hidden": "true" }), h("span", { text: t("b3.lad.live") }));
+  return null;
+}
 
-  // Chip positions: x by round, y by price (high at top).
-  const W = 100, top = 8, bottom = 92;
-  const xOf = (r) => (rounds <= 1 ? 50 : 8 + ((r - 1) / (rounds - 1)) * 84);
-  const yOf = (p) => top + (1 - (p - min) / span) * (bottom - top);
-  const line = (list, cls) => {
-    if (list.length < 2) return null;
-    const pts = list.map((x) => `${xOf(x.round || 1)},${yOf(x.offer)}`).join(" ");
-    return svgEl("polyline", { points: pts, class: cls, "vector-effect": "non-scaling-stroke" });
-  };
-  const svg = svgEl("svg", { class: "ladder-svg", viewBox: `0 0 ${W} 100`, preserveAspectRatio: "none", "aria-hidden": "true" });
-  for (const el of [line(asks, "ladder-ask"), line(offers, "ladder-offer")]) if (el) svg.append(el);
+/**
+ * renderLadder(lad, { negotiation, vendor, simulated, live, listen }) -> element
+ * lad = ladderRows(negotiation); listen = the Listen-in control (or null).
+ */
+export function renderLadder(lad, { negotiation, vendor, simulated, live = false, listen = null } = {}) {
+  const sim = Boolean(simulated || lad.simulated);
+  const head = h("header", { class: "b3-lad-head" },
+    h("div", { class: "b3-lad-title-row" },
+      h("span", { class: "b3-lad-ico", "aria-hidden": "true" }, icon("handshake", 22)),
+      h("h2", { class: "b3-lad-title", text: t("ladder.title") }),
+      badge(lad, live)),
+    vendor || sim ? h("p", { class: "b3-lad-who" },
+      vendor ? h("span", { class: "b3-lad-vendor" }, icon("store", 18), scripted("span", vendor)) : null,
+      sim ? simPill() : null) : null);
 
-  const chips = h("ol", { class: "ladder-chips" });
-  const seen = new Set();
-  for (const x of turns) {
-    const key = `${x.speaker}|${x.round}|${x.offer}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const meet = agreed !== null && x.offer === agreed;
-    const who = x.speaker === "vendor" ? t("ladder.asks") : t("ladder.offers");
-    chips.append(h("li", {
-      class: `pchip pchip-${x.speaker === "vendor" ? "ask" : "offer"}${meet ? " is-meet" : ""}`,
-      style: `--x:${xOf(x.round || 1)};--y:${yOf(x.offer)}`,
-    }, h("span", { class: "sr-only", text: `${who}: ` }), h("span", { text: rupees(x.offer) })));
+  let body;
+  if (!negotiation) {
+    body = h("p", { class: "b3-lad-quiet" }, icon("handshake", 20), h("span", { text: t("b3.lad.none") }));
+  } else if (!lad.rows.length) {
+    body = h("p", { class: "b3-lad-quiet", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }),
+      h("span", { text: lad.ended ? t("ladder.noDeal") : t("b3.lad.waitStart") }));
+  } else {
+    const last = lad.rows[lad.rows.length - 1];
+    const rungs = h("ol", { class: "b3-rungs", style: `--pairs:${Math.max(...lad.rows.map((r) => r.pair))}` },
+      h("li", { class: "b3-col-head is-ask", "aria-hidden": "true" }, h("span", { class: "b3-side-dot" }), h("span", { text: t("ladder.asks") })),
+      h("li", { class: "b3-col-head is-offer", "aria-hidden": "true" }, h("span", { class: "b3-side-dot" }), h("span", { text: t("ladder.offers") })),
+      ...lad.rows.map((r) => {
+        const who = r.side === "ask" ? t("ladder.asks") : t("ladder.offers");
+        const final = lad.ended && r === last;
+        return h("li", { class: `b3-rung is-${r.side}${r.meet ? " is-meet" : ""}`, style: `--pair:${r.pair};--row:${r.pair + 1}` },
+          h("span", { class: "sr-only", text: `${who}: ` }),
+          h("span", { class: "b3-rung-top" },
+            h("span", { class: "b3-rung-who", "aria-hidden": "true" }, icon(r.side === "ask" ? "store" : "spark", 16), h("span", { text: who })),
+            h("span", { class: "b3-rung-round", text: final ? t("b3.lad.final") : r.round !== null ? t("b3.lad.round", { n: r.round }) : "" })),
+          h("span", { class: "b3-rung-price" }, r.meet ? icon("check", 20) : null, h("span", { text: perUnit(r.offer, r.unit || lad.unit) })),
+          r.text ? scripted("span", r.text, { class: "b3-rung-said" }) : null);
+      }));
+    const start = lad.firstAsk !== null ? h("p", { class: "b3-lad-start" }, icon("tag", 18), h("span", { text: t("b3.lad.start", { p: perUnit(lad.firstAsk, lad.unit) }) })) : null;
+    body = [rungs, start];
   }
-  const legend = h("p", { class: "ladder-legend" },
-    h("span", { class: "lg lg-ask" }, h("span", { class: "lg-dot", "aria-hidden": "true" }), h("span", { text: t("ladder.asks") })),
-    h("span", { class: "lg lg-offer" }, h("span", { class: "lg-dot", "aria-hidden": "true" }), h("span", { text: t("ladder.offers") })));
-  const result = n.endedAt
-    ? (agreed !== null
-      ? h("p", { class: "ladder-result is-agreed" }, icon("check", 22), h("span", { text: t("ladder.agreed", { p: `${rupees(agreed)}${unit ? `/${unitWord(unit)}` : ""}` }) }))
-      : h("p", { class: "ladder-result is-nodeal" }, icon("x", 22), h("span", { text: t("ladder.noDeal") })))
-    : null;
-  return h("section", { class: "ladder" }, head, legend, h("div", { class: "ladder-plot" }, svg, chips), result);
+
+  return h("section", { class: `b3-ladder card${live ? " card-now" : ""}`, "aria-label": t("ladder.title") }, head, ...[].concat(body), listen);
 }

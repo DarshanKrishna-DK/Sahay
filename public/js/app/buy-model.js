@@ -214,15 +214,15 @@ export function shortName(name) {
 }
 
 /**
- * Points of the river path for `n` stations in a box W x H: a gentle wave (horizontal) or a
- * meander (vertical). Returned in box units, plus the SVG path through them.
+ * Points of the river path for `n` stations in a box W x H: a gentle wave through the centres of
+ * n equal columns (horizontal) or a meander (vertical). Returned in box units, plus the SVG path through them.
  */
 export function riverGeometry(n, vertical, W, H) {
   const pts = [];
   for (let i = 0; i < n; i++) {
     const f = n > 1 ? i / (n - 1) : 0.5;
     if (vertical) pts.push([W * (0.5 + 0.22 * Math.sin(f * Math.PI * 2.5)), H * (0.05 + f * 0.9)]);
-    else pts.push([W * (0.05 + f * 0.9), H * (0.52 - 0.2 * Math.sin(f * Math.PI * 1.6 + 0.4))]);
+    else pts.push([W * (i + 0.5) / n, H * (0.5 - 0.3 * Math.sin(f * Math.PI * 1.7 + 0.3))]);
   }
   let d = pts.length ? `M ${r1(pts[0][0])} ${r1(pts[0][1])}` : "";
   for (let i = 1; i < pts.length; i++) {

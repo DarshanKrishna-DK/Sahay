@@ -1,117 +1,180 @@
-// Orders as receipts: amount, seller, paid / not paid (icon + word), the order paper (PO PDF),
-// Pay (our /pay page), the next reminder on a clock arc, read-aloud per order, and Telegram updates.
+// Purchase orders as receipts (UI v3, D2: every purchase order lives here, on Buy). Three shelves:
+// To pay -> On the way -> Done (folded). A receipt: punch notches on its tear line, PO number and
+// date, read-aloud (order:<id>), seller with the simulated-vendor pill, what and how much, the
+// amount, a paid / not paid stamp (icon + word), the next reminder on a clock arc, and at most
+// one primary + two secondary actions: Pay (test mode), Order paper (PO PDF), Arrived.
+// Also exports the Telegram link control for My Sahay (D4 moved it out of Buy).
 
-import { h, icon, patch, scripted, rupees, svgEl, safeUrl, toDate } from "./dom.js";
-import { t, when } from "./i18n.js";
+import { h, icon, patch, scripted, rupees, amount, svgEl, safeUrl, toDate } from "./dom.js";
+import { t, when, unitWord } from "./i18n.js";
 import * as api from "../api.js";
 import { state } from "./store.js";
+import { markDelivered } from "./store-sell.js";
 import { speakButton } from "./speak.js";
+import { orderShelves, orderFacts, remindersOf, clockFraction, isPaid } from "./buy-model.js";
+import { btn, simPill, testPill, stateView, skel, errorWords, errLine, alignNotches } from "./buy-kit.js";
 
-const PAID = ["paid", "in_transit", "delivered", "closed"];
-
-function clockArc(createdAt, dueAt) {
-  const a = toDate(createdAt), b = toDate(dueAt);
-  let frac = 0;
-  if (a && b && b > a) frac = Math.min(1, Math.max(0, (Date.now() - a) / (b - a)));
-  const r = 22, c = 2 * Math.PI * r;
-  const svg = svgEl("svg", { class: "clock-arc", viewBox: "0 0 56 56", width: 56, height: 56, "aria-hidden": "true" });
+function clockArc(from, to) {
+  const frac = clockFraction(from, to);
+  const r = 20, c = 2 * Math.PI * r;
+  const svg = svgEl("svg", { class: "b3-clock", viewBox: "0 0 48 48", width: 48, height: 48, "aria-hidden": "true", focusable: "false" });
   svg.append(
-    svgEl("circle", { cx: 28, cy: 28, r, class: "clock-track" }),
-    svgEl("circle", { cx: 28, cy: 28, r, class: "clock-fill", "stroke-dasharray": `${(frac * c).toFixed(1)} ${c.toFixed(1)}`, transform: "rotate(-90 28 28)" }),
-    svgEl("path", { d: "M28 16v12l7 5", class: "clock-hands" }));
+    svgEl("circle", { cx: 24, cy: 24, r, class: "b3-clock-track" }),
+    svgEl("circle", { cx: 24, cy: 24, r, class: "b3-clock-fill", "stroke-dasharray": `${(frac * c).toFixed(1)} ${c.toFixed(1)}`, transform: "rotate(-90 24 24)" }),
+    svgEl("path", { d: "M24 13v11l6 4", class: "b3-clock-hands" }));
   return svg;
 }
 
-function receipt(o) {
-  const q = o.quoteId !== undefined ? state.quotes.get(String(o.quoteId)) : null;
-  const vendor = o.vendorName || (q && q.vendorName) || null;
-  const simulated = Boolean(o.simulated || (q && q.simulated));
-  const paid = PAID.includes(o.status);
-  const follow = [...state.followups.values()].filter((f) => String(f.orderId) === String(o.id));
-  const next = follow.filter((f) => f.status === "scheduled").sort((a, b) => String(a.dueAt).localeCompare(String(b.dueAt)))[0];
-  const fired = follow.filter((f) => f.status === "fired").sort((a, b) => String(b.firedAt || "").localeCompare(String(a.firedAt || "")))[0];
+function stamp(o, shelf) {
+  if (o.status === "cancelled" || o.status === "rejected") return h("p", { class: "b3-stamp is-bad" }, icon("x", 20), h("span", { text: t("b3.cancelled") }));
+  if (o.status === "delivered" || o.status === "closed") return h("p", { class: "b3-stamp is-ok" }, icon("checkCircle", 20), h("span", { text: t("b3.delivered") }));
+  if (isPaid(o)) return h("p", { class: "b3-stamp is-ok" }, icon("check", 20), h("span", { text: t("b3.paid") }));
+  return h("p", { class: `b3-stamp ${shelf === "toPay" ? "is-due" : ""}` }, icon("history", 20), h("span", { text: t("b3.unpaid") }));
+}
+
+function receipt(o, shelf, ui, onArrived) {
+  const id = String(o.id);
+  const u = ui.get(id) || {};
+  const f = orderFacts(state, o);
+  const { next, sent } = remindersOf(state, o.id);
   const pay = safeUrl(o.paymentUrl);
   const pdf = safeUrl(o.pdfUrl || `/api/orders/${encodeURIComponent(o.id)}/po.pdf`);
-  const statusKey = `orders.status.${o.status}`;
   const created = toDate(o.createdAt);
-  return h("li", { class: `receipt${paid ? " is-paid" : ""}` },
-    h("div", { class: "rc-top" },
-      h("span", { class: "rc-ico", "aria-hidden": "true" }, icon("receipt", 24)),
-      h("div", { class: "rc-id" },
-        o.poNumber ? h("span", { class: "rc-po", text: o.poNumber }) : null,
-        created ? h("span", { class: "rc-date", text: when(created, { day: "numeric", month: "short" }) }) : null),
-      speakButton(`order:${o.id}`, { size: "sm" })),
-    vendor ? h("p", { class: "rc-vendor" }, icon("store", 20), scripted("span", vendor), simulated ? h("span", { class: "sim-pill" }, h("span", { text: t("simulated") })) : null) : null,
-    h("p", { class: "rc-amount", text: rupees(o.amount) || "" }),
-    h("p", { class: `rc-status ${paid ? "ok" : "due"}` },
-      icon(paid ? "check" : "rupee", 22),
-      h("span", { text: paid ? t("orders.paid") : t("orders.unpaid") }),
-      t(statusKey) !== statusKey && !paid && o.status !== "confirmed" ? h("span", { class: "rc-sub", text: t(statusKey) }) : null),
-    next || fired ? h("div", { class: "rc-remind" },
-      next ? clockArc(o.createdAt, next.dueAt) : h("span", { class: "rc-bell", "aria-hidden": "true" }, icon("bell", 22)),
-      h("div", {},
-        h("p", { class: "rc-remind-what", text: `${next ? t("orders.next") : t("orders.sent")}: ${t(`orders.rem.${(next || fired).kind}`)}` }),
-        h("p", { class: "rc-remind-when", text: when(toDate(next ? next.dueAt : fired.firedAt)) }))) : null,
-    h("div", { class: "rc-actions" },
-      pdf ? h("a", { class: "btn btn-ghost", href: pdf, target: "_blank", rel: "noopener" }, icon("download", 22), h("span", { text: t("orders.paper") })) : null,
-      !paid && pay ? h("a", { class: "btn btn-primary", href: pay, target: "_blank", rel: "noopener noreferrer" }, icon("rupee", 22), h("span", { text: t("orders.pay") })) : null,
-      !paid && !pay ? h("span", { class: "rc-nolink", text: t("orders.noLink") }) : null));
+  const qty = f.quantity !== null ? `${amount(f.quantity)}${f.unit ? ` ${unitWord(f.unit)}` : ""}` : null;
+  const priceLine = f.unitPrice !== null && qty ? `${rupees(f.unitPrice)}${f.unit ? ` / ${unitWord(f.unit)}` : ""} × ${qty}` : null;
+  const rem = next || sent;
+
+  const actions = [];
+  if (shelf === "toPay" && pay) actions.push(h("span", { class: "b3-pay" }, btn({ icon: "rupee", word: t("b3.pay"), tone: "lime", href: pay, external: true }), testPill()));
+  if (pdf) actions.push(btn({ icon: "download", word: t("b3.paper"), href: pdf, external: true }));
+  if (shelf !== "done" && !u.done) actions.push(btn({ icon: "truck", word: t("b3.arrived"), label: t("b3.arrivedLong"), busy: Boolean(u.busy), onClick: () => onArrived(id) }));
+
+  return h("li", { class: `b3-rcpt is-${shelf}` },
+    h("article", { class: `b3-paper paper ${isPaid(o) || shelf === "done" ? "paper-paid" : "paper-due"}`, "aria-label": o.poNumber || t("b3.orders") },
+      h("header", { class: "card-head b3-rcpt-top" },
+        h("span", { class: "b3-rcpt-ico", "aria-hidden": "true" }, icon("receipt", 22)),
+        h("h4", { class: "card-title b3-rcpt-id" },
+          h("span", { class: "b3-po", text: o.poNumber || t("b3.orders") }),
+          created ? h("span", { class: "b3-rcpt-date", text: when(created, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) }) : null),
+        h("span", { class: "card-speak" }, speakButton(`order:${id}`))),
+      h("span", { class: "perforation", "aria-hidden": "true" }),
+      f.item ? h("p", { class: "b3-rcpt-what" }, scripted("span", f.item, { class: "b3-rcpt-item" }), qty ? h("span", { class: "b3-rcpt-qty", text: qty }) : null) : null,
+      f.vendor ? h("p", { class: "b3-rcpt-from" }, icon("store", 18), scripted("span", f.vendor, { class: "b3-rcpt-vendor" }), f.simulated ? simPill() : null) : null,
+      h("div", { class: "b3-rcpt-money" },
+        h("p", { class: "b3-rcpt-amt", text: rupees(o.amount) || "" }),
+        stamp(o, shelf)),
+      priceLine ? h("p", { class: "b3-rcpt-rate", text: priceLine }) : null,
+      rem ? h("div", { class: "b3-rcpt-rem" },
+        next ? clockArc(o.createdAt, next.dueAt) : h("span", { class: "b3-rcpt-bell", "aria-hidden": "true" }, icon("bell", 22)),
+        h("p", {},
+          h("span", { class: "b3-rem-what", text: t(next ? "b3.reminderNext" : "b3.reminderSent") }),
+          h("span", { class: "b3-rem-when", text: when(toDate(next ? next.dueAt : sent.firedAt)) }))) : null,
+      shelf === "toPay" && !pay ? h("p", { class: "b3-rcpt-note" }, icon("info", 18), h("span", { text: t("b3.noLink") })) : null,
+      u.error ? errLine(u.error) : null,
+      u.done ? h("p", { class: "b3-rcpt-ok", role: "status" }, icon("checkCircle", 20), h("span", { text: t("b3.arrivedDone") })) : null,
+      actions.length ? h("div", { class: "b3-rcpt-acts" }, ...actions) : null));
+}
+
+const SHELVES = [["toPay", "rupee", "b3.shelf.toPay"], ["onTheWay", "truck", "b3.shelf.onTheWay"], ["done", "checkCircle", "b3.shelf.done"]];
+
+function skeleton() {
+  return h("div", { class: "b3-rcpt-skel skel-card" }, skel("skel-line", "is-short"), skel("skel-line"), skel("skel-block", "is-amount"), skel("skel-block", "is-btn"));
 }
 
 export function createOrders() {
-  const el = h("section", { class: "orders", "aria-labelledby": "orders-title" });
-  const title = h("h2", { class: "section-title", id: "orders-title" });
-  const list = h("div", { class: "orders-body" });
-  const tg = h("div", { class: "telegram" });
-  el.append(title, list, tg);
-  const tgs = { busy: false, error: null, link: null, blocked: false };
+  const el = h("section", { class: "b3-orders", "aria-labelledby": "b3-orders-title" });
+  const title = h("h2", { class: "section-title b3-sec-title", id: "b3-orders-title" });
+  const body = h("div", { class: "b3-orders-body" });
+  el.append(title, body);
+  const ui = new Map(); // orderId -> { busy, error, done }
+  let showDone = false;
 
-  async function linkTelegram() {
+  async function arrived(id) {
+    ui.set(id, { busy: true });
+    render(true);
+    try {
+      await markDelivered(id);
+      ui.set(id, { done: true });
+      setTimeout(() => { ui.delete(id); render(true); }, 2400);
+    } catch (err) {
+      ui.set(id, { error: errorWords(err) });
+    }
+    render(true);
+  }
+
+  function render(force = false) {
+    title.replaceChildren(icon("receipt", 22), h("span", { text: t("b3.orders") }));
+    if (force) body.__key = null;
+    const sh = orderShelves(state.orders);
+    const total = sh.toPay.length + sh.onTheWay.length + sh.done.length;
+    const key = JSON.stringify([document.documentElement.lang, state.boot, [...state.orders.values()], [...state.followups.values()], state.quotes.size, state.vendors.size, [...ui.entries()]]);
+    patch(body, key, () => {
+      if (state.boot !== "ready") return stateView({ kind: "loading", title: t("b3.loading"), skeleton, compact: true });
+      if (!total) return stateView({ kind: "empty", icon: "receipt", title: t("b3.orders.empty.title"), text: t("b3.orders.empty.text"), compact: true });
+      return SHELVES.map(([k, ic, word]) => {
+        const rows = sh[k];
+        if (!rows.length) return null;
+        const folded = k === "done" && !showDone;
+        const list = h("ol", { class: "b3-rcpts" }, ...rows.map((o) => receipt(o, k, ui, arrived)));
+        if (k === "done") {
+          // Done orders stay folded until opened (a count shows how many); the fold keeps its state.
+          const fold = h("details", { class: `b3-shelf is-${k} fold`, open: showDone ? true : undefined },
+            h("summary", { class: "fold-head b3-shelf-head" }, icon(ic, 20), h("span", { text: t(word) }), h("span", { class: "fold-count", text: String(rows.length) })),
+            list);
+          fold.addEventListener("toggle", () => { showDone = fold.open; });
+          return fold;
+        }
+        return h("section", { class: `b3-shelf is-${k}`, "aria-label": t(word) },
+          h("h3", { class: "b3-shelf-head" }, icon(ic, 20), h("span", { text: t(word) }), h("span", { class: "b3-count", text: String(rows.length) })),
+          list);
+      });
+    });
+    alignNotches(body);
+  }
+
+  return { el, update: (_s, parts) => { if (parts.has("all") || parts.has("lang") || parts.has("orders") || parts.has("work")) render(); } };
+}
+
+/* ----------------------------------------------------------- Telegram link -- */
+
+/**
+ * The Telegram updates control (D4: lives in My Sahay > Shop). States: not linked, opening,
+ * popup blocked (a link to press), linked, not configured on this server.
+ */
+export function createTelegramLink() {
+  const el = h("div", { class: "b3-tg" });
+  const s = { busy: false, error: null, link: null, blocked: false };
+
+  async function link() {
     let win = null;
     try { win = window.open("", "_blank"); } catch { win = null; }
-    tgs.busy = true; tgs.error = null; renderTg(true);
+    s.busy = true; s.error = null; render(true);
     try {
       const r = await api.telegramLinkCode();
       const url = r && typeof r.deepLink === "string" && /^https:\/\/t\.me\//.test(r.deepLink) ? r.deepLink : null;
-      if (!url) throw new Error(t("orders.telegramOff"));
-      tgs.link = url;
-      if (win && !win.closed) { try { win.opener = null; } catch { /* ignore */ } win.location.href = url; tgs.blocked = false; } else tgs.blocked = true;
+      if (!url) throw Object.assign(new Error(t("orders.telegramOff")), { code: "TELEGRAM_NOT_CONFIGURED" });
+      s.link = url;
+      if (win && !win.closed) { try { win.opener = null; } catch { /* ignore */ } win.location.href = url; s.blocked = false; } else s.blocked = true;
     } catch (err) {
       if (win && !win.closed) win.close();
-      tgs.error = err && err.code === "TELEGRAM_NOT_CONFIGURED" ? t("orders.telegramOff") : (err && (err.say || err.message)) || t("orders.telegramOff");
+      s.error = err && err.code === "TELEGRAM_NOT_CONFIGURED" ? t("orders.telegramOff") : (err && (err.say || err.message)) || t("orders.telegramOff");
     }
-    tgs.busy = false;
-    renderTg(true);
+    s.busy = false;
+    render(true);
   }
 
-  function renderTg(force) {
-    const key = JSON.stringify([state.telegramLinked, tgs, document.documentElement.lang]);
-    if (force) tg.__key = null;
-    patch(tg, key, () => {
-      if (state.telegramLinked) return [h("p", { class: "tg-on" }, icon("check", 22), h("span", { text: t("orders.telegramOn") }))];
+  function render(force) {
+    if (force) el.__key = null;
+    patch(el, JSON.stringify([state.telegramLinked, s, document.documentElement.lang]), () => {
+      if (state.telegramLinked) return [h("p", { class: "b3-tg-on" }, icon("check", 20), h("span", { text: t("orders.telegramOn") }))];
       return [
-        h("button", { class: "btn btn-ghost", type: "button", disabled: tgs.busy ? true : undefined, on: { click: linkTelegram } },
-          tgs.busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("send", 22), h("span", { text: t("orders.telegram") })),
-        tgs.link ? h("p", { class: "tg-note" }, h("span", { text: t("orders.telegramPress") }),
-          tgs.blocked ? h("a", { class: "btn btn-primary btn-sm", href: tgs.link, target: "_blank", rel: "noopener noreferrer" }, h("span", { text: t("orders.openTelegram") })) : null) : null,
-        tgs.error ? h("p", { class: "tg-err", role: "alert" }, icon("alert", 20), h("span", { text: tgs.error })) : null,
+        btn({ icon: "send", word: t("orders.telegram"), busy: s.busy, onClick: link }),
+        s.link ? h("p", { class: "b3-tg-note" }, h("span", { text: t("orders.telegramPress") }),
+          s.blocked ? btn({ icon: "external", word: t("orders.openTelegram"), tone: "lime", href: s.link, external: true, size: "sm" }) : null) : null,
+        s.error ? errLine(s.error) : null,
       ];
     });
   }
-
-  function render(parts) {
-    if (!parts.has("all") && !parts.has("lang") && !parts.has("orders") && !parts.has("work")) return;
-    title.textContent = t("orders.title");
-    const orders = [...state.orders.values()].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-    const key = JSON.stringify([document.documentElement.lang, orders, [...state.followups.values()], state.quotes.size]);
-    // Inside Buy the need's empty state already offers "Talk to Sahay": with no orders this
-    // section stays out of the way instead of showing a second empty view.
-    el.hidden = orders.length === 0;
-    patch(list, key, () => orders.length ? h("ol", { class: "receipts" }, ...orders.map(receipt)) : []);
-    tg.hidden = !orders.length && !state.telegramLinked;
-    renderTg(false);
-  }
-
-  return { el, update: (_s, parts) => render(parts) };
+  render(true);
+  return { el, update: () => render(false) };
 }
-

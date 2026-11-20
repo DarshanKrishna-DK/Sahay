@@ -1,234 +1,143 @@
-// The work river: the current need as stations along one glowing curved path.
-// Heard you -> Searching (seller bubbles pop in) -> Bargaining -> Your yes -> Ordered -> Paid
-// -> Reminder. Built only from the store (GET /api/state + SSE), so a reload mid-negotiation
-// rebuilds the same stations, and live events only move them forward.
+// The work river (UI v3): the current need as seven stations on one glowing curved path,
+// Heard -> Searching -> Bargaining -> Your yes -> Ordered -> Paid -> Reminder. Each station that
+// has a real figure carries a HUD tracker (corner brackets, hairline down to its station) with
+// that figure only. Seller chips pop in under the river as sellers are found.
+// One DOM for both shapes: app-buy.css lays it out as a horizontal wave when the river is wide
+// (container query) and as a vertical meander on a phone; the SVG for each shape is drawn here.
 
-import { h, icon, svgEl, scripted, rupees, amount, toDate as toDateSafe } from "./dom.js";
-import { t, lang, when, unitWord, cityWord } from "./i18n.js";
-import { itemLine } from "./item-line.js";
-import { state } from "./store.js";
+import { h, icon, svgEl, scripted, rupees, toDate } from "./dom.js";
+import { t, when, unitWord } from "./i18n.js";
+import { reachOf, riverGeometry, shortName } from "./buy-model.js";
+import { simPill } from "./buy-kit.js";
 
-/** One record per station: { id, icon, status: done|active|needs|upcoming|failed, detail } */
-export function stationsFor(req) {
-  const rid = req ? String(req.id) : null;
-  const jobs = [...state.jobs.values()].filter((j) => rid && String(j.requirementId) === rid);
-  const sourcing = jobs.filter((j) => j.kind === "sourcing").sort(byTime).pop();
-  const negJobs = jobs.filter((j) => j.kind === "negotiation").sort(byTime);
-  const vendors = [...state.vendors.values()].filter((v) => !v.requirementId || String(v.requirementId) === rid);
-  const negos = [...state.negotiations.values()];
-  const runningNego = negos.find((n) => !n.endedAt && (!n.status || ["open", "running", "starting"].includes(n.status)));
-  const quotes = [...state.quotes.values()].filter((q) => !q.requirementId || String(q.requirementId) === rid);
-  const quoteIds = new Set(quotes.map((q) => String(q.id)));
-  const approvals = [...state.approvals.values()].filter((a) => quoteIds.has(String(a.quoteId)))
-    .sort((a, b) => String(a.requestedAt || "").localeCompare(String(b.requestedAt || "")));
-  const approval = approvals.find((a) => a.status === "pending") || approvals[approvals.length - 1] || null;
-  const approvalIds = new Set(approvals.map((a) => String(a.id)));
-  const order = [...state.orders.values()].find((o) => approvalIds.has(String(o.approvalId)) || quoteIds.has(String(o.quoteId))) || null;
-  const follow = order ? [...state.followups.values()].filter((f) => String(f.orderId) === String(order.id))
-    .sort((a, b) => String(a.dueAt || "").localeCompare(String(b.dueAt || ""))) : [];
-  const nextFollow = follow.find((f) => f.status === "scheduled") || null;
-  const firedFollow = follow.filter((f) => f.status === "fired").pop() || null;
+export const STATION_WORD = { heard: "st.heard", search: "st.search", bargain: "st.bargain", yes: "st.yes", ordered: "st.ordered", paid: "st.paid", reminder: "st.reminder" };
+export const STATE_WORD = { done: "st.done", active: "st.active", needs: "st.needsYou", upcoming: "st.upcoming", failed: "st.failed" };
+export const STATION_ICON = { heard: "ear", search: "search", bargain: "handshake", yes: "check", ordered: "doc", paid: "rupee", reminder: "bell" };
+const STATE_ICON = { done: "check", active: "refresh", needs: "alert", failed: "x" };
 
-  const s = [];
-  s.push({ id: "heard", icon: "ear", status: req ? "done" : "upcoming" });
+const perUnit = (p, unit) => `${rupees(p)}${unit ? `/${unitWord(unit)}` : ""}`;
+const time = (ts) => { const d = toDate(ts); return d ? when(d, { hour: "numeric", minute: "2-digit" }) : null; };
+const day = (ts) => { const d = toDate(ts); return d ? when(d, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : null; };
 
-  let search = "upcoming";
-  if (sourcing) search = sourcing.status === "running" || sourcing.status === "queued" ? "active" : sourcing.status === "failed" ? "failed" : "done";
-  else if (vendors.length) search = "done";
-  s.push({ id: "search", icon: "search", status: search, count: vendors.length, job: sourcing || null });
-
-  let bargain = "upcoming";
-  const lastNegJob = negJobs[negJobs.length - 1];
-  if (runningNego || (lastNegJob && (lastNegJob.status === "running" || lastNegJob.status === "queued"))) bargain = "active";
-  else if (quotes.length) bargain = "done";
-  else if (negos.some((n) => n.endedAt) || (lastNegJob && lastNegJob.status === "failed")) bargain = "failed";
-  const shownNego = runningNego || negos.slice().sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""))).pop() || null;
-  s.push({ id: "bargain", icon: "handshake", status: bargain, negotiation: shownNego, running: Boolean(runningNego) });
-
-  let yes = "upcoming";
-  if (approval) yes = approval.status === "pending" ? "needs" : approval.status === "rejected" ? "failed" : "done";
-  s.push({ id: "yes", icon: "check", status: yes, approval });
-
-  s.push({ id: "ordered", icon: "doc", status: order ? "done" : "upcoming", order });
-  const paid = order && ["paid", "in_transit", "delivered", "closed"].includes(order.status);
-  s.push({ id: "paid", icon: "rupee", status: paid ? "done" : order && order.paymentUrl ? "active" : "upcoming", order });
-  s.push({ id: "reminder", icon: "bell", status: firedFollow && !nextFollow ? "done" : nextFollow ? "active" : "upcoming", followup: nextFollow || firedFollow });
-  return { stations: s, vendors, quotes, approval, order };
-}
-
-function byTime(a, b) { return String(a.createdAt || "").localeCompare(String(b.createdAt || "")); }
-
-const LABEL = { heard: "st.heard", search: "st.search", bargain: "st.bargain", yes: "st.yes", ordered: "st.ordered", paid: "st.paid", reminder: "st.reminder" };
-const STATE = { done: "st.done", active: "st.active", needs: "st.needsYou", upcoming: "st.upcoming", failed: "st.failed" };
-
-/** Station positions (0..1) for a horizontal wave (wide) or a vertical meander (narrow). */
-function layout(n, vertical) {
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const f = i / (n - 1);
-    if (vertical) pts.push([i % 2 === 0 ? 0.26 : 0.74, 0.06 + f * 0.88]);
-    else pts.push([0.06 + f * 0.88, i % 2 === 0 ? 0.68 : 0.3]);
-  }
-  return pts;
-}
-
-function curve(pts, W, H, vertical) {
-  const P = pts.map(([x, y]) => [x * W, y * H]);
-  let d = `M ${P[0][0]} ${P[0][1]}`;
-  for (let i = 1; i < P.length; i++) {
-    const [x0, y0] = P[i - 1], [x1, y1] = P[i];
-    if (vertical) {
-      const my = (y0 + y1) / 2;
-      d += ` C ${x0} ${my}, ${x1} ${my}, ${x1} ${y1}`;
-    } else {
-      const mx = (x0 + x1) / 2;
-      d += ` C ${mx} ${y0}, ${mx} ${y1}, ${x1} ${y1}`;
+/** The HUD lines of one station: [{ text, tone?, mono? }], from hudFor() only. */
+export function hudLines(id, hud) {
+  const x = hud && hud[id];
+  if (!x) return [];
+  switch (id) {
+    case "heard": { const at = time(x.at); return at ? [{ text: at, mono: true }] : []; }
+    case "search":
+      if (x.error) return [{ text: t("b3.searchFailed"), tone: "bad" }];
+      return [
+        { text: x.sellers === 1 ? t("b3.hud.sellersOne") : t("b3.hud.sellers", { n: x.sellers }) },
+        x.simulated ? { text: t("b3.hud.sim", { n: x.simulated }), tone: "sim" } : null,
+      ].filter(Boolean);
+    case "bargain": {
+      const lines = [{ text: t("b3.hud.round", { n: x.rounds }) }];
+      if (x.agreed !== null) lines.push({ text: perUnit(x.agreed, x.unit), tone: "ok", mono: true });
+      else if (x.ask !== null && x.offer !== null) lines.push({ text: `${rupees(x.ask)} → ${rupees(x.offer)}`, mono: true });
+      else if (x.ask !== null) lines.push({ text: perUnit(x.ask, x.unit), mono: true });
+      return lines;
     }
+    case "yes": return [{ text: t("b3.hud.total", { p: rupees(x.total) }), tone: x.status === "pending" ? "needs" : undefined, mono: true }];
+    case "ordered": return [{ text: x.po, mono: true }];
+    case "paid": return [{ text: x.paid ? t("b3.hud.paid") : t("b3.hud.link"), tone: x.paid ? "ok" : undefined }];
+    case "reminder": { const d = day(x.at); return d ? [{ text: t(x.sent ? "b3.hud.sent" : "b3.hud.next", { d }) }] : []; }
+    default: return [];
   }
-  return d;
+}
+
+function tracker(lines) {
+  if (!lines.length) return null;
+  return h("span", { class: "b3-hud", "aria-hidden": "true" },
+    h("span", { class: "b3-hud-box" }, ...lines.map((l) => h("span", { class: `b3-hud-line${l.tone ? ` is-${l.tone}` : ""}${l.mono ? " is-mono" : ""}`, text: l.text }))),
+    h("span", { class: "b3-hud-link" }));
+}
+
+/** The wide river: one SVG path through the station centres, lit up to the furthest started one. */
+function waveSvg(n, reach, activeAt) {
+  const W = 1000, H = 100;
+  const { pts, d } = riverGeometry(n, false, W, H);
+  const frac = n > 1 ? reach / (n - 1) : 0;
+  const svg = svgEl("svg", { class: "b3-wave", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true", focusable: "false" });
+  svg.append(
+    svgEl("path", { d, class: "b3-path-bed", "vector-effect": "non-scaling-stroke" }),
+    svgEl("path", { d, class: "b3-path-glow", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }),
+    svgEl("path", { d, class: "b3-path-lit", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }));
+  if (activeAt > 0) {
+    // The leg Sahay is on right now: marching dashes into the active station.
+    const a = pts[activeAt - 1], b = pts[activeAt];
+    const mx = (a[0] + b[0]) / 2;
+    svg.append(svgEl("path", { d: `M ${a[0]} ${a[1]} C ${mx} ${a[1]}, ${mx} ${b[1]}, ${b[0]} ${b[1]}`, class: "b3-path-signal", "vector-effect": "non-scaling-stroke" }));
+  }
+  return { svg, ys: pts.map((p) => p[1] / H) };
+}
+
+/** One leg of the narrow river, from a station down to the next one (a gentle S). */
+function legSvg(i, lit, signal) {
+  const svg = svgEl("svg", { class: "b3-leg", viewBox: "0 0 56 100", preserveAspectRatio: "none", "aria-hidden": "true", focusable: "false" });
+  const d = i % 2 === 0 ? "M 28 0 C 4 30, 52 70, 28 100" : "M 28 0 C 52 30, 4 70, 28 100";
+  svg.append(svgEl("path", { d, class: "b3-path-bed", "vector-effect": "non-scaling-stroke" }));
+  if (lit) svg.append(svgEl("path", { d, class: "b3-path-glow", "vector-effect": "non-scaling-stroke" }), svgEl("path", { d, class: "b3-path-lit", "vector-effect": "non-scaling-stroke" }));
+  if (signal) svg.append(svgEl("path", { d, class: "b3-path-signal", "vector-effect": "non-scaling-stroke" }));
+  return svg;
 }
 
 /**
- * renderRiver(container, model, { vertical, onStation, freshVendorIds })
- * Rebuilt only when its key changes (see work.js); vendor bubbles new since last time pop in.
+ * renderRiver(model, hud, { onStation, freshVendorIds }) -> element.
+ * onStation(station, button) opens the station's sheet.
  */
-export function renderRiver(model, { vertical, onStation, freshVendorIds = new Set() }) {
+export function renderRiver(model, hud, { onStation, freshVendorIds = new Set() } = {}) {
   const { stations, vendors } = model;
-  const W = vertical ? 360 : 1000;
-  const H = vertical ? 1040 : 300;
-  const pts = layout(stations.length, vertical);
-  const d = curve(pts, W, H, vertical);
-  // Progress reaches the last station that is done / active / needs you.
-  let reach = 0;
-  stations.forEach((s, i) => { if (s.status !== "upcoming") reach = i; });
-  const frac = stations.length > 1 ? reach / (stations.length - 1) : 0;
+  const n = stations.length;
+  const reach = reachOf(stations);
+  const activeAt = stations.findIndex((s) => s.status === "active" || s.status === "needs");
+  const { svg, ys } = waveSvg(n, reach, activeAt);
+  const now = stations[activeAt !== -1 ? activeAt : reach];
 
-  const svg = svgEl("svg", { class: "river-svg", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
-  const defs = svgEl("defs");
-  const grad = svgEl("linearGradient", { id: "river-grad", x1: "0", y1: "0", x2: vertical ? "0" : "1", y2: vertical ? "1" : "0" });
-  grad.append(svgEl("stop", { offset: "0", "stop-color": "var(--leaf)" }), svgEl("stop", { offset: "1", "stop-color": "var(--marigold)" }));
-  defs.append(grad);
-  svg.append(defs,
-    svgEl("path", { d, class: "river-base", pathLength: 1, "vector-effect": "non-scaling-stroke" }),
-    svgEl("path", { d, class: "river-glow", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }),
-    svgEl("path", { d, class: "river-flow", pathLength: 1, "stroke-dasharray": `${frac} 1`, "vector-effect": "non-scaling-stroke" }));
-  // The leg Sahay is working on right now (a station is active): marching dashes from that
-  // station towards the next one, like the journey arrows on Wahlet. Still under reduced motion.
-  const activeAt = stations.findIndex((s) => s.status === "active");
-  if (activeAt !== -1 && activeAt < stations.length - 1) {
-    svg.append(svgEl("path", { d: curve([pts[activeAt], pts[activeAt + 1]], W, H, vertical), class: "river-signal", "vector-effect": "non-scaling-stroke" }));
-  }
-
-  const list = h("ol", { class: "river-stations", "aria-label": t("work.stations") });
+  const list = h("ol", { class: "b3-stations" });
   stations.forEach((s, i) => {
-    const [x, y] = pts[i];
-    const label = t(LABEL[s.id]);
-    const stateWord = t(STATE[s.status]);
+    const word = t(STATION_WORD[s.id]);
+    const stateWord = t(STATE_WORD[s.status]);
+    const lines = hudLines(s.id, hud);
     const btn = h("button", {
-      class: "station", type: "button", dataset: { status: s.status, id: s.id },
-      "aria-label": `${i + 1}. ${label}, ${stateWord}`,
-      on: { click: (e) => onStation(s, e.currentTarget) },
+      class: "b3-st-btn", type: "button",
+      "aria-label": `${i + 1}. ${word}, ${stateWord}${lines.length ? `, ${lines.map((l) => l.text).join(", ")}` : ""}`,
+      on: { click: (e) => onStation && onStation(s, e.currentTarget) },
     },
-    h("span", { class: "station-dot" }, s.status === "done" ? icon("check", 26) : s.status === "failed" ? icon("x", 26) : icon(s.icon, 26)),
-    h("span", { class: "station-word", text: label }),
-    s.status !== "upcoming" ? h("span", { class: "station-state" }, stateIcon(s.status), h("span", { text: stateWord })) : null);
-    list.append(h("li", { class: "station-item", style: `--x:${x};--y:${y}` }, btn));
+    h("span", { class: "b3-dot", "aria-hidden": "true" },
+      s.status === "upcoming" ? h("span", { class: "b3-dot-num", text: String(i + 1) }) : icon(s.status === "done" ? "check" : s.status === "failed" ? "x" : STATION_ICON[s.id], 26)),
+    h("span", { class: "b3-st-text", "aria-hidden": "true" },
+      h("span", { class: "b3-st-word", text: word }),
+      s.status !== "upcoming" ? h("span", { class: "b3-st-state" }, icon(STATE_ICON[s.status] || "spark", 16), h("span", { text: stateWord })) : null));
+    const next = stations[i + 1];
+    list.append(h("li", { class: "b3-st", dataset: { status: s.status, id: s.id }, style: `--i:${i};--y:${ys[i].toFixed(3)}` },
+      next ? legSvg(i, s.status !== "upcoming" && next.status !== "upcoming", i + 1 === activeAt) : null,
+      tracker(lines),
+      btn));
   });
 
-  // Seller names hang under the Searching station, in the free space before Bargaining: up to
-  // three short names (the full name in the tooltip and in the Searching sheet), or two and "+N".
-  const extra = vendors.length > 3 ? 1 : 0;
-  const shown = vendors.slice(0, 3 - extra);
-  const [sx, sy] = pts[1];
-  const sellers = h("ul", { class: "river-sellers", style: `--x:${sx};--y:${sy}`, "aria-label": t("work.sellers", { n: vendors.length }) });
-  shown.forEach((v, i) => {
-    const full = String(v.name || "");
-    const label = v.simulated ? `${full}, ${t("simulated")}` : full;
-    sellers.append(h("li", {
-      class: `vname${freshVendorIds.has(String(v.id)) ? " pop" : ""}${v.simulated ? " sim" : ""}`,
-      style: `--i:${i}`, title: label,
-    }, scripted("span", shortName(full), { "aria-hidden": "true" }), h("span", { class: "sr-only", text: label })));
-  });
-  if (extra) sellers.append(h("li", { class: "vname more", "aria-hidden": "true" }, `+${vendors.length - shown.length}`));
-  return h("div", { class: `river${vertical ? " river-v" : ""}` }, svg, list, vendors.length ? sellers : null);
-}
+  const extra = vendors.length > 6 ? vendors.length - 5 : 0;
+  const shown = vendors.slice(0, extra ? 5 : 6);
+  const sellers = vendors.length ? h("div", { class: "b3-sellers" },
+    h("p", { class: "b3-sellers-head" }, icon("store", 20), h("span", { text: vendors.length === 1 ? t("b3.hud.sellersOne") : t("b3.hud.sellers", { n: vendors.length }) })),
+    h("ul", { class: "b3-sellers-list" },
+      ...shown.map((v, i) => {
+        const full = String(v.name || "");
+        return h("li", { class: `b3-seller${freshVendorIds.has(String(v.id)) ? " is-new" : ""}${v.simulated ? " is-sim" : ""}`, style: `--i:${i}`, title: v.simulated ? `${full}, ${t("simulated")}` : full },
+          icon(v.simulated ? "robot" : "store", 16),
+          scripted("span", shortName(full) || full, { class: "b3-seller-name" }),
+          v.simulated ? h("span", { class: "sr-only", text: `, ${t("simulated")}` }) : null);
+      }),
+      extra ? h("li", { class: "b3-seller is-more", text: `+${extra}` }) : null),
+    vendors.some((v) => v.simulated) ? simPill() : null) : null;
 
-/**
- * The seller's name as given, short but whole: whole words up to about 18 characters, never a
- * cut word or initials (QA: "BS" alone read as nothing). One very long first word stays whole.
- */
-export function shortName(name) {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  let out = words[0];
-  for (const w of words.slice(1)) {
-    if ([...`${out} ${w}`].length > 18) return `${out}…`;
-    out = `${out} ${w}`;
-  }
-  return out;
-}
-
-function stateIcon(status) {
-  return icon({ done: "check", active: "refresh", needs: "alert", failed: "x" }[status] || "spark", 16);
-}
-
-export function initials(name) {
-  const words = String(name || "").replace(/[^\p{L}\p{N} ]/gu, " ").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase();
-}
-
-/* ---------------------------------------------------------- details -- */
-
-/** Body of a station's sheet: plain facts from the store, with a read-aloud button where a key exists. */
-export function stationDetail(s, model, req, speakButton, extra = {}) {
-  const rows = [];
-  const fact = (ic, text) => text ? h("p", { class: "fact" }, icon(ic, 22), scripted("span", String(text))) : null;
-  if (s.id === "heard" && req) {
-    rows.push(h("p", { class: "sheet-big" }, scripted("span", [amount(req.quantity), unitWord(req.unit), req.item].filter(Boolean).join(" "))));
-    rows.push(fact("rupee", req.maxPrice !== null && req.maxPrice !== undefined ? t("work.upTo", { p: `${rupees(req.maxPrice)}${req.unit ? `/${unitWord(req.unit)}` : ""}` }) : null));
-    rows.push(fact("pin", req.city ? cityWord(req.city) : null));
-    rows.push(fact("truck", req.deliveryBy ? t("work.when", { d: req.deliveryBy }) : null));
-    rows.push(h("div", { class: "sheet-speak" }, speakButton(`need:${req.id}`)));
-  } else if (s.id === "search") {
-    const searching = itemLine("now.searching", { item: req ? req.item : "" }, lang());
-    if (!model.vendors.length) rows.push(h("p", { class: "fact muted", text: s.status === "active" ? t(searching.key, searching.vars) : t("work.noSellers") }));
-    else {
-      rows.push(h("p", { class: "fact" }, icon("store", 22), h("span", { text: t("work.sellers", { n: model.vendors.length }) })));
-      rows.push(h("ol", { class: "seller-list" }, ...model.vendors.slice().sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99)).slice(0, 10).map((v) =>
-        h("li", { class: "seller" },
-          h("span", { class: `vbub static${v.simulated ? " sim" : ""}`, "aria-hidden": "true" }, initials(v.name)),
-          h("span", { class: "seller-main" }, scripted("span", v.name || "", { class: "seller-name" }),
-            h("span", { class: "seller-sub" }, [v.city ? cityWord(v.city) : null, v.listedPrice !== null && v.listedPrice !== undefined ? `${rupees(v.listedPrice)}${v.listedUnit ? `/${unitWord(v.listedUnit)}` : ""}` : v.listedPriceText].filter(Boolean).join(", "))),
-          v.simulated ? h("span", { class: "sim-pill" }, h("span", { text: t("simulated") })) : null))));
-    }
-    if (req) rows.push(h("div", { class: "sheet-speak" }, speakButton(`need:${req.id}`)));
-  } else if (s.id === "bargain") {
-    if (extra.ladder) rows.push(extra.ladder);
-    if (extra.listen) rows.push(extra.listen);
-  } else if (s.id === "yes" && model.approval) {
-    const a = model.approval;
-    rows.push(h("p", { class: "sheet-big" }, rupees(a.totalAmount) || ""));
-    if (a.readback) rows.push(scripted("p", a.readback, { class: "fact-text" }));
-    if (a.status !== "pending") rows.push(fact(a.status === "rejected" ? "x" : "check", `${t(a.status === "rejected" ? "hist.approval.no" : "hist.approval.yes")}${a.decidedVia ? `, ${t(a.decidedVia === "voice" ? "hist.byVoice" : "hist.byButton")}` : ""}`));
-    rows.push(h("div", { class: "sheet-speak" }, speakButton(`approval:${a.id}`)));
-  } else if ((s.id === "ordered" || s.id === "paid") && model.order) {
-    const o = model.order;
-    rows.push(h("p", { class: "sheet-big" }, rupees(o.amount) || ""));
-    rows.push(fact("doc", o.poNumber));
-    rows.push(fact(s.status === "done" && s.id === "paid" ? "check" : "rupee", s.id === "paid" ? t(s.status === "done" ? "orders.paid" : "orders.unpaid") : t(`orders.status.${o.status}`) !== `orders.status.${o.status}` ? t(`orders.status.${o.status}`) : null));
-    rows.push(h("div", { class: "sheet-actions" },
-      o.pdfUrl ? h("a", { class: "btn btn-ghost", href: o.pdfUrl, target: "_blank", rel: "noopener" }, icon("download", 22), h("span", { text: t("orders.paper") })) : null,
-      o.paymentUrl && s.status !== "done" ? h("a", { class: "btn btn-primary", href: o.paymentUrl, target: "_blank", rel: "noopener noreferrer" }, icon("rupee", 22), h("span", { text: t("orders.pay") })) : null,
-      speakButton(`order:${o.id}`)));
-  } else if (s.id === "reminder" && s.followup) {
-    const f = s.followup;
-    rows.push(fact("bell", t(`orders.rem.${f.kind}`) !== `orders.rem.${f.kind}` ? t(`orders.rem.${f.kind}`) : f.kind));
-    const d = toDateSafe(f.status === "fired" ? f.firedAt : f.dueAt);
-    rows.push(fact("history", d ? `${t(f.status === "fired" ? "orders.sent" : "orders.next")}: ${when(d)}` : null));
-    if (f.message) rows.push(scripted("p", f.message, { class: "fact-text" }));
-  } else {
-    rows.push(h("p", { class: "fact muted", text: t("st.upcoming") }));
-  }
-  return rows.filter(Boolean);
+  return h("section", { class: "b3-river glass glass-rim", "aria-label": t("work.stations") },
+    h("header", { class: "b3-river-head" },
+      h("p", { class: "b3-river-now", dataset: { status: now ? now.status : "upcoming" } },
+        icon(now ? STATION_ICON[now.id] : "river", 20),
+        h("span", { class: "b3-river-now-word", text: now ? t(STATION_WORD[now.id]) : "" }),
+        now && now.status !== "upcoming" ? h("span", { class: "b3-river-now-state", text: t(STATE_WORD[now.status]) }) : null),
+      h("span", { class: "b3-river-count", "aria-hidden": "true", text: `${Math.min(reach + 1, n)} / ${n}` })),
+    h("div", { class: "b3-river-stage" }, svg, list),
+    sellers);
 }

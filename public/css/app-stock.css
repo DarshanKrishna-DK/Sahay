@@ -1,0 +1,194 @@
+/* Stock (UI v3, W4A): jars with their reorder line, low first, on-the-way chips, the "buy more?"
+   question inline, open purchase orders with Arrived. Primitives (card, keycap, chip, pill,
+   section-title, state, skel, spinner, error-line, speak, yes/no) are W1's (README-v3.md); this
+   file is layout and the jar. Container queries follow the width the shell gives the screen.
+   Tokens only. Every animation stops under prefers-reduced-motion. */
+
+.s3-stock { container: s3 / inline-size; display: grid; gap: var(--s-5); min-width: 0; padding-bottom: var(--s-6); }
+.s3-stock > * { min-width: 0; }
+
+/* ----------------------------------------------------------------- header -- */
+.s3-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--s-3) var(--s-4); }
+.s3-head-main { flex: 1 1 240px; min-width: 0; }
+.s3-title { display: flex; align-items: center; gap: var(--s-3); margin: 0; }
+.s3-title svg { flex: none; color: var(--accent-text); }
+.s3-hud { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-3) 0 0; padding: 0; list-style: none; }
+.s3-hud-cell {
+  --b: var(--accent-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background:
+    linear-gradient(var(--b), var(--b)) left top / 8px 1.5px no-repeat,
+    linear-gradient(var(--b), var(--b)) left top / 1.5px 8px no-repeat,
+    linear-gradient(var(--b), var(--b)) right top / 8px 1.5px no-repeat,
+    linear-gradient(var(--b), var(--b)) right top / 1.5px 8px no-repeat,
+    linear-gradient(var(--b), var(--b)) left bottom / 8px 1.5px no-repeat,
+    linear-gradient(var(--b), var(--b)) left bottom / 1.5px 8px no-repeat,
+    linear-gradient(var(--b), var(--b)) right bottom / 8px 1.5px no-repeat,
+    linear-gradient(var(--b), var(--b)) right bottom / 1.5px 8px no-repeat,
+    var(--piano-1);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+}
+.s3-hud-cell.is-low { --b: var(--coral-text); color: var(--coral-text); }
+.s3-hud-cell.is-coming { --b: var(--cyan-text); }
+.s3-hud-cell.is-coming svg { color: var(--cyan-text); }
+
+/* ----------------------------------------------------------------- shelves -- */
+.s3-body { display: grid; gap: var(--s-6); }
+.s3-shelf { display: grid; gap: var(--s-4); }
+.s3-shelf-head { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
+.s3-shelf.is-low .s3-shelf-head { color: var(--coral-text); }
+.s3-shelf.is-coming .s3-shelf-head svg { color: var(--cyan-text); }
+.s3-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--piano-4);
+  color: var(--text-hi);
+  font-family: var(--font-num);
+  font-size: var(--fs-sm);
+}
+.s3-quiet { margin: 0; color: var(--text-lo); }
+.s3-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+@container s3 (max-width: 339px) { .s3-grid { grid-template-columns: minmax(0, 1fr); } }
+@container s3 (min-width: 600px) { .s3-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); } }
+@container s3 (min-width: 900px) { .s3-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* --------------------------------------------------------------- jar card -- */
+.s3-item { container: s3card / inline-size; display: grid; min-width: 0; }
+.s3-item.has-ask { grid-column: 1 / -1; }
+.s3-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--s-3);
+  height: 100%;
+  padding: var(--s-4);
+}
+.s3-card-speak { position: absolute; top: var(--s-2); right: var(--s-2); }
+.s3-jar-wrap { position: relative; width: 72px; justify-self: start; }
+.s3-jar { display: block; width: 72px; height: 95px; overflow: visible; }
+.s3-low-tag {
+  position: absolute;
+  left: 40px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  background: var(--danger-surface);
+  color: var(--on-coral);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+  white-space: nowrap;
+}
+.s3-card-main { display: grid; gap: var(--s-2); min-width: 0; }
+.s3-name { margin: 0; color: var(--text-hi); font-size: var(--fs-body); font-weight: var(--fw-strong); line-height: 1.3; overflow-wrap: anywhere; }
+.s3-name:lang(hi), .s3-name:lang(kn) { font-size: var(--fs-body-indic); line-height: 1.45; }
+.s3-onhand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-2); margin: 0; }
+.s3-onhand-num { color: var(--text-hi); font-family: var(--font-num); font-size: var(--fs-onhand); font-weight: var(--fw-display); line-height: 1; font-variant-numeric: tabular-nums; }
+.s3-item.is-low .s3-onhand-num { color: var(--coral-text); }
+.s3-onhand-unit { color: var(--text-md); font-size: var(--fs-body); }
+.s3-level { display: flex; align-items: center; gap: var(--s-2); margin: 0; color: var(--text-lo); font-size: var(--fs-sm); }
+.s3-level-swatch { flex: none; width: 20px; border-top: 2px dashed var(--amber); }
+.s3-level.is-none .s3-level-swatch { border-top-color: var(--piano-5); }
+.s3-coming-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  max-width: 100%;
+  min-height: 48px;
+  padding: 6px 12px;
+  border: 1px solid var(--cyan);
+  border-radius: var(--r-pill);
+  background: var(--piano-2);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+  text-decoration: none;
+}
+.s3-coming-chip svg { flex: none; color: var(--cyan-text); }
+.s3-coming-chip:hover { border-color: var(--cyan-text); }
+.s3-coming-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.s3-card-acts { display: flex; align-self: end; }
+.s3-card-acts > .keycap { flex: 1 1 auto; min-width: 0; white-space: normal; text-align: center; }
+
+/* a wider card puts the jar beside its words */
+@container s3card (min-width: 250px) {
+  .s3-card { grid-template-columns: 80px minmax(0, 1fr); column-gap: var(--s-4); }
+  .s3-jar-wrap { grid-row: 1 / span 2; width: 80px; }
+  .s3-jar { width: 80px; height: 106px; }
+  .s3-card-main { padding-right: 44px; }
+  .s3-card-acts, .s3-ask { grid-column: 1 / -1; }
+}
+
+/* the jar (SVG) */
+.s3-jar-well { fill: var(--piano-1); }
+.s3-liq-top { stop-color: var(--lime-hi); }
+.s3-liq-bottom { stop-color: var(--lime-lo); }
+.s3-jar.is-low .s3-liq-top { stop-color: var(--coral-text); }
+.s3-jar.is-low .s3-liq-bottom { stop-color: var(--coral); }
+.s3-liq { opacity: .92; }
+.s3-liq-surface { fill: var(--lime-50); opacity: .55; }
+.s3-jar.is-low .s3-liq-surface { fill: var(--text-hi); opacity: .4; }
+.s3-jar-shine { fill: var(--text-hi); opacity: .14; }
+.s3-jar-glass { fill: none; stroke: var(--edge-strong); stroke-width: 2; }
+.s3-jar.is-low .s3-jar-glass { stroke: var(--coral); }
+.s3-jar-lid { fill: var(--piano-5); stroke: var(--edge); stroke-width: 1; }
+.s3-jar-lid-lip { fill: var(--piano-3); }
+.s3-jar-line { stroke: var(--amber); stroke-width: 2.5; stroke-dasharray: 5 4; }
+.s3-jar-line-end { fill: var(--amber); }
+
+/* ------------------------------------------------- "buy more?" fallback card -- */
+.s3-ask {
+  display: grid;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--edge-accent);
+  border-radius: var(--r-md);
+  background: var(--piano-1);
+}
+.s3-ask-q { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0; color: var(--text-hi); font-size: var(--fs-lead); font-weight: var(--fw-strong); }
+.s3-ask-q svg { flex: none; margin-top: 4px; color: var(--accent-text); }
+.s3-ask-why { margin: 0; color: var(--text-md); }
+.s3-ask .yes-actions { justify-content: center; }
+
+/* ------------------------------------------------------------ on the way -- */
+.s3-pos { display: grid; gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+.s3-po { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: start; gap: var(--s-3); padding: var(--s-4); }
+.s3-po-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--piano-3); color: var(--cyan-text); }
+.s3-po-main { display: grid; gap: var(--s-1); min-width: 0; }
+.s3-po-main > .pill { justify-self: start; }
+.s3-po-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-3); margin: 0; color: var(--text-hi); font-weight: var(--fw-strong); }
+.s3-po-item { overflow-wrap: anywhere; }
+.s3-po-qty { color: var(--text-md); font-family: var(--font-num); }
+.s3-po-sub { display: flex; flex-wrap: wrap; gap: 2px var(--s-3); margin: 0; color: var(--text-lo); font-size: var(--fs-sm); }
+.s3-po-no, .s3-po-amt { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.s3-po-vendor { overflow-wrap: anywhere; }
+.s3-ok { display: flex; align-items: center; gap: var(--s-2); margin: 0; color: var(--ok-text); font-weight: var(--fw-strong); }
+.s3-po-acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.s3-po-acts > .keycap { flex: 1 1 auto; }
+@container s3 (min-width: 620px) {
+  .s3-po { grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; }
+  .s3-po-acts { grid-column: auto; flex-wrap: nowrap; }
+}
+
+/* ----------------------------------------------------------- loading shape -- */
+.s3-grid.is-skel .s3-card { gap: var(--s-3); }
+.s3-card.is-skel .is-jar { width: 72px; height: 95px; border-radius: var(--r-md); }
+.s3-card.is-skel .is-num { width: 50%; height: 36px; }
+.s3-card.is-skel .is-btn { height: 48px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .s3-coming-chip { transition: none; }
+}
