@@ -39,15 +39,15 @@ function isDark() {
 /**
  * createThinkingOrb({ size, state, color, label }) -> { el, set(agentState), setSize(px), destroy() }
  * `state` is a Sahay agent state (see AGENT_TO_ORB). `color` / `lightColor`: #rrggbb tints for the
- * dark and light themes (marigold / deep amber by default).
+ * dark and light themes (lime / deep olive by default, tokens --lime and --lime-800).
  * The canvas is decorative unless `label` is given (then role="img" with that name).
  */
-export function createThinkingOrb({ size = 64, state = "idle", color = "#FFB020", lightColor = "#B86E00", label } = {}) {
+export function createThinkingOrb({ size = 64, state = "idle", color = "#B6F23C", lightColor = "#415F04", label } = {}) {
   const el = document.createElement("canvas");
   el.className = "torb";
   if (label) { el.setAttribute("role", "img"); el.setAttribute("aria-label", label); } else el.setAttribute("aria-hidden", "true");
   const ctx = el.getContext("2d");
-  // Marigold reads on ink; on the light surface the same dots wash out, so light uses a deeper amber.
+  // Lime reads on piano black; on the light surface the same dots wash out, so light uses deep olive.
   const tints = { dark: parseTint(color), light: parseTint(lightColor) };
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let css = size;

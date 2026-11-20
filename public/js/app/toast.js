@@ -13,9 +13,9 @@
 //     duration  ms on screen; null keeps it until dismiss(id)
 //
 // Every toast is also announced in our own live region (polite; errors assertive), so screen
-// readers hear the owner's words once. Placement (app-toast.css) keeps toasts under the top
-// strip (the "automated assistant" notice stays visible), away from the bottom pill nav and the
-// edge orb, at most three at a time. Theme follows the tokens; reduced motion is honoured.
+// readers hear the owner's words once. Placement (app-toast.css, spec 6.3): phone top, under the
+// capsule and the waiting pill (the "automated assistant" notice stays visible), max two; laptop
+// top-right of the content, left of the agent column, max three. Theme follows the tokens; reduced motion is honoured.
 // If the island cannot load, a plain stack (.toast) shows the same text: never silence.
 
 import { h, icon, scripted } from "./dom.js";
@@ -26,11 +26,11 @@ const ISLAND = "/vendor/sileo-0.1.6/sileo-island.js";
 const TONES = new Set(["success", "info", "warning", "error", "action"]);
 const DURATION = { success: 6500, info: 6500, action: 8000, warning: 9000, error: 11000 };
 const STICKY_MS = 10 * 60 * 1000;
-const maxOnScreen = () => (phone.matches ? 1 : 3); // a phone toast stays clear of the edge orb
+const maxOnScreen = () => (phone.matches ? 2 : 3); // spec 6.3: phone max 2, laptop max 3
 const SEEN_MS = 2 * 60 * 1000;
 const ICON_FOR = { success: "checkCircle", info: "info", action: "spark", warning: "alert", error: "alert" };
 
-const phone = matchMedia("(max-width: 760px)");
+const phone = matchMedia("(max-width: 599px)");
 const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 const position = () => (phone.matches ? "top-center" : "top-right");
 
@@ -51,7 +51,9 @@ function ensureDom() {
   host = h("div", { class: "toast-host" });
   polite = h("div", { class: "sr-only", role: "status", "aria-live": "polite", "aria-atomic": "true" });
   assertive = h("div", { class: "sr-only", role: "alert", "aria-live": "assertive", "aria-atomic": "true" });
-  document.body.append(host, polite, assertive);
+  // The shell's toast region (shell.js slots.toastRegion) when it exists, else the body.
+  (document.querySelector(".toast-region") || document.body).append(host);
+  document.body.append(polite, assertive);
 }
 
 function load() {

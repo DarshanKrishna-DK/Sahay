@@ -1,7 +1,8 @@
-// Route id -> screen factory. A screen is { el, update(state, parts), enter?(), leave?() }.
-// Sell, Stock and Money are owned by the UI-B track (sell*.js, stock*.js, money*.js).
+// Route id -> screen factory (README-v3 section 3). A screen is { el, update(state, parts),
+// enter?({ sub }), leave?() }. Each owner edits only its own line: W2 sahay, W4A buy / stock,
+// W4B sell / money, W5 me and me/history. Routes and aliases are parsed in shell-geometry.js.
 
-import { createTalk } from "./talk.js";
+import { createSahayHome } from "./talk.js";
 import { createBuy } from "./buy.js";
 import { createSell } from "./sell.js";
 import { createStock } from "./stock.js";
@@ -10,14 +11,11 @@ import { createMe } from "./me.js";
 import { createHistory } from "./history.js";
 
 export const SCREENS = {
-  talk: createTalk,
+  sahay: createSahayHome,
   buy: createBuy,
   sell: createSell,
   stock: createStock,
   money: createMoney,
   me: createMe,
-  history: createHistory,
+  "me/history": createHistory,
 };
-
-/** Old links keep working: #/work and #/orders are both on Buy now. */
-export const ALIASES = { work: "buy", orders: "buy" };

@@ -1,34 +1,38 @@
-// Sahay app shell: boot (account -> session -> state -> live events), hash router (#/talk default,
-// #/buy, #/sell, #/stock, #/money, #/me, #/history; #/signup and #/login before a shop exists),
-// floating pill nav, edge orb and the floating layers. Screen switches use View Transitions where
-// the browser has them (nav and edge orb stay put), a short fade otherwise.
+// Sahay app: boot (account -> session -> state -> live events), the v3 shell (shell.js: hex field,
+// curved sidebar / phone dock, top capsule, slots) and the hash router. Routes (spec 1.1): #/sahay
+// (default; #/talk), #/buy (#/work, #/orders), #/sell, #/stock, #/money, #/me and #/me/<section>
+// (#/history), #/waiting (opens the tray in place), #/signup and #/login before a session.
+// Screen switches use View Transitions where the browser has them (the nav, dock and capsule stay
+// put), a short fade otherwise. The edge orb is gone (D5): talk = the nav orb / home orb, type = the
+// composer, approve = the waiting tray, pause = End in the call dock.
 
-import { h, $, fill } from "./dom.js";
+import { h, $, fill, icon } from "./dom.js";
 import { t, setLang, onLang } from "./i18n.js";
 import * as store from "./store.js";
-import { state } from "./store.js";
-import { createNav } from "./nav.js";
-import { createEdgeOrb } from "./edge-orb.js";
+import { state, pendingApprovals } from "./store.js";
+import * as shellApi from "./shell.js";
+import { mountShell, slots, setRoute, setNavAgentState, setBadge, setTitle, setShop, setLanguageSaver, refresh as refreshShell } from "./shell.js";
+import { parseRoute } from "./shell-geometry.js";
 import { stateView, loadingView } from "./empty.js";
-import { startCall, endCall, setMode, serverEnded, preload } from "./call.js";
-import { SCREENS, ALIASES } from "./screens.js";
+import { startCall, serverEnded, preload } from "./call.js";
+import { SCREENS } from "./screens.js";
 import "./store-sell.js";
 import "./moments.js";
+import { attachShell } from "./waiting.js";
 import { createWelcome } from "./welcome.js";
 import { createAuth } from "./auth.js";
-import { createYesLayer } from "./yes-card.js";
 import { agentState } from "./activity.js";
 
 const app = $("#app");
-const main = h("main", { id: "main", tabindex: "-1" });
-const banner = h("div", { class: "banner-slot", "aria-live": "polite" });
-const { nav, top, update: updateNav, setAgent } = createNav();
-const edge = createEdgeOrb({ onAction: edgeAction });
-const yes = createYesLayer();
-app.append(top, banner, main, nav, edge.el, yes.el);
+mountShell(app);
+attachShell(shellApi);
+const main = slots.main;
+const liveBanner = h("div", { class: "live-banner" });
+slots.bannerSlot.append(liveBanner);
 
 const screens = new Map();
-let route = null;
+let route = null;      // screen key ("buy", "me", "me/history")
+let routeId = null;    // destination id for the nav ("me" for "me/history")
 let welcome = null;
 let authView = null;
 
@@ -40,11 +44,10 @@ function authMode() {
   return had ? "login" : "signup";
 }
 
-function currentRoute() {
-  const m = /^#\/([a-z]+)/.exec(location.hash || "");
-  const raw = m ? m[1] : "talk";
-  const id = ALIASES[raw] || raw;
-  return SCREENS[id] ? id : "talk";
+/** Screen key for a parsed route: "me/history" when that section has its own factory. */
+function screenKey(r) {
+  if (r.sub && SCREENS[`${r.id}/${r.sub}`]) return `${r.id}/${r.sub}`;
+  return SCREENS[r.id] ? r.id : "sahay";
 }
 
 /** Run a DOM swap inside a view transition when the browser supports it and motion is welcome. */
@@ -54,41 +57,58 @@ function transition(swap) {
   try { document.startViewTransition(swap); } catch { swap(); }
 }
 
-function screen(id) {
-  if (!screens.has(id)) {
-    const s = SCREENS[id]();
+function screen(key) {
+  if (!screens.has(key)) {
+    const s = SCREENS[key]();
     s.el.classList.add("screen");
-    s.el.dataset.screen = id;
+    s.el.dataset.screen = key;
     s.el.hidden = true;
-    screens.set(id, s);
+    screens.set(key, s);
     main.append(s.el);
     s.update(state, new Set(["all"]));
   }
-  return screens.get(id);
+  return screens.get(key);
+}
+
+function titleFor(r) {
+  if (r.id === "me" && r.sub) return t(`nav.${r.sub}`) !== `nav.${r.sub}` ? t(`nav.${r.sub}`) : t("nav.me");
+  return t(`nav.${r.id}`);
 }
 
 function go() {
-  const next = currentRoute();
-  if (state.boot !== "ready") { route = next; return; }
-  if (next === route && screens.has(next) && !screens.get(next).el.hidden) return;
+  let r = parseRoute(location.hash);
+  if (r.id === "waiting") {
+    // #/waiting opens the tray where the owner is (also a Telegram deep link); the URL goes back.
+    document.dispatchEvent(new CustomEvent("sahay:open-tray"));
+    const back = route ? `#/${route}` : "#/sahay";
+    history.replaceState(null, "", back);
+    if (route) return;
+    r = parseRoute(back);
+  }
+  if (r.id === "signup" || r.id === "login") r = parseRoute("#/sahay");
+  const key = screenKey(r);
+  if (state.boot !== "ready") { route = key; routeId = r.id; return; }
+  const same = key === route && screens.has(key) && !screens.get(key).el.hidden;
   const prev = route && screens.get(route);
-  const s = screen(next);
-  const swap = () => {
-    if (prev && prev !== s) { prev.el.hidden = true; if (prev.leave) prev.leave(); }
-    s.el.hidden = false;
-    if (!document.startViewTransition) {
-      s.el.classList.remove("screen-in");
-      void s.el.offsetWidth; // restart the entrance
-      s.el.classList.add("screen-in");
-    }
-  };
-  if (prev && prev !== s) transition(swap); else swap();
-  route = next;
-  if (s.enter) s.enter();
-  updateNav(route);
-  document.title = `${t(`nav.${next}`)} | ${t("app.name")}`;
-  if (prev && prev !== s) main.focus({ preventScroll: true });
-  window.scrollTo({ top: 0 });
+  const s = screen(key);
+  if (!same) {
+    const swap = () => {
+      if (prev && prev !== s) { prev.el.hidden = true; if (prev.leave) prev.leave(); }
+      s.el.hidden = false;
+      if (!document.startViewTransition) {
+        s.el.classList.remove("screen-in");
+        void s.el.offsetWidth; // restart the entrance
+        s.el.classList.add("screen-in");
+      }
+    };
+    if (prev && prev !== s) transition(swap); else swap();
+  }
+  route = key;
+  routeId = r.id;
+  if (s.enter) s.enter({ sub: r.sub });
+  setRoute(r.id);
+  setTitle(titleFor(r));
+  if (!same && prev && prev !== s) { main.focus({ preventScroll: true }); window.scrollTo({ top: 0 }); }
 }
 
 function renderBoot() {
@@ -97,8 +117,9 @@ function renderBoot() {
   if (state.boot === "ready") {
     if (welcome) { welcome.el.remove(); welcome = null; }
     if (authView) { authView.el.remove(); authView.destroy(); authView = null; }
-    if (/^#\/(signup|login)/.test(location.hash)) history.replaceState(null, "", "#/talk");
+    if (/^#\/(signup|login)/.test(location.hash)) history.replaceState(null, "", "#/sahay");
     for (const el of main.querySelectorAll(":scope > .boot-view")) el.remove();
+    route = null;
     go();
     return;
   }
@@ -134,25 +155,41 @@ export function describe(err) {
 function renderBanner() {
   const items = [];
   if (state.boot === "ready" && state.stream === "closed") {
-    items.push(h("div", { class: "toast toast-warn", role: "status" },
-      h("span", { text: t("live.banner") }),
-      h("button", { class: "btn btn-ghost btn-sm", type: "button", text: t("live.retry"), on: { click: () => store.retryEvents() } })));
+    items.push(h("div", { class: "banner banner-error glass", role: "status" },
+      h("span", { class: "banner-ico", "aria-hidden": "true" }, icon("wifiOff", 20)),
+      h("span", { class: "banner-text", text: t("live.banner") }),
+      h("button", { class: "keycap keycap-ghost keycap-sm", type: "button", on: { click: () => store.retryEvents() } },
+        icon("refresh", 20), h("span", { text: t("live.retry") }))));
   }
-  fill(banner, ...items);
+  fill(liveBanner, ...items);
 }
 
-function edgeAction(id) {
-  if (id === "talk") { location.hash = "#/talk"; setMode("voice"); startCall("voice"); }
-  else if (id === "type") { location.hash = "#/talk"; setMode("text"); document.dispatchEvent(new CustomEvent("sahay:focus-type")); }
-  else if (id === "need") { location.hash = "#/talk"; document.dispatchEvent(new CustomEvent("sahay:hint", { detail: { key: "talk.hint" } })); startCall("voice"); }
-  else if (id === "approve") yes.openFirst();
-  else if (id === "pause") endCall();
+/** Interim counts until the waiting tray (W3) claims the badges through the shell. */
+function interimBadges() {
+  const n = pendingApprovals().length;
+  setBadge("waiting", n, "interim");
+  setBadge("buy", n, "interim");
 }
 
+function syncShell() {
+  const b = state.business;
+  setShop({ name: b && b.name ? b.name : "", stream: state.stream });
+  setNavAgentState(agentState());
+  interimBadges();
+}
+
+// Speaking anywhere starts the call in place (D11): no jump to another screen.
 document.addEventListener("sahay:talk", (e) => {
   const mode = (e.detail && e.detail.mode) || "voice";
   if (e.detail && e.detail.hint) document.dispatchEvent(new CustomEvent("sahay:hint", { detail: { key: e.detail.hint } }));
   if (mode === "voice") startCall("voice");
+});
+
+// The language chip in the sidebar saves the owner's choice to their profile when the agent is
+// ready (the same route My Sahay uses), else only on this device.
+setLanguageSaver(async (code) => {
+  if (state.agent && state.agent.status === "ready") await store.updateProfile({ language: code });
+  setLang(code);
 });
 
 store.onEvent((evt) => {
@@ -171,14 +208,13 @@ store.subscribe((s, parts) => {
     if (welcome) welcome.update();
     if (authView) authView.update();
     renderBoot();
+    refreshShell();
   }
   if (state.boot === "ready") {
-    updateNav(route);
-    for (const [id, sc] of screens) if (!sc.el.hidden || id === route) sc.update(s, parts);
+    for (const [key, sc] of screens) if (!sc.el.hidden || key === route) sc.update(s, parts);
+    if (routeId) setTitle(titleFor(parseRoute(location.hash)));
   }
-  edge.update();
-  setAgent(agentState());
-  yes.update(parts);
+  syncShell();
   if (parts.has("stream") || parts.has("boot") || parts.has("lang")) renderBanner();
 });
 
@@ -194,9 +230,9 @@ window.addEventListener("hashchange", () => {
 let savedLang = null;
 try { savedLang = localStorage.getItem("sahay-lang"); } catch { /* storage blocked */ }
 setLang(savedLang || navigator.language || "en-IN");
-onLang((l) => { try { localStorage.setItem("sahay-lang", l); } catch { /* storage blocked */ } });
-updateNav(currentRoute());
-edge.update();
+onLang((l) => { try { localStorage.setItem("sahay-lang", l); } catch { /* storage blocked */ } refreshShell(); });
+setRoute(parseRoute(location.hash).id);
+syncShell();
 renderBoot();
 store.boot();
 preload();

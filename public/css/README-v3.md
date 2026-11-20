@@ -11,8 +11,8 @@ against the name now).
 | File | Owner | What |
 |---|---|---|
 | `css/tokens-v3.css` | W1 | every token (section 1), light theme, Indic font rules. **ready** |
-| `css/components-v3.css` | W1 | base reset, focus, every component class (section 2). **soon** |
-| `css/app-shell.css` | W1 | hex field, NavJelly, NavDock, NavRail, TopCapsule/TopStrip, slots, layout per size, view transitions. **soon** |
+| `css/components-v3.css` | W1 | base reset, focus, every component class (section 2). **ready** |
+| `css/app-shell.css` | W1 | hex field, NavJelly, NavDock, NavRail, TopCapsule/TopStrip, slots, layout per size, view transitions. **ready** |
 | `css/v3-bridge.css` | W1 | TEMPORARY: old names (`--marigold*`, `.keycap-marigold`) mapped to v3 so unconverted screens still render. Deleted when the cleanup grep (section 7) is empty. Never add a new use. |
 | `css/app.css` | W1 (legacy screen rules shrink as W2-W5 move them out) | old per-screen rules, recoloured to v3. |
 | `css/app-sell.css` | W4B | Sell/Stock/Money screen rules. |
@@ -65,7 +65,7 @@ backdrop root and the hex field stops showing through). Screens live inside `#ma
   `<html data-size="phone|phoneLand|tablet|laptop|wide">` is set by the shell (prefer it in CSS:
   `:root[data-size="phone"] .x {}`), plus `data-keyboard="open"` while the phone keyboard is up.
 
-## 2. Component classes (`css/components-v3.css`) **soon**, JS helpers in brackets
+## 2. Component classes (`css/components-v3.css`) **ready**, JS helpers in brackets
 Every interactive class has hover, `:focus-visible` (lime ring), `:active` (press), `[disabled]`
 / `[aria-disabled="true"]`, and busy (`[aria-busy="true"]`) styles; selected uses `[aria-pressed]`,
 `[aria-checked]` or `[aria-current]`, never a bare class.
@@ -92,14 +92,14 @@ Every interactive class has hover, `:focus-visible` (lime ring), `:active` (pres
 | Choice tiles (2-4) | [`choiceTiles({label, options:[{id, icon, word, lang}], value, onPick})`] -> `.choices[role=radiogroup] > button.choice[role=radio][aria-checked]` | saving `.is-saving` |
 | Segmented control | [`segmented({label, options, value, onPick})`] -> `.seg > button.seg-opt[aria-pressed]` | |
 | Keypad | [`createKeypad({length, mask, label, onDone, format, doneWord, autoAdvance})` in keypad.js -> `{el, value, clear, setBusy, focus, shake, setLocked(text|null), setError(text|null)}`] -> `.pad` 64px+ keys | mismatch shake, locked, busy, auto-advance at full length |
-| Sheet / drawer / modal | [`openSheet({title, body, opener, speakKey, place, onClose, footer})` in sheet.js -> `{el, setBody, setFooter, setBusy(b), setError(text|null), close(), isOpen()}`]; `place` defaults per size (phone bottom sheet, phoneLand right drawer, tablet centred bottom sheet 560, laptop centred modal 560); `"drawer"` forces the right drawer | opening, open, scroll, busy, error, closing; scrim; focus trap; Esc; swipe down (sheet) |
+| Sheet / drawer / modal | [`openSheet({title, body, opener, speakKey, place, kind, onClose, footer, label, closeLabel})` in sheet.js -> `{el, setBody, setFooter, setBusy(b, text?), setError(text|null), close(), isOpen()}`]; `place` defaults per size (phone bottom sheet, phoneLand right drawer, tablet centred bottom sheet 560, laptop centred modal 560); `kind: "yes"` uses the drawer at 1024+; `closeLabel` turns the X into a worded chip ("Later"); `placeFor(kind)` is exported | opening, open, scroll, busy, error, closing; scrim; focus trap; Esc; swipe down (sheet) |
 | Popover (language only, D18) | [`openPopover({anchor, label, items:[{id, label, lang, current}], onPick})` in menu.js] -> `.popover > button.popover-item[role=menuitemradio]` | current, saving, error |
 | Picker sheet | [`openPicker({title, items:[{id, label, sub, lang}], current, searchLabel, emptyText, onPick})` in menu.js] -> big rows + search field | typed, no match, selected |
 | Screen header | [`screenHeader({title, speakKey, talkHint, actions})` in ui.js] -> `header.screen-head > h1.screen-title + .screen-head-tools` (speaker, talk chip, up to 2 actions) | |
 | Section | `h2.section-title`; collapsible block `details.fold > summary.fold-head` (count in `.fold-count`) | open / closed |
 | Tooltip | `[data-tip="word"]` on icon-only controls (hover and keyboard focus, never title=) | |
 
-## 3. Shell API (`js/app/shell.js`) **soon**
+## 3. Shell API (`js/app/shell.js`) **ready**
 ```js
 import { slots, onLayout, layout, setNavAgentState, setBadge, setTitle, setAction, navigate, ROUTES } from "./shell.js";
 slots = { main, topCapsule, waitingPill, agentColumn, dockSlot, toastRegion, sheetRoot, bannerSlot }
@@ -107,9 +107,12 @@ onLayout(fn) -> unsubscribe   // fn({ size: "phone"|"phoneLand"|"tablet"|"laptop
 layout()                      // the current object above
 setNavAgentState(state)       // agent state ("idle","listening","thinking","speaking","working","connecting",...) -> nav orb
 setBadge(key, n)              // key: "sahay"|"buy"|"sell"|"stock"|"money"|"me"|"waiting"; 0 hides; coral dot on the nav item + aria-label
-setTitle(text)                // document.title "<text> | Sahay" and the TopStrip page label
-setAction({ icon, word, label, run } | null)   // one contextual action in TopStrip/TopCapsule; cleared on every route change
+setTitle(text)                // document.title "<text> | Sahay"
+setAction({ icon, word, label, run } | null)   // one contextual action in the TopStrip (600px+; phones use the screen header); cleared on every route change
 navigate("#/buy")             // same as location.hash, kept for symmetry
+claimBadges()                 // optional: the first non-interim setBadge call also takes the counts over from main.js
+toggleTheme()                 // dark <-> light, saved on the device (My Sahay can offer it on phones)
+setLanguageSaver(fn)          // main.js wires the profile save; the sidebar language chip uses it
 ```
 - `slots.dockSlot` (W2's CallDock) is MOVED by the shell to the right place: phone = riding on the dock
   orb; tablet / 1024-1279 = floating bottom-right; 1280+ = top of `agentColumn`. It carries
