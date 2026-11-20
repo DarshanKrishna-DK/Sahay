@@ -43,7 +43,7 @@
         <span data-i18n="aiChip">Automated assistant</span>
       </p>
       <nav class="nav-links" aria-label="Page" data-i18n-attr="aria-label:navLabel">
-        <a href="#story" data-i18n="navHow">How it works</a>
+        <a href="#how" data-i18n="navHow">How it works</a>
         <a href="#credits" data-i18n="navBuilt">Built on</a>
       </nav>
       <div class="lang-switch-wrap">
@@ -58,9 +58,9 @@
           <button type="button" class="popover-item" role="menuitemradio" aria-checked="false" data-lang="kn" lang="kn"><span>ಕನ್ನಡ</span><svg class="pi-check" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
-      <a class="btn-lime nav-cta" href="/app#/talk">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-        <span data-i18n="start">Start talking</span>
+      <a class="btn-lime nav-cta" href="/app">
+        <span data-i18n="openSahay">Open Sahay</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
     </div>
   </header>
@@ -104,23 +104,70 @@
       </div>
 
       <div class="hero-copy">
-        <h1 id="hero-title"><span data-i18n="heroTitleA">Buy, sell and keep accounts</span> <span class="h1-lime" data-i18n="heroTitleB">by talking.</span></h1>
-        <p class="hero-sub" data-i18n="heroSub">Sahay calls real sellers, bargains, makes your bills and watches your stock, and waits for your yes before anything goes ahead.</p>
+        <h1 id="hero-title"><span class="h1-line" data-i18n="heroL1">Your shop's assistant.</span> <span class="h1-line h1-lime" data-i18n="heroL2">It bargains and bills,</span> <span class="h1-line h1-lime" data-i18n="heroL3">you say yes.</span></h1>
+        <p class="hero-sub" data-i18n="heroSub">Say what you need in Hindi, Kannada or English, and Sahay finds sellers, bargains, makes bills and tracks stock while you mind the counter.</p>
         <div class="hero-actions">
           <a class="btn-lime btn-big" href="/app#/talk" data-big-cta>
-            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             <span data-i18n="start">Start talking</span>
+          </a>
+          <a class="btn-outline btn-big" href="#how">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 8.5v7l5.5-3.5Z" fill="currentColor"/></svg>
+            <span data-i18n="heroMore">See how it works</span>
           </a>
         </div>
         <p class="sr-only" data-i18n="heroAlt">Example picture: points of light gather into Sahay's orb and a rupee sign. Labels mark the story: seller 01 comes down from 65 to 55 rupees a kilo, rice stock is 35 kilos, the order waits for your yes, and Sahay speaks Hindi, Kannada and English.</p>
       </div>
     </section>
 
+    <!-- How it works: three steps (Stitch 01-landing). Each card's small panel is an example. -->
+    <section class="how" id="how" aria-labelledby="how-title">
+      <header class="section-head">
+        <p class="eyebrow" data-i18n="howEyebrow">Voice first</p>
+        <h2 id="how-title" data-i18n="howTitle">How Sahay buys for your shop in three steps</h2>
+        <p class="section-sub" data-i18n="howSub">Keep serving customers at the counter. Sahay makes the calls, bargains, and waits for your yes.</p>
+      </header>
+      <ol class="steps">
+        <li class="piano step">
+          <div class="step-top"><span class="step-num" aria-hidden="true">01</span><span class="step-ico"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span></div>
+          <h3 data-i18n="step1Title">Say what you need</h3>
+          <p class="step-copy" data-i18n="step1Copy">Speak the way you talk to a supplier. No menus, no item codes.</p>
+          <div class="step-panel" aria-hidden="true">
+            <p class="panel-head"><span class="live-dot"></span><span data-i18n="panelVoice">You said</span><span class="example-tag" data-i18n="example">Example</span></p>
+            <p class="panel-quote" data-i18n="quote1">“Fifty kilos of rice, by Friday.”</p>
+            <p class="panel-chips"><span class="mini-chip"><span data-i18n="rice">Rice</span> <span data-i18n="kg50">50 kg</span></span><span class="mini-chip" data-i18n="byFriday">By Friday</span></p>
+          </div>
+        </li>
+        <li class="piano step">
+          <div class="step-top"><span class="step-num" aria-hidden="true">02</span><span class="step-ico"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 4v16M7 20h10M5 7h14M12 4l1.5 3M5 7l-3 6a3 3 0 0 0 6 0Zm14 0-3 6a3 3 0 0 0 6 0Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+          <h3 data-i18n="step2Title">Sahay bargains with sellers</h3>
+          <p class="step-copy" data-i18n="step2Copy">It calls real sellers near you, says it is an automated assistant, and brings the price down.</p>
+          <div class="step-panel" aria-hidden="true">
+            <p class="panel-head"><b data-i18n="seller01">seller 01</b><span class="example-tag" data-i18n="example">Example</span></p>
+            <p class="panel-row"><span data-i18n="sellerAsked">Seller asked</span><b>₹65</b></p>
+            <p class="panel-row"><span data-i18n="sahayOffered">Sahay offered</span><b>₹50</b></p>
+            <p class="panel-row panel-row-lit"><span data-i18n="agreed">Agreed</span><b>₹55<span data-i18n="perKg">/kg</span></b></p>
+          </div>
+        </li>
+        <li class="piano step">
+          <div class="step-top"><span class="step-num" aria-hidden="true">03</span><span class="step-ico"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8 12.3 2.7 2.7L16.2 9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+          <h3 data-i18n="step3Title">You say yes</h3>
+          <p class="step-copy" data-i18n="step3Copy">Sahay reads the deal out loud. Say yes or tap Yes; only then does it order.</p>
+          <div class="step-panel" aria-hidden="true">
+            <p class="panel-head"><b data-i18n="seller01">seller 01</b><span class="example-tag" data-i18n="example">Example</span></p>
+            <p class="panel-row"><span><span data-i18n="kg50">50 kg</span> × ₹55</span><b>₹2,750</b></p>
+            <p class="panel-yes"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8 12.3 2.7 2.7L16.2 9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="yesOrder">Yes, order it</span></p>
+          </div>
+        </li>
+      </ol>
+      <p class="sr-only" data-i18n="howAlt">Examples: you say fifty kilos of rice by Friday; seller 01 asks 65 rupees a kilo, Sahay offers 50, they agree at 55; you say yes to 50 kilos at 55 rupees, 2,750 rupees in all.</p>
+    </section>
+
     <!-- The story: one sticky stage on a laptop (scroll moves through the chapters), normal flow on phones,
          short screens and under reduced motion. Every chapter is complete without script. -->
     <section class="story" id="story" aria-labelledby="story-title">
       <header class="story-head">
-        <h2 id="story-title" data-i18n="storyTitle">One purchase, from your words to the next order</h2>
+        <h2 id="story-title" data-i18n="storyTitle">The whole loop, step by step</h2>
         <p data-i18n="storyIntro">Eight steps. Sahay does the running around; you say what you need, and you say yes.</p>
       </header>
 
@@ -353,43 +400,44 @@
 
     <!-- Built on -->
     <section class="credits" id="credits" aria-labelledby="credits-title">
-      <h2 id="credits-title" data-i18n="creditsTitle">Built on real voice</h2>
-      <ul class="credit-list">
-        <li class="piano credit">
-          <strong>Agora</strong>
-          <span data-i18n="creditAgora">Conversational AI: the live voice call between you and Sahay</span>
-        </li>
-        <li class="piano credit">
-          <strong>Murf Falcon</strong>
-          <span data-i18n="creditMurf">Sahay's voice, in Hindi, Kannada and English</span>
-        </li>
-        <li class="piano credit">
-          <strong>Sarvam</strong>
-          <span data-i18n="creditSarvam">Hears you, through Agora, in all three languages</span>
-        </li>
+      <h2 id="credits-title" class="credits-label" data-i18n="creditsTitle">Built on</h2>
+      <ul class="credit-pills">
+        <li class="credit-pill"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Agora</span></li>
+        <li class="credit-pill"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 5h9M8.5 3v2M6 5c0 4 3 7 6 8M11 5c-.5 4-3.5 7-7 8M13 21l4-9 4 9M14.5 18h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Sarvam</span></li>
+        <li class="credit-pill"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 20a6 6 0 0 1 12 0M17 8.5a3.5 3.5 0 0 1 0 5M19.5 6a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Murf Falcon</span></li>
       </ul>
+      <p class="credits-note" data-i18n="creditsNote">Agora runs the live voice call, Sarvam hears Hindi, Kannada and English, and Murf Falcon speaks the replies.</p>
     </section>
 
-    <!-- Start -->
-    <section class="finale" id="start" aria-labelledby="finale-title">
-      <h2 id="finale-title" data-i18n="finaleTitle">Tell Sahay what your shop needs</h2>
-      <p data-i18n="finaleBody">It opens in your browser. Allow the microphone and speak.</p>
-      <a class="btn-lime btn-big" href="/app#/talk" data-big-cta>
-        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-        <span data-i18n="start">Start talking</span>
-      </a>
-    </section>
   </main>
 
   <footer class="site-foot">
-    <div class="foot-inner">
-      <p class="foot-brand"><img src="/assets/brand/sahay-mark-128.png" srcset="/assets/brand/sahay-mark-256.png 2x" alt="" width="26" height="32"><span>Sahay</span></p>
-      <p class="foot-notice">
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v3M7 9h10a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="14" r="1.3" fill="currentColor"/><circle cx="14.5" cy="14" r="1.3" fill="currentColor"/></svg>
-        <span data-i18n="footNotice">Sahay is an automated assistant. It never orders or pays without your yes.</span>
-      </p>
-      <p data-i18n="footSim">A simulated vendor is always labelled "simulated vendor".</p>
-      <p data-i18n="footTest">Payments run in Razorpay test mode. Names and numbers in the pictures on this page are examples.</p>
+    <div class="piano foot-panel">
+      <div class="foot-top">
+        <div class="foot-id">
+          <p class="foot-brand"><span class="brand-mark"><img class="brand-img" src="/assets/brand/sahay-mark-128.png" srcset="/assets/brand/sahay-mark-256.png 2x" alt="" width="26" height="32"></span><span>Sahay</span></p>
+          <p class="foot-line" data-i18n="footLine">A voice assistant for Indian shops: buying, bills, khata and stock.</p>
+        </div>
+        <nav class="foot-links" aria-label="Footer" data-i18n-attr="aria-label:footNav">
+          <a href="#how" data-i18n="navHow">How it works</a>
+          <a href="#credits" data-i18n="navBuilt">Built on</a>
+          <a href="/app" data-i18n="openSahay">Open Sahay</a>
+        </nav>
+        <div class="lang-tiles foot-langs" role="group" aria-label="Choose your language" data-i18n-attr="aria-label:langChoose">
+          <button type="button" data-lang="en" lang="en" aria-pressed="true">English</button>
+          <button type="button" data-lang="hi" lang="hi" aria-pressed="false">हिन्दी</button>
+          <button type="button" data-lang="kn" lang="kn" aria-pressed="false">ಕನ್ನಡ</button>
+        </div>
+      </div>
+      <div class="foot-rule"></div>
+      <div class="foot-notes">
+        <p class="foot-notice">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v3M7 9h10a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9.5" cy="14" r="1.3" fill="currentColor"/><circle cx="14.5" cy="14" r="1.3" fill="currentColor"/></svg>
+          <span data-i18n="footNotice">Sahay is an automated assistant. It never orders or pays without your yes.</span>
+        </p>
+        <p data-i18n="footSim">A simulated vendor is always labelled "simulated vendor".</p>
+        <p data-i18n="footTest">Payments run in Razorpay test mode. Names and numbers in the pictures on this page are examples.</p>
+      </div>
     </div>
   </footer>
 

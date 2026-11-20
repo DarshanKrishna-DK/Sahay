@@ -11,7 +11,6 @@ const S = {
   navLabel: { en: "Page", hi: "पेज", kn: "ಪುಟ" },
   navHow: { en: "How it works", hi: "कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ" },
   navBuilt: { en: "Built on", hi: "किस पर बना", kn: "ಯಾವುದರ ಮೇಲೆ" },
-  langLabel: { en: "Language", hi: "भाषा", kn: "ಭಾಷೆ" },
   langChoose: { en: "Choose your language", hi: "अपनी भाषा चुनें", kn: "ನಿಮ್ಮ ಭಾಷೆ ಆರಿಸಿ" },
   // "Language: <name>" on the switcher (the name is always in its own script).
   langCurrent: { en: "Language: {name}", hi: "भाषा: {name}", kn: "ಭಾಷೆ: {name}" },
@@ -19,15 +18,17 @@ const S = {
   toLight: { en: "Switch to light", hi: "हल्का रंग", kn: "ತಿಳಿ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   toDark: { en: "Switch to dark", hi: "गहरा रंग", kn: "ಗಾಢ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   start: { en: "Start talking", hi: "बोलकर शुरू करें", kn: "ಮಾತನಾಡಿ ಶುರು ಮಾಡಿ" },
+  openSahay: { en: "Open Sahay", hi: "सहाय खोलें", kn: "ಸಹಾಯ್ ತೆರೆಯಿರಿ" },
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
-  // The hero line in two parts (the second is lit): what Sahay does, then how you ask for it.
-  heroTitleA: { en: "Buy, sell and keep accounts", hi: "ख़रीदिए, बेचिए, हिसाब रखिए,", kn: "ಖರೀದಿ, ಮಾರಾಟ, ಲೆಕ್ಕ," },
-  heroTitleB: { en: "by talking.", hi: "बस बोलकर।", kn: "ಮಾತಿನಲ್ಲೇ." },
+  // The hero headline in three lines (the first white, the next two lit).
+  heroL1: { en: "Your shop's assistant.", hi: "आपकी दुकान का सहायक।", kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಸಹಾಯಕ." },
+  heroL2: { en: "It bargains and bills,", hi: "मोलभाव और बिल यह करे,", kn: "ಚೌಕಾಸಿ, ಬಿಲ್ ಅದರ ಕೆಲಸ," },
+  heroL3: { en: "you say yes.", hi: "हाँ आप कहें।", kn: "ಒಪ್ಪಿಗೆ ನಿಮ್ಮದು." },
   heroSub: {
-    en: "Sahay calls real sellers, bargains, makes your bills and watches your stock, and waits for your yes before anything goes ahead.",
-    hi: "सहाय असली विक्रेताओं से बात करता है, मोलभाव करता है, बिल बनाता है, स्टॉक पर नज़र रखता है, और कुछ भी आगे बढ़ाने से पहले आपकी हाँ का इंतज़ार करता है।",
-    kn: "ಸಹಾಯ್ ನಿಜವಾದ ಮಾರಾಟಗಾರರೊಂದಿಗೆ ಮಾತನಾಡುತ್ತದೆ, ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡುತ್ತದೆ, ದಾಸ್ತಾನು ಗಮನಿಸುತ್ತದೆ, ಮತ್ತು ಏನನ್ನೂ ಮುಂದುವರಿಸುವ ಮೊದಲು ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
+    en: "Say what you need in Hindi, Kannada or English, and Sahay finds sellers, bargains, makes bills and tracks stock while you mind the counter.",
+    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बताइए क्या चाहिए, और जब तक आप काउंटर सँभालते हैं, सहाय विक्रेता ढूँढता है, मोलभाव करता है, बिल बनाता है और स्टॉक पर नज़र रखता है।",
+    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ; ನೀವು ಕೌಂಟರ್ ನೋಡಿಕೊಳ್ಳುವಾಗ ಸಹಾಯ್ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತದೆ, ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡುತ್ತದೆ, ದಾಸ್ತಾನು ನೋಡಿಕೊಳ್ಳುತ್ತದೆ.",
   },
   heroMore: { en: "See how it works", hi: "देखिए कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ ನೋಡಿ" },
   heroAlt: {
@@ -41,10 +42,50 @@ const S = {
   hudWaits: { en: "waits for your yes", hi: "आपकी हाँ का इंतज़ार", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತಿದೆ" },
   hudSpeaks: { en: "speaks", hi: "बोलता है", kn: "ಮಾತನಾಡುತ್ತದೆ" },
 
+  howEyebrow: { en: "Voice first", hi: "आवाज़ से", kn: "ಧ್ವನಿಯಿಂದ" },
+  howTitle: {
+    en: "How Sahay buys for your shop in three steps",
+    hi: "सहाय तीन क़दम में आपकी दुकान के लिए कैसे ख़रीदता है",
+    kn: "ಸಹಾಯ್ ಮೂರು ಹಂತಗಳಲ್ಲಿ ನಿಮ್ಮ ಅಂಗಡಿಗೆ ಹೇಗೆ ಖರೀದಿಸುತ್ತದೆ",
+  },
+  howSub: {
+    en: "Keep serving customers at the counter. Sahay makes the calls, bargains, and waits for your yes.",
+    hi: "आप काउंटर पर ग्राहक सँभालिए। फ़ोन, मोलभाव सहाय करता है, और आपकी हाँ का इंतज़ार करता है।",
+    kn: "ನೀವು ಕೌಂಟರ್‌ನಲ್ಲಿ ಗ್ರಾಹಕರನ್ನು ನೋಡಿಕೊಳ್ಳಿ. ಕರೆ, ಚೌಕಾಸಿ ಸಹಾಯ್ ಮಾಡುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
+  },
+  step1Title: { en: "Say what you need", hi: "बताइए क्या चाहिए", kn: "ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ" },
+  step1Copy: {
+    en: "Speak the way you talk to a supplier. No menus, no item codes.",
+    hi: "वैसे ही बोलिए जैसे सप्लायर से बोलते हैं। न मेन्यू, न आइटम कोड।",
+    kn: "ಸರಬರಾಜುದಾರರ ಜೊತೆ ಮಾತನಾಡುವ ಹಾಗೆಯೇ ಹೇಳಿ. ಮೆನು ಇಲ್ಲ, ಐಟಂ ಕೋಡ್ ಇಲ್ಲ.",
+  },
+  step2Title: { en: "Sahay bargains with sellers", hi: "सहाय विक्रेताओं से मोलभाव करता है", kn: "ಸಹಾಯ್ ಮಾರಾಟಗಾರರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ" },
+  step2Copy: {
+    en: "It calls real sellers near you, says it is an automated assistant, and brings the price down.",
+    hi: "यह आपके पास के असली विक्रेताओं से बात करता है, बताता है कि यह स्वचालित सहायक है, और दाम कम कराता है।",
+    kn: "ಇದು ನಿಮ್ಮ ಹತ್ತಿರದ ನಿಜ ಮಾರಾಟಗಾರರಿಗೆ ಕರೆ ಮಾಡಿ, ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳಿ, ಬೆಲೆ ಇಳಿಸುತ್ತದೆ.",
+  },
+  step3Title: { en: "You say yes", hi: "आप हाँ कहते हैं", kn: "ನೀವು ಒಪ್ಪಿಗೆ ಕೊಡುತ್ತೀರಿ" },
+  step3Copy: {
+    en: "Sahay reads the deal out loud. Say yes or tap Yes; only then does it order.",
+    hi: "सहाय सौदा पढ़कर सुनाता है। हाँ कहें या हाँ दबाएँ; तभी ऑर्डर जाता है।",
+    kn: "ಸಹಾಯ್ ವ್ಯವಹಾರವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ಹೌದು ಎನ್ನಿ ಅಥವಾ ಹೌದು ಒತ್ತಿ; ಆಗ ಮಾತ್ರ ಆರ್ಡರ್ ಹೋಗುತ್ತದೆ.",
+  },
+  panelVoice: { en: "You said", hi: "आपने कहा", kn: "ನೀವು ಹೇಳಿದ್ದು" },
+  byFriday: { en: "By Friday", hi: "शुक्रवार तक", kn: "ಶುಕ್ರವಾರದೊಳಗೆ" },
+  sellerAsked: { en: "Seller asked", hi: "विक्रेता ने माँगा", kn: "ಮಾರಾಟಗಾರರು ಕೇಳಿದ್ದು" },
+  sahayOffered: { en: "Sahay offered", hi: "सहाय ने कहा", kn: "ಸಹಾಯ್ ಕೊಟ್ಟ ಬೆಲೆ" },
+  agreed: { en: "Agreed", hi: "तय हुआ", kn: "ಒಪ್ಪಿದ ಬೆಲೆ" },
+  yesOrder: { en: "Yes, order it", hi: "हाँ, ऑर्डर करें", kn: "ಹೌದು, ಆರ್ಡರ್ ಮಾಡಿ" },
+  howAlt: {
+    en: "Examples: you say fifty kilos of rice by Friday; seller 01 asks 65 rupees a kilo, Sahay offers 50, they agree at 55; you say yes to 50 kilos at 55 rupees, 2,750 rupees in all.",
+    hi: "उदाहरण: आप कहते हैं शुक्रवार तक पचास किलो चावल; विक्रेता 01 पैंसठ रुपये किलो माँगता है, सहाय पचास कहता है, पचपन पर तय होता है; आप पचपन रुपये पर 50 किलो, कुल दो हज़ार सात सौ पचास रुपये, को हाँ कहते हैं।",
+    kn: "ಉದಾಹರಣೆಗಳು: ಶುಕ್ರವಾರದೊಳಗೆ ಐವತ್ತು ಕಿಲೋ ಅಕ್ಕಿ ಎನ್ನುತ್ತೀರಿ; ಮಾರಾಟಗಾರ 01 ಕಿಲೋಗೆ ಅರವತ್ತೈದು ಕೇಳುತ್ತಾರೆ, ಸಹಾಯ್ ಐವತ್ತು ಹೇಳುತ್ತದೆ, ಐವತ್ತೈದಕ್ಕೆ ಒಪ್ಪಿಗೆ; ಐವತ್ತೈದು ರೂಪಾಯಿಯಂತೆ 50 ಕೆಜಿ, ಒಟ್ಟು ಎರಡು ಸಾವಿರದ ಏಳುನೂರ ಐವತ್ತು ರೂಪಾಯಿಗೆ ನೀವು ಹೌದು ಎನ್ನುತ್ತೀರಿ.",
+  },
   storyTitle: {
-    en: "One purchase, from your words to the next order",
-    hi: "एक ख़रीद, आपकी बात से अगले ऑर्डर तक",
-    kn: "ಒಂದು ಖರೀದಿ, ನಿಮ್ಮ ಮಾತಿನಿಂದ ಮುಂದಿನ ಆರ್ಡರ್‌ವರೆಗೆ",
+    en: "The whole loop, step by step",
+    hi: "पूरा चक्र, क़दम-दर-क़दम",
+    kn: "ಇಡೀ ಚಕ್ರ, ಹಂತ ಹಂತವಾಗಿ",
   },
   storyIntro: {
     en: "Eight steps. Sahay does the running around; you say what you need, and you say yes.",
@@ -190,30 +231,20 @@ const S = {
     kn: "ನೀವು ಮಾತನಾಡಿದ ಭಾಷೆಯಲ್ಲೇ, ಅದರ ಸ್ವಂತ ಲಿಪಿಯಲ್ಲೇ ಸಹಾಯ್ ಉತ್ತರಿಸುತ್ತದೆ. ಈ ಪುಟದ ಭಾಷೆಯನ್ನು ಇಲ್ಲಿ ಆರಿಸಿ.",
   },
 
-  creditsTitle: { en: "Built on real voice", hi: "असली आवाज़ पर बना", kn: "ನಿಜವಾದ ಧ್ವನಿಯ ಮೇಲೆ ನಿರ್ಮಿತ" },
-  creditAgora: {
-    en: "Conversational AI: the live voice call between you and Sahay",
-    hi: "Conversational AI: आपके और सहाय के बीच की लाइव कॉल",
-    kn: "Conversational AI: ನಿಮ್ಮ ಮತ್ತು ಸಹಾಯ್ ನಡುವಿನ ನೇರ ಧ್ವನಿ ಕರೆ",
-  },
-  creditMurf: {
-    en: "Sahay's voice, in Hindi, Kannada and English",
-    hi: "सहाय की आवाज़, हिन्दी, कन्नड़ और अंग्रेज़ी में",
-    kn: "ಸಹಾಯ್‌ನ ಧ್ವನಿ, ಹಿಂದಿ, ಕನ್ನಡ ಮತ್ತು ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ",
-  },
-  creditSarvam: {
-    en: "Hears you, through Agora, in all three languages",
-    hi: "Agora के ज़रिए आपको तीनों भाषाओं में सुनता है",
-    kn: "Agora ಮೂಲಕ ಮೂರೂ ಭಾಷೆಗಳಲ್ಲಿ ನಿಮ್ಮ ಮಾತು ಕೇಳುತ್ತದೆ",
+  creditsTitle: { en: "Built on", hi: "किस पर बना", kn: "ಯಾವುದರ ಮೇಲೆ ನಿರ್ಮಿತ" },
+  creditsNote: {
+    en: "Agora runs the live voice call, Sarvam hears Hindi, Kannada and English, and Murf Falcon speaks the replies.",
+    hi: "Agora लाइव कॉल चलाता है, Sarvam हिन्दी, कन्नड़ और अंग्रेज़ी सुनता है, और Murf Falcon जवाब बोलता है।",
+    kn: "Agora ನೇರ ಧ್ವನಿ ಕರೆ ನಡೆಸುತ್ತದೆ, Sarvam ಹಿಂದಿ, ಕನ್ನಡ, ಇಂಗ್ಲಿಷ್ ಕೇಳುತ್ತದೆ, Murf Falcon ಉತ್ತರಗಳನ್ನು ಹೇಳುತ್ತದೆ.",
   },
 
-  finaleTitle: { en: "Tell Sahay what your shop needs", hi: "सहाय को बताइए, दुकान को क्या चाहिए", kn: "ಅಂಗಡಿಗೆ ಏನು ಬೇಕು ಎಂದು ಸಹಾಯ್‌ಗೆ ಹೇಳಿ" },
-  finaleBody: {
-    en: "It opens in your browser. Allow the microphone and speak.",
-    hi: "यह आपके ब्राउज़र में खुलता है। माइक की अनुमति दें और बोलें।",
-    kn: "ಇದು ನಿಮ್ಮ ಬ್ರೌಸರ್‌ನಲ್ಲೇ ತೆರೆಯುತ್ತದೆ. ಮೈಕ್‌ಗೆ ಅನುಮತಿ ಕೊಟ್ಟು ಮಾತನಾಡಿ.",
-  },
 
+  footLine: {
+    en: "A voice assistant for Indian shops: buying, bills, khata and stock.",
+    hi: "भारतीय दुकानों के लिए आवाज़ वाला सहायक: ख़रीद, बिल, खाता और स्टॉक।",
+    kn: "ಭಾರತೀಯ ಅಂಗಡಿಗಳಿಗೆ ಧ್ವನಿ ಸಹಾಯಕ: ಖರೀದಿ, ಬಿಲ್, ಖಾತೆ ಮತ್ತು ದಾಸ್ತಾನು.",
+  },
+  footNav: { en: "Footer", hi: "नीचे के लिंक", kn: "ಕೆಳಗಿನ ಲಿಂಕ್‌ಗಳು" },
   footNotice: {
     en: "Sahay is an automated assistant. It never orders or pays without your yes.",
     hi: "सहाय एक स्वचालित सहायक है। आपकी हाँ के बिना यह न ऑर्डर देता है, न भुगतान करता है।",
