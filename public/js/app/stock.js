@@ -36,7 +36,13 @@ let waitingTried = false;
 function loadWaiting(onReady) {
   if (waitingTried) return;
   waitingTried = true;
-  import("./waiting.js").then((m) => { if (m && typeof m.renderCard === "function") { waiting = m; onReady(); } }).catch(() => {});
+  import("./waiting.js").then((m) => {
+    if (!m || typeof m.renderCard !== "function") return;
+    waiting = m;
+    // A reorder question that reaches the tray after the jar was drawn swaps the stand-in for W3's card.
+    if (typeof m.onCount === "function") m.onCount(() => onReady());
+    else onReady();
+  }).catch(() => {});
 }
 function inlineCard(proposalId) {
   if (!waiting || !proposalId || typeof waiting.waitingItems !== "function") return null;
