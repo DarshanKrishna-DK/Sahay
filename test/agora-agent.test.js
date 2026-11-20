@@ -710,7 +710,8 @@ test("whole shop: the prompt routes buy, sell, khata and stock to their tools", 
 
 test("whole shop: every money, rule, bill, payment or reorder confirmation needs the owner's spoken yes after the server's read-back", () => {
   const prompt = agent.systemPrompt({ name: "Annapurna Provisions", city: "Bengaluru", language: "hi-IN" });
-  assert.match(prompt, /the server reads it out first; you say only the tool's `say` question, never repeat its figures/);
+  assert.match(prompt, /the server reads it out first and asks the yes\/no question itself; the tool's `say` is then empty: say nothing at all/);
+  assert.match(prompt, /Whenever a tool's `say` is empty, say nothing\./, "never a line on top of the server's read-back (live check 129a071)");
   assert.match(prompt, /Only the owner's spoken yes after that read-back counts: a typed yes never counts/);
   assert.match(prompt, /press the yes button on the card/);
   assert.match(prompt, /confirm_approval for a deal, confirm_invoice for a bill, record_payment with decision for a payment, set_item with confirm for an item's tax, confirm_rule for a rule or a reorder level, confirm_reorder for buying more/);
@@ -738,7 +739,7 @@ test("whole shop: a sale and a payment example per language, each Hindi and Kann
     // E2E full run bug 1: the model copied "बिल बन गया" / "लिख लिया" from these examples without
     // calling the tool. The examples carry no result sentence: the result is the tool's own say.
     assert.doesNotMatch(line, /बिल बन गया|लिख लिया|ಬಿಲ್ ಆಯ್ತು|ಬರೆದುಕೊಂಡೆ|Done!|Written down/);
-    assert.match(line, /confirm_invoice with approve and say only its say|confirm_invoice with approve; the server says the result aloud itself/);
+    assert.match(line, /confirm_invoice with approve and say nothing: the server speaks the result|confirm_invoice with approve; the server says the result aloud itself, and you say nothing/);
     for (const sentence of quoted) assert.ok(isNativeScript(sentence, language, { allow: ["Ramesh Traders"] }), `${language}: ${sentence}`);
   }
 });

@@ -436,6 +436,8 @@ async function startNegotiatorAgent(rt, { remoteUid, withTools, idleTimeout = 60
   // The same body (and name) on the retry: a /join that did start an agent is refused (409), not doubled.
   const { agentId } = await retryOnce("negotiator /join", () => agent.startAgent(body));
   rt.agents.negotiator = agentId;
+  // One business, one speech lane: a negotiation line and the owner's narration never play at once (Murf: 2 streams).
+  agent.bindLane(agentId, rt.businessId);
   repo.updateSession(rt.businessId, rt.sessionId, { agent_id: agentId, status: "active" });
   return agentId;
 }
@@ -464,6 +466,7 @@ async function startVendorAgent(rt, { remoteUid, idleTimeout = 60 }) {
   });
   const { agentId } = await retryOnce("simulated vendor /join", () => agent.startAgent(body));
   rt.agents.vendor = agentId;
+  agent.bindLane(agentId, rt.businessId);
   return agentId;
 }
 

@@ -18,6 +18,8 @@ Object.assign(process.env, {
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+/** The server's outcome line is followed, in the same /speak piece, by its hand-back question; the model says nothing. */
+const outcomeSpoken = (line, out) => Object.values(require("../src/agora/outcome").HAND_BACK).some((hand) => line === `${out.outcome} ${hand}`);
 const registry = require("../src/tools/registry");
 const { ToolError } = require("../src/tools/errors");
 const agent = require("../src/agora/agent");
@@ -253,7 +255,7 @@ test("teach_rule: the server speaks the rule sentence itself (APPEND, not interr
   assert.deepEqual(call.spoken, [`${rule.sentence["hi-IN"]} यह नियम रख लूँ?`]);
   assert.equal(call.speakBodies[0].priority, "APPEND");
   assert.equal(call.speakBodies[0].interruptable, false);
-  assert.equal(out.say, "यह नियम रख लूँ?");
+  assert.equal(out.say, "", "the rule and its question are the server's");
   assert.equal(out.readbackSpoken, true);
   assert.deepEqual(repo.listRuleReadbacks(businessId).map((r) => [r.rule_id, r.agent_id]), [[rule.id, "AGT"]]);
   assert.deepEqual(seen.map((e) => e.type), ["rule.suggested", "rule.spoken"]);
@@ -279,7 +281,7 @@ test("confirm_rule keeps the rule on a spoken yes after the read-back; a yes bef
   assert.equal(kept.status, "active");
   assert.equal(kept.ruleId, out.ruleId);
   assert.equal(kept.outcome, "ठीक है, यह नियम याद रखूँगी।");
-  assert.equal(call.spoken.at(-1), kept.outcome, "the server says the rule is kept");
+  assert.ok(outcomeSpoken(call.spoken.at(-1), kept), "the server says the rule is kept");
   assert.equal(rules.get(businessId, out.ruleId).status, "active");
 });
 

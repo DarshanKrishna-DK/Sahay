@@ -26,6 +26,8 @@ const HISTORY_ATTEMPTS = 3;
 const HISTORY_RETRY_MS = 600;
 /** Voice evidence that may simply not be in /history yet: looked for again. */
 const VOICE_RETRY = new Set(["NO_ANSWER_YET", "READBACK_NOT_HEARD"]);
+/** Where the owner's answer to a payment read-back goes. */
+const PAYMENT_ANSWER = "record_payment with only decision (confirm on a clear yes, cancel on a no)";
 /** who_owes_me names at most this many customers aloud. */
 const SPOKEN_DEBTORS = 3;
 
@@ -282,16 +284,9 @@ async function heardPayment(ctx, args, language) {
   }
 
   const { draft } = khata.draftReceipt(ctx.businessId, input, { language });
-  await speakReadback(ctx, draft, draft.readback, language);
-  return {
-    recorded: false,
-    status: "awaiting_answer",
-    draftId: draft.id,
-    readbackSpoken: true,
-    next: "record_payment with decision",
-    hint: "The server has read this payment out to the owner. When the owner answers, call record_payment with only decision: confirm on a clear yes, cancel on a no. Do not repeat the figures.",
-    say: phrase("payment_question", language),
-  };
+  // The read-back and its question in one /speak piece: the model says nothing on top of it.
+  await speakReadback(ctx, draft, `${draft.readback} ${phrase("payment_question", language)}`, language);
+  return outcome.waitForOwner({ recorded: false, status: "awaiting_answer", draftId: draft.id, readbackSpoken: true }, PAYMENT_ANSWER);
 }
 
 /** The invoice of this customer the owner named by number ("INV/2026-27/0003", or just its last digits "3"). */
@@ -344,16 +339,7 @@ async function answerPayment(ctx, args, language) {
   } catch (err) {
     if (!laterYes || !draft.spoken_text) throw err;
     await speakReadback(ctx, draft, draft.spoken_text, language);
-    return {
-      recorded: false,
-      status: "awaiting_answer",
-      draftId: draft.id,
-      readbackSpoken: true,
-      readAgain: true,
-      refused: err.code,
-      next: "record_payment with decision",
-      say: phrase("payment_question", language),
-    };
+    return outcome.waitForOwner({ recorded: false, status: "awaiting_answer", draftId: draft.id, readbackSpoken: true, readAgain: true, refused: err.code }, PAYMENT_ANSWER);
   }
   if (!out.receipt) {
     events.emit(ctx.businessId, "receipt.cancelled", { draftId: draft.id, customerId: draft.customer_id }, { sessionId: ctx.sessionId ?? null, actor: "owner" });

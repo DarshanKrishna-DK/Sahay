@@ -353,9 +353,15 @@ const READBACK = {
   "en-IN": (v) => `${v.name} paid ${v.amount} ${v.mode}, ${v.invoice ? "against their bill" : "on their account"}.`,
 };
 
+/** Bytes kept free after a receipt read-back for its spoken question ("ಇದನ್ನು ಖಾತೆಯಲ್ಲಿ ಬರೆಯಲೇ?" is 66). */
+const QUESTION_ROOM_BYTES = 100;
+
 function receiptReadback(language, { name, amountPaise, mode, invoice }) {
   const lang = langKey(language);
-  return READBACK[lang]({ name, amount: spokenRupees(amountPaise, lang), mode: MODE_WORDS[mode][lang], invoice: Boolean(invoice) });
+  // In a call the yes/no question follows in the same /speak piece (src/tools/khata.js): leave room for it.
+  const { fitOnePiece, SPEAK_MAX_BYTES } = require("../agora/speech-fit");
+  const values = { name, amount: spokenRupees(amountPaise, lang), mode: MODE_WORDS[mode][lang], invoice: Boolean(invoice) };
+  return fitOnePiece(READBACK[lang], values, ["name"], { maxBytes: SPEAK_MAX_BYTES - QUESTION_ROOM_BYTES });
 }
 
 function toDraft(row) {

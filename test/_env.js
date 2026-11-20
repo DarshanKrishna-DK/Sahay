@@ -68,6 +68,9 @@ function setBaseline(env = process.env) {
     env[name] = FAKE[name];
   }
   if (env.DB_FILE === undefined) env.DB_FILE = ":memory:"; // never the real database
+  // Server /speak lines are not paced in tests (test/speech-lane.test.js sets its own pacing).
+  if (env.SPEAK_MS_PER_CHAR === undefined) env.SPEAK_MS_PER_CHAR = "0";
+  if (env.SPEAK_MIN_LINE_MS === undefined) env.SPEAK_MIN_LINE_MS = "0";
 }
 
 blank();

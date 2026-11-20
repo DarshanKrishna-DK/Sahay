@@ -48,7 +48,7 @@ test("the read-back states vendor, quantity, unit price, freight, landed total a
   assert.equal(deal.total, 3250);
   assert.equal(
     approval.readback,
-    "Lakshmi Traders से ऑर्डर: 50 किलो basmati rice, 62 रुपये प्रति किलो के भाव पर। भाड़ा 150 रुपये। कुल 3250 रुपये। डिलीवरी 3 दिन में। क्या मैं यह ऑर्डर पक्का करूँ?",
+    "Lakshmi Traders से 50 किलो basmati rice, 62 रुपये प्रति किलो, भाड़ा 150 रुपये। कुल 3250 रुपये, डिलीवरी 3 दिन में। क्या मैं यह ऑर्डर पक्का करूँ?",
   );
   assert.doesNotMatch(approval.readback, /सिम्युलेटेड|simulated/);
 });
@@ -57,13 +57,13 @@ test("the read-back is in Kannada script for a Kannada business and in English f
   const kannada = seedBusiness({ language: "kn-IN" });
   assert.equal(
     approvals.requestApproval(kannada, seedQuote(kannada).id).approval.readback,
-    "Lakshmi Traders ಅವರಿಂದ ಆರ್ಡರ್: 50 ಕೆಜಿ basmati rice, ಒಂದು ಕೆಜಿ ಬೆಲೆ 62 ರೂಪಾಯಿ. ಸಾಗಣೆ ವೆಚ್ಚ 150 ರೂಪಾಯಿ. ಒಟ್ಟು 3250 ರೂಪಾಯಿ. 3 ದಿನಗಳಲ್ಲಿ ಡೆಲಿವರಿ. ಈ ಆರ್ಡರ್ ಖಚಿತಪಡಿಸಲೇ?",
+    "Lakshmi Traders ಅವರಿಂದ 50 ಕೆಜಿ basmati rice, ಒಂದು ಕೆಜಿಗೆ 62 ರೂಪಾಯಿ, ಸಾಗಣೆ 150 ರೂಪಾಯಿ. ಒಟ್ಟು 3250 ರೂಪಾಯಿ, 3 ದಿನದಲ್ಲಿ ಡೆಲಿವರಿ. ಈ ಆರ್ಡರ್ ಖಚಿತಪಡಿಸಲೇ?",
   );
 
   const english = seedBusiness({ language: "en-IN" });
   assert.equal(
     approvals.requestApproval(english, seedQuote(english).id).approval.readback,
-    "Order from Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg. Freight 150 rupees. Total 3250 rupees. Delivery in 3 days. Shall I confirm this order?",
+    "Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg, freight 150 rupees. Total 3250 rupees, delivery in 3 days. Shall I confirm this order?",
   );
 });
 
@@ -74,15 +74,15 @@ test("native-script read-backs contain no romanised Hindi or Kannada words", () 
   assert.doesNotMatch(hindi, /[A-Za-z]/);
   assert.doesNotMatch(kannada, /[A-Za-z]/);
   assert.match(hindi, /2 बोरी चावल, 900\.5 रुपये प्रति बोरी/);
-  assert.match(hindi, /भाड़ा नहीं लगेगा। कुल 1801 रुपये/);
-  assert.match(kannada, /2 ಚೀಲ ಅಕ್ಕಿ, ಒಂದು ಚೀಲ ಬೆಲೆ 900\.5 ರೂಪಾಯಿ/);
+  assert.match(hindi, /900\.5 रुपये प्रति बोरी। कुल 1801 रुपये, डिलीवरी 1 दिन में।/, "no freight: the total is the goods");
+  assert.match(kannada, /2 ಚೀಲ ಅಕ್ಕಿ, ಒಂದು ಚೀಲಕ್ಕೆ 900\.5 ರೂಪಾಯಿ|2 ಚೀಲ ಅಕ್ಕಿ, ಒಂದು ಚೀಲಗೆ 900\.5 ರೂಪಾಯಿ/);
   assert.match(kannada, /1 ದಿನದಲ್ಲಿ ಡೆಲಿವರಿ/);
-  assert.match(approvals.buildReadback({ ...deal, language: "en" }), /2 bags of चावल at 900\.5 rupees per bag\. No freight charge\. Total 1801 rupees\. Delivery in 1 day\./);
+  assert.match(approvals.buildReadback({ ...deal, language: "en" }), /2 bags of चावल at 900\.5 rupees per bag\. Total 1801 rupees, delivery in 1 day\./);
   assert.throws(() => approvals.buildReadback({ ...deal, language: "ta" }), refuses("UNSUPPORTED_LANGUAGE"));
 });
 
 test("a simulated vendor is called a simulated vendor in every language and in the audit log", () => {
-  const expectations = { "en-IN": /Sim Traders \(simulated vendor, not a real supplier\)/, "hi-IN": /Sim Traders \(सिम्युलेटेड वेंडर, असली विक्रेता नहीं\)/, "kn-IN": /Sim Traders \(ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್, ನಿಜವಾದ ಮಾರಾಟಗಾರ ಅಲ್ಲ\)/ };
+  const expectations = { "en-IN": /Sim Traders \(simulated vendor\)/, "hi-IN": /Sim Traders \(सिम्युलेटेड वेंडर\)/, "kn-IN": /Sim Traders \(ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್\)/ };
   for (const [language, label] of Object.entries(expectations)) {
     const businessId = seedBusiness({ language });
     const quote = seedQuote(businessId, { source: "simulated", counterpart: "simulated", vendorName: "Sim Traders" });
@@ -98,19 +98,19 @@ test("a simulated vendor is called a simulated vendor in every language and in t
   // A real listing negotiated against a simulated counterpart is just as simulated.
   const businessId = seedBusiness({ language: "en-IN" });
   const standIn = seedQuote(businessId, { source: "indiamart", counterpart: "simulated" });
-  assert.match(approvals.requestApproval(businessId, standIn.id).approval.readback, /\(simulated vendor, not a real supplier\)/);
+  assert.match(approvals.requestApproval(businessId, standIn.id).approval.readback, /\(simulated vendor\)/);
 });
 
-test("unknown freight and unknown lead time are said as unknown, and freight is never counted as zero", () => {
+test("unknown freight is said to be extra (never counted as zero) and an unknown lead time is left out, to keep one /speak piece", () => {
   const businessId = seedBusiness({ language: "en-IN" });
   const quote = seedQuote(businessId, { quote: { freight: undefined, landed_cost: undefined, lead_time_days: undefined } });
   const { approval } = approvals.requestApproval(businessId, quote.id);
   assert.equal(approval.total_amount, 3100);
-  assert.match(approval.readback, /Freight is not quoted and is not in this total\. Total 3100 rupees\. Delivery time is not confirmed\./);
+  assert.match(approval.readback, /at 62 rupees per kg, freight extra\. Total 3100 rupees\. Shall I confirm this order\?$/);
 
   const hindi = seedBusiness({ language: "hi-IN" });
   const hindiQuote = seedQuote(hindi, { quote: { freight: undefined, landed_cost: undefined, lead_time_days: undefined } });
-  assert.match(approvals.requestApproval(hindi, hindiQuote.id).approval.readback, /भाड़ा बताया नहीं गया है और इस कुल में शामिल नहीं है। कुल 3100 रुपये। डिलीवरी का समय तय नहीं हुआ है।/);
+  assert.match(approvals.requestApproval(hindi, hindiQuote.id).approval.readback, /62 रुपये प्रति किलो, भाड़ा अलग। कुल 3100 रुपये। क्या मैं यह ऑर्डर पक्का करूँ\?$/);
 });
 
 test("a deal whose numbers cannot be trusted is refused before the owner hears a total", () => {
@@ -273,7 +273,7 @@ test("review #2: a yes is not evidence when the model skipped, paraphrased or on
   assert.equal(repo.getApproval(businessId, approval.id).status, "pending");
 });
 
-test("a read-back longer than one /speak request must be heard in full, every piece in order", () => {
+test("a long Kannada read-back is still ONE /speak request, and it must be heard before a yes counts", () => {
   const businessId = seedBusiness({ language: "kn-IN" });
   const quote = seedQuote(businessId, {
     vendorName: "ಶ್ರೀ ಲಕ್ಷ್ಮಿ ವೆಂಕಟೇಶ್ವರ ಟ್ರೇಡರ್ಸ್ ಅಂಡ್ ಜನರಲ್ ಮರ್ಚೆಂಟ್ಸ್",
@@ -281,10 +281,9 @@ test("a read-back longer than one /speak request must be heard in full, every pi
   });
   const approval = putToOwner(businessId, quote);
   const pieces = heard(approval.readback);
-  assert.ok(pieces.length > 1, "the Kannada read-back needs more than one /speak request");
+  assert.equal(pieces.length, 1, "one /speak request (live check 129a071: two pieces stalled Murf)");
 
-  assert.throws(() => voice(businessId, approval, [...pieces.slice(1), asr("ಹೌದು", 40)]), refuses("READBACK_NOT_HEARD"), "first piece missing");
-  assert.throws(() => voice(businessId, approval, [...pieces.slice().reverse(), asr("ಹೌದು", 40)]), refuses("READBACK_NOT_HEARD"), "pieces out of order");
+  assert.throws(() => voice(businessId, approval, [asr("ಹೌದು", 40)]), refuses("READBACK_NOT_HEARD"), "not heard");
   assert.equal(voice(businessId, approval, [...pieces, asr("ಹೌದು", 40)]).status, "approved");
 });
 

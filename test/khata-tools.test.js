@@ -9,6 +9,8 @@ Object.assign(process.env, {
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+/** The server's outcome line is followed, in the same /speak piece, by its hand-back question; the model says nothing. */
+const outcomeSpoken = (line, out) => Object.values(require("../src/agora/outcome").HAND_BACK).some((hand) => line === `${out.outcome} ${hand}`);
 const db = require("../src/db");
 const repo = require("../src/db/repo");
 const events = require("../src/events");
@@ -111,8 +113,9 @@ test("record_payment in a call: the server reads the payment back itself, and on
 
   const asked = await registry.callTool(ctx, "record_payment", { customer: "रमेश", amount: 2000, mode: "cash", owner_words: "रमेश ने 2000 रुपये नकद दिए" });
   assert.equal(asked.status, "awaiting_answer");
-  assert.equal(asked.say, "क्या मैं यह खाते में लिख दूँ?");
-  assert.deepEqual(call.spoken, ["रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में।"]);
+  assert.equal(asked.say, "", "the read-back and its question are the server's");
+  assert.ok(call.spoken.at(-1).endsWith("क्या मैं यह खाते में लिख दूँ?"), call.spoken.at(-1));
+  assert.deepEqual(call.spoken, ["रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में। क्या मैं यह खाते में लिख दूँ?"]);
   assert.equal(call.speakBodies[0].priority, "APPEND");
   assert.equal(call.speakBodies[0].interruptable, false);
   assert.equal(asked.readback, undefined, "the model gets no figures to re-read");
@@ -129,8 +132,8 @@ test("record_payment in a call: the server reads the payment back itself, and on
   // reads the payment out again, and the owner's next yes answers exactly that.
   call.owner("हाँ");
   const again = await registry.callTool(ctx, "record_payment", { decision: "confirm" });
-  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["awaiting_answer", true, "NOT_AFFIRMATIVE", "क्या मैं यह खाते में लिख दूँ?"]);
-  assert.deepEqual(call.spoken, ["रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में।", "रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में।"]);
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["awaiting_answer", true, "NOT_AFFIRMATIVE", ""]);
+  assert.deepEqual(call.spoken, ["रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में। क्या मैं यह खाते में लिख दूँ?", "रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में। क्या मैं यह खाते में लिख दूँ?"]);
   assert.equal(receiptCount(businessId), 0);
 
   call.owner("हाँ");
@@ -141,9 +144,9 @@ test("record_payment in a call: the server reads the payment back itself, and on
   // E2E full run bug 1: the server says the recorded payment itself; the model only hands back.
   assert.equal(done.outcome, "लिख लिया: रमेश से 2 हज़ार रुपये। अब उनके 3 हज़ार रुपये बाकी हैं।");
   assert.equal(done.outcomeSpoken, true);
-  assert.equal(call.spoken.at(-1), done.outcome);
+  assert.ok(outcomeSpoken(call.spoken.at(-1), done), call.spoken.at(-1));
   assert.equal(call.speakBodies.at(-1).interruptable, false);
-  assert.equal(done.say, "और कुछ बताइए?");
+  assert.equal(done.say, "");
   assert.equal(receiptCount(businessId), 1);
   await expectToolError(registry.callTool(ctx, "record_payment", { decision: "confirm" }), "NO_PENDING_PAYMENT");
 });
@@ -177,7 +180,7 @@ test("record_payment refuses figures the owner did not say, never guesses a cust
 
   call.owner("Ramesh Kumar paid 500 by UPI");
   const asked = await registry.callTool(ctx, "record_payment", { customer: "Ramesh Kumar", amount: 500, mode: "upi" });
-  assert.equal(call.spoken.at(-1), "Ramesh Kumar paid 500 rupees by UPI, on their account.");
+  assert.equal(call.spoken.at(-1), "Ramesh Kumar paid 500 rupees by UPI, on their account. Shall I write this in the khata?");
   call.owner("no, it was cash");
   const cancelled = await registry.callTool(ctx, "record_payment", { decision: "cancel" });
   assert.equal(cancelled.status, "cancelled");

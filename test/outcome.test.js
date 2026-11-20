@@ -21,11 +21,11 @@ function fakeSpeak(t, { fail = false } = {}) {
 test("settle in a call: the server speaks the result and the model only hands back", async (t) => {
   const spoken = fakeSpeak(t);
   const out = await outcome.settle({ agentId: "AG1" }, "बिल INV/2026-27/0001 बन गया, कुल 5400 रुपये।", "hi-IN", { invoiceId: "inv_1" });
-  assert.deepEqual(spoken, [{ agentId: "AG1", text: "बिल INV/2026-27/0001 बन गया, कुल 5400 रुपये।" }]);
+  assert.deepEqual(spoken, [{ agentId: "AG1", text: "बिल INV/2026-27/0001 बन गया, कुल 5400 रुपये। और कुछ बताइए?" }], "result and hand-back in one /speak piece");
   assert.equal(out.invoiceId, "inv_1");
   assert.equal(out.outcomeSpoken, true);
   assert.equal(out.outcome, "बिल INV/2026-27/0001 बन गया, कुल 5400 रुपये।");
-  assert.equal(out.say, "और कुछ बताइए?");
+  assert.equal(out.say, "", "the model says nothing on top of the server's line");
   assert.match(out.hint, /already said this result aloud/);
 });
 

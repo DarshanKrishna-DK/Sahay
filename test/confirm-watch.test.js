@@ -22,6 +22,9 @@ const invoices = require("../src/sell/invoices");
 const { ToolError } = require("../src/tools/errors");
 
 const AGENT = "AG-W";
+/** The short question a model may still add after a read-back (the tool now returns an empty say). */
+const BILL_QUESTION = require("../src/tools/sell").PHRASES.invoice_question["hi-IN"]();
+const DEAL_QUESTION = registry.phrase("approval_question", "hi-IN");
 
 /** An unregistered shop (plain bills) with basmati on sale, and a live owner session. */
 function shop() {
@@ -137,7 +140,7 @@ test("E2E full run bug 7b: a spoken yes to a payment read-back is written down b
   assert.equal(await clock.tick(), "acted");
   const receipts = db.prepare("SELECT amount_paise, recorded_via, evidence_utterance FROM receipts WHERE business_id = ?").all(businessId);
   assert.deepEqual(receipts.map((r) => ({ ...r })), [{ amount_paise: 200000, recorded_via: "voice", evidence_utterance: "हाँ" }]);
-  assert.match(call.spoken.at(-1), /^लिख लिया: रमेश ट्रेडर्स से 2 हज़ार रुपये। अब उनके 3 हज़ार 400 रुपये बाकी हैं।$/);
+  assert.match(call.spoken.at(-1), /^लिख लिया: रमेश ट्रेडर्स से 2 हज़ार रुपये। अब उनके 3 हज़ार 400 रुपये बाकी हैं। और कुछ बताइए\?$/);
 });
 
 test("the model's own confirm call stands: the watchdog does not act again, even when the gate refused it", async (t) => {
@@ -319,7 +322,7 @@ test("r2 #3: the live one-yes flow still works: the model's short question, then
   const call = fakeCall(t);
   const asked = await billReadOut(ctx, call);
   const clock = watching(t, shopRow);
-  call.items.push({ role: "assistant", content: asked.say, metadata: { source: "llm" }, turn_id: ++call.turn });
+  call.items.push({ role: "assistant", content: BILL_QUESTION, metadata: { source: "llm" }, turn_id: ++call.turn });
   call.owner("हाँ");
   assert.deepEqual(await settle(clock), ["grace", "acted"]);
   assert.equal(invoices.get(businessId, asked.invoiceId).status, "issued");
@@ -332,7 +335,7 @@ test("echo: an owner turn that repeats the agent's own line, or a bare 'ठी�
   const asked = await billReadOut(ctx, call);
   const clock = watching(t, shopRow);
   const end = 1_000_000;
-  call.items.push({ role: "assistant", content: asked.say, metadata: { source: "llm" }, turn_id: ++call.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call.items.push({ role: "assistant", content: BILL_QUESTION, metadata: { source: "llm" }, turn_id: ++call.turn, speech_start_ms: end - 2000, speech_end_ms: end });
   call.items.push({ role: "user", content: "ठीक है", metadata: { source: "asr" }, turn_id: ++call.turn, speech_start_ms: end + 600, speech_end_ms: end + 1200 });
   assert.deepEqual(await settle(clock), ["waiting", "waiting"], "possible speaker echo");
   assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
@@ -342,7 +345,7 @@ test("echo: an owner turn that repeats the agent's own line, or a bare 'ठी�
   const call2 = fakeCall(t);
   const asked2 = await billReadOut(later.ctx, call2);
   const clock2 = watching(t, later);
-  call2.items.push({ role: "assistant", content: asked2.say, metadata: { source: "llm" }, turn_id: ++call2.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call2.items.push({ role: "assistant", content: BILL_QUESTION, metadata: { source: "llm" }, turn_id: ++call2.turn, speech_start_ms: end - 2000, speech_end_ms: end });
   call2.items.push({ role: "user", content: "ठीक है", metadata: { source: "asr" }, turn_id: ++call2.turn, speech_start_ms: end + 2000, speech_end_ms: end + 2600 });
   assert.deepEqual(await settle(clock2), ["grace", "acted"]);
 
@@ -351,7 +354,7 @@ test("echo: an owner turn that repeats the agent's own line, or a bare 'ठी�
   const call3 = fakeCall(t);
   const asked3 = await billReadOut(quick.ctx, call3);
   const clock3 = watching(t, quick);
-  call3.items.push({ role: "assistant", content: asked3.say, metadata: { source: "llm" }, turn_id: ++call3.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call3.items.push({ role: "assistant", content: BILL_QUESTION, metadata: { source: "llm" }, turn_id: ++call3.turn, speech_start_ms: end - 2000, speech_end_ms: end });
   call3.items.push({ role: "user", content: "हाँ", metadata: { source: "asr" }, turn_id: ++call3.turn, speech_start_ms: end + 400, speech_end_ms: end + 700 });
   assert.deepEqual(await settle(clock3), ["grace", "acted"]);
 
@@ -360,7 +363,7 @@ test("echo: an owner turn that repeats the agent's own line, or a bare 'ठी�
   const call4 = fakeCall(t);
   const asked4 = await billReadOut(echo.ctx, call4);
   const clock4 = watching(t, echo);
-  call4.items.push({ role: "assistant", content: asked4.say, metadata: { source: "llm" }, turn_id: ++call4.turn });
+  call4.items.push({ role: "assistant", content: BILL_QUESTION, metadata: { source: "llm" }, turn_id: ++call4.turn });
   call4.owner("बिल बनाऊँ हाँ या ना");
   assert.deepEqual(await settle(clock4), ["waiting", "waiting"]);
 });
@@ -401,8 +404,9 @@ async function liveReadBack(ctx, call) {
   call.owner("हाँ");
   const asked = await call.tool(ctx, "request_approval", { reply_language: "hi-IN" });
   assert.equal(asked.readbackSpoken, true);
-  assert.equal(call.spoken.length, 2, "the deal read-back is longer than one /speak request, as live");
-  assert.ok(call.spoken[1].endsWith("क्या मैं यह ऑर्डर पक्का करूँ?"), call.spoken[1]);
+  assert.equal(call.spoken.length, 1, "the deal read-back is ONE /speak request (live check 129a071: two pieces stalled Murf)");
+  assert.ok(call.spoken[0].endsWith("क्या मैं यह ऑर्डर पक्का करूँ?"), call.spoken[0]);
+  assert.equal(asked.say, "", "the model says nothing on top of the read-back");
   return asked;
 }
 
@@ -428,13 +432,13 @@ test("live check 129a071: read-back, the owner's maybe, no agent reply, then ह
   assert.equal(await clock.tick(), "read_again");
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending", "a yes after a maybe never approves");
   assert.equal(repo.listOrders(businessId).length, 0);
-  assert.deepEqual(call.spoken.slice(2), call.spoken.slice(0, 2), "the same read-back, spoken again by the server");
+  assert.deepEqual(call.spoken.slice(1), call.spoken.slice(0, 1), "the same read-back, spoken again by the server");
   assert.deepEqual(watchdogActions(businessId), [["approval", "confirm_approval", "affirmative", true, "read_again"]]);
 
   // The same yes is never read out for twice.
   clock.advance(10_000);
   assert.equal(await clock.tick(), "waiting");
-  assert.equal(call.spoken.length, 4);
+  assert.equal(call.spoken.length, 2);
 
   // The owner's yes right after the fresh read-back answers it.
   call.owner("हाँ, ठीक है।");
@@ -454,14 +458,14 @@ test("live check 129a071: the model acknowledges the maybe, the owner says ह�
   liveDeal(businessId);
   const call = fakeCall(t);
   const asked = await liveReadBack(ctx, call);
-  call.model(asked.say);
+  call.model(DEAL_QUESTION);
   const clock = watching(t, shopRow);
   call.owner("शायद थोड़ा सोचने दीजिए।");
   call.model("कोई जल्दी नहीं, आराम से सोचिए।");
   call.owner("हाँ, ठीक है।");
   assert.deepEqual(await settle(clock), ["grace", "read_again"]);
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
-  assert.equal(call.spoken.length, 4, "read out again");
+  assert.equal(call.spoken.length, 2, "read out again");
   assert.deepEqual(watchdogActions(businessId), [["approval", "confirm_approval", "affirmative", true, "read_again"]]);
 });
 
@@ -479,7 +483,7 @@ test("live check 129a071: when the model does call confirm_approval for the late
   assert.deepEqual([again.readAgain, again.refused], [true, "NOT_AFFIRMATIVE"]);
   clock.advance(6100);
   assert.equal(await clock.tick(), "waiting", "the read-back the model's call spoke has no answer yet");
-  assert.equal(call.spoken.length, 4, "read out once more, by the model's call only");
+  assert.equal(call.spoken.length, 2, "read out once more, by the model's call only");
   assert.deepEqual(watchdogRows(businessId), []);
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
 });
@@ -495,7 +499,7 @@ test("re-read guard: no re-read for a yes before the read-back, a later unclear 
   callA.owner("कितना हुआ?");
   callA.owner("हाँ", "message");
   assert.deepEqual(await settle(clockA), ["waiting", "waiting"]);
-  assert.equal(callA.spoken.length, 2);
+  assert.equal(callA.spoken.length, 1);
 
   // A bare "ठीक है" within 1.5 s of the agent's line may be its own voice heard back.
   const b = shop();
@@ -521,7 +525,7 @@ test("re-read guard: no re-read for a yes before the read-back, a later unclear 
   await callC.tool(c.ctx, "get_business_profile", {});
   callC.owner("हाँ");
   assert.deepEqual(await settle(clockC), ["waiting", "waiting"]);
-  assert.equal(callC.spoken.length, 2);
+  assert.equal(callC.spoken.length, 1);
   assert.deepEqual([...watchdogRows(a.businessId), ...watchdogRows(b.businessId), ...watchdogRows(c.businessId)], []);
 });
 
@@ -545,6 +549,6 @@ test("diagnostic: an owner turn the agent leaves unanswered for 10 s is logged o
   await clock.tick();
   assert.equal(warned.length, 1, warned.join("\n"));
   assert.match(warned[0], /^\[confirm-watch\] no agent reply 11 s after owner turn \d+; \/history tail: /);
-  assert.match(warned[0], /assistant:command#\d+ assistant:command#\d+ assistant:-#- calls request_approval tool:-#- result user:asr#\d+$/);
+  assert.match(warned[0], /assistant:command#\d+ assistant:-#- calls request_approval tool:-#- result user:asr#\d+$/);
   assert.doesNotMatch(warned[0], /शायद|Srinidhi|रुपये/, "no words of the owner or the deal in the log");
 });

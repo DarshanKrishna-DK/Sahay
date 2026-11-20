@@ -11,6 +11,8 @@ Object.assign(process.env, {
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+/** The server's outcome line is followed, in the same /speak piece, by its hand-back question; the model says nothing. */
+const outcomeSpoken = (line, out) => Object.values(require("../src/agora/outcome").HAND_BACK).some((hand) => line === `${out.outcome} ${hand}`);
 const registry = require("../src/tools/registry");
 const agent = require("../src/agora/agent");
 const repo = require("../src/db/repo");
@@ -83,7 +85,7 @@ test("voice: item tax read back and confirmed, bill drafted from the owner's wor
 
   const put = await registry.callTool(ctx, "request_invoice_approval", {});
   assert.equal(put.readbackSpoken, true);
-  assert.equal(put.say, "बिल बनाऊँ, हाँ या ना?");
+  assert.equal(put.say, "");
   assert.match(call.spoken.join(" "), /कुल 4987.50 रुपये। क्या मैं यह बिल बना दूँ\?/);
   // asked again: not read out again
   const before = call.spoken.length;
@@ -99,8 +101,8 @@ test("voice: item tax read back and confirmed, bill drafted from the owner's wor
   assert.deepEqual(done.problems.map((p) => p.step), ["pay"]);
   assert.match(done.outcome, /भुगतान लिंक नहीं बन पाया/);
   // E2E full run bug 1: the server says the issued bill itself; the model only hands back.
-  assert.equal(call.spoken.at(-1), done.outcome);
-  assert.equal(done.say, "और कुछ बताइए?");
+  assert.ok(outcomeSpoken(call.spoken.at(-1), done), call.spoken.at(-1));
+  assert.equal(done.say, "");
   assert.equal(stock.onHand(biz, kept.item.id), -50);
 });
 
@@ -189,7 +191,7 @@ test("E2E full run bug 5b: a spoken yes to 'shall I read it out?' after draft_in
   const out = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
   assert.equal(out.status, "asked");
   assert.equal(out.readbackSpoken, true);
-  assert.equal(out.say, "बिल बनाऊँ, हाँ या ना?");
+  assert.equal(out.say, "");
   assert.match(call.spoken.at(-1), /रमेश ट्रेडर्स का बिल: 60 किलो बासमती चावल, 90 रुपये प्रति किलो, 5400 रुपये। कुल 5400 रुपये। क्या मैं यह बिल बना दूँ\?/);
   assert.equal(invoices.get(biz, drafted.invoiceId).status, "pending", "read out, not issued: the earlier yes was to reading it");
   // The owner's yes to the read-back now issues it.
@@ -251,7 +253,7 @@ test("security review r2 #3: a yes after a maybe gets the bill read out again; t
   await refused(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), "NOT_AFFIRMATIVE");
   call.owner("yes");
   const again = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
-  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["asked", true, "NOT_AFFIRMATIVE", "Shall I make the bill, yes or no?"]);
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["asked", true, "NOT_AFFIRMATIVE", ""]);
   assert.equal(call.spoken.at(-1), readback, "the same bill, read out again by the server");
   assert.equal(invoices.get(biz, drafted.invoiceId).status, "pending");
 

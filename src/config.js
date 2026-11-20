@@ -206,6 +206,11 @@ function loadConfig(env = process.env) {
         delaySeconds: read("FOLLOWUP_DELAY_SECONDS") === null ? null : Number(read("FOLLOWUP_DELAY_SECONDS")),
       }),
       negotiation: Object.freeze({ mode: negotiationMode(read("NEGOTIATION_MODE")) }),
+      // How long a server /speak line is taken to play (src/agora/agent.js speech lanes). Tests set 0.
+      speech: Object.freeze({
+        msPerChar: read("SPEAK_MS_PER_CHAR") === null ? 75 : Number(read("SPEAK_MS_PER_CHAR")),
+        minLineMs: read("SPEAK_MIN_LINE_MS") === null ? 1500 : Number(read("SPEAK_MIN_LINE_MS")),
+      }),
       // Cost guards for a public URL (security review r1 #1). Global, across all businesses.
       limits: Object.freeze({
         ownerCalls: positiveInt(read("SAHAY_MAX_OWNER_CALLS"), 3, "SAHAY_MAX_OWNER_CALLS"),

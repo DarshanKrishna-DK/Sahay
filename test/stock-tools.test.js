@@ -9,6 +9,8 @@ Object.assign(process.env, {
 const assert = require("node:assert/strict");
 const { test, before, after } = require("node:test");
 
+/** The server's outcome line is followed, in the same /speak piece, by its hand-back question; the model says nothing. */
+const outcomeSpoken = (line, out) => Object.values(require("../src/agora/outcome").HAND_BACK).some((hand) => line === `${out.outcome} ${hand}`);
 const repo = require("../src/db/repo");
 const registry = require("../src/tools/registry");
 const agent = require("../src/agora/agent");
@@ -141,7 +143,7 @@ test("set_reorder_level: the server reads the rule out, the owner's spoken yes k
   const asked = await registry.callTool(ctx, "set_reorder_level", { item: "चावल", level: 50 });
   assert.equal(asked.readbackSpoken, true);
   assert.equal(asked.next, "confirm_rule");
-  assert.equal(asked.say, "क्या यह नियम रखूँ?");
+  assert.equal(asked.say, "");
   // E2E full run bug 4a: the server's read-back is itself the question, so the yes answers it.
   assert.deepEqual(call.spoken, ["जब चावल 50 किलो या उससे कम बचेगा, मैं आपसे पूछूँगी कि और मँगाऊँ या नहीं। क्या यह नियम रखूँ?"]);
   assert.equal(agentRules.get(biz, asked.ruleId).status, "suggested");
@@ -158,7 +160,7 @@ test("set_reorder_level: the server reads the rule out, the owner's spoken yes k
   const kept = await registry.callTool(ctx, "confirm_rule", { decision: "keep" });
   assert.equal(kept.status, "active");
   assert.equal(kept.outcome, "ठीक है, यह नियम याद रखूँगी।");
-  assert.equal(call.spoken.at(-1), kept.outcome, "the server says the rule is kept");
+  assert.ok(outcomeSpoken(call.spoken.at(-1), kept), "the server says the rule is kept");
   assert.equal(stock.levelFor(biz, items.findByName(biz, "rice")).level, 50);
 
   const typed = await registry.callTool(ownerCtx(biz), "set_reorder_level", { item: "salt", level: 5, unit: "kg", reply_language: "en-IN" });
@@ -196,8 +198,8 @@ test("confirm_reorder asks first when the call has not heard the question, then 
   assert.equal(yes.sourcingStarted, true);
   assert.match(yes.jobId, /^job_/);
   assert.equal(yes.outcome, "ठीक है, 200 किलो चावल के लिए विक्रेताओं की खोज शुरू कर दी है। ऑर्डर आपकी हाँ के बिना नहीं होगा।");
-  assert.equal(call.spoken.at(-1), yes.outcome, "the server says the search started");
-  assert.equal(yes.say, "और कुछ बताइए?");
+  assert.ok(outcomeSpoken(call.spoken.at(-1), yes), "the server says the search started");
+  assert.equal(yes.say, "");
   await jobs.whenSettled(yes.jobId);
   assert.equal(repo.listOrders(biz).length, 0, "never an order");
   await toolError(registry.callTool(ctx, "confirm_reorder", { decision: "yes" }), "NO_PROPOSAL");
@@ -218,7 +220,7 @@ test("confirm_reorder outside a call asks for the button; an unclear answer is r
   const no = await registry.callTool(ctx, "confirm_reorder", { decision: "no" });
   assert.equal(no.status, "declined");
   assert.equal(no.outcome, "All right, I will not buy more now.");
-  assert.equal(call.spoken.at(-1), no.outcome);
+  assert.ok(outcomeSpoken(call.spoken.at(-1), no), call.spoken.at(-1));
 });
 
 // E2E regress bug 1: every set_reorder_level call failed with INVALID_ARGUMENTS in 0 ms (server log),
@@ -237,7 +239,7 @@ test("set_reorder_level takes the arguments the model copies from set_opening_st
     reply_language: "hi-IN",
   });
   assert.equal(asked.readbackSpoken, true);
-  assert.equal(asked.say, "क्या यह नियम रखूँ?");
+  assert.equal(asked.say, "");
   assert.equal(agentRules.get(biz, asked.ruleId).status, "suggested");
   assert.match(call.spoken[0], /^जब बासमती चावल 50 किलो या उससे कम बचेगा.*क्या यह नियम रखूँ\?$/);
 

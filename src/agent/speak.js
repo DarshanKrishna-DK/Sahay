@@ -28,7 +28,7 @@ const profile = require("./profile");
 const policy = require("./policy");
 const { AgentError } = require("./errors");
 
-const MURF_HOSTS = { global: "global.api.murf.ai", in: "in.api.murf.ai" };
+const MURF_HOSTS = { global: "global.api.murf.ai", in: "in.api.murf.ai", "us-east": "us-east.api.murf.ai" };
 const MURF_MODEL = "falcon-2.1";
 const SAMPLE_RATE = 24000;
 /** Murf `rate` (-50..50) per profile voice_speed. */

@@ -30,6 +30,7 @@ const { itemIn } = require("../discovery/slug");
 const stock = () => require("../stock");
 const items = () => require("../stock/items");
 
+const { fitOnePiece, bytes, SPEAK_MAX_BYTES } = require("../agora/speech-fit");
 const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
 const SCRIPT = { "hi-IN": /\p{Script=Devanagari}/u, "kn-IN": /\p{Script=Kannada}/u };
 
@@ -56,6 +57,7 @@ const WORDS = {
     line: (l) => `${l.qty} ${l.unit} ${l.item} at ${l.rate} rupees per ${l.unit1}, ${l.total} rupees`,
     tax: (t) => (t.rate != null ? `GST ${t.rate} percent, ${t.tax} rupees${t.igst ? " as IGST" : ""}.` : `GST ${t.tax} rupees${t.igst ? " as IGST" : ""}.`),
     total: (t) => `Total ${t} rupees.`,
+    count: (n) => `${n} items`,
     ask: "Shall I make this bill?",
     sep: "; ",
     colon: ": ",
@@ -66,6 +68,7 @@ const WORDS = {
     line: (l) => `${l.qty} ${l.unit} ${l.item}, ${l.rate} रुपये प्रति ${l.unit1}, ${l.total} रुपये`,
     tax: (t) => (t.rate != null ? `जीएसटी ${t.rate} प्रतिशत, ${t.tax} रुपये${t.igst ? " आईजीएसटी" : ""}।` : `जीएसटी ${t.tax} रुपये${t.igst ? " आईजीएसटी" : ""}।`),
     total: (t) => `कुल ${t} रुपये।`,
+    count: (n) => `${n} चीज़ें`,
     ask: "क्या मैं यह बिल बना दूँ?",
     sep: "; ",
     colon: ": ",
@@ -76,6 +79,7 @@ const WORDS = {
     line: (l) => `${l.qty} ${l.unit} ${l.item}, ಒಂದು ${l.unit1}ಗೆ ${l.rate} ರೂಪಾಯಿ, ${l.total} ರೂಪಾಯಿ`,
     tax: (t) => (t.rate != null ? `ಜಿಎಸ್‌ಟಿ ಶೇಕಡಾ ${t.rate}, ${t.tax} ರೂಪಾಯಿ${t.igst ? " ಐಜಿಎಸ್‌ಟಿ" : ""}.` : `ಜಿಎಸ್‌ಟಿ ${t.tax} ರೂಪಾಯಿ${t.igst ? " ಐಜಿಎಸ್‌ಟಿ" : ""}.`),
     total: (t) => `ಒಟ್ಟು ${t} ರೂಪಾಯಿ.`,
+    count: (n) => `${n} ವಸ್ತುಗಳು`,
     ask: "ಈ ಬಿಲ್ ಮಾಡಲೇ?",
     sep: "; ",
     colon: ": ",
@@ -86,6 +90,10 @@ const WORDS = {
 /**
  * The money sentence of an invoice, built from stored rows only: customer, each line (quantity,
  * unit, item, rate, line value), the tax and the total, then the question. Plain digits.
+ * Always ONE /speak piece (src/agora/speech-fit.js; Murf allows 2 streams): a bill too long to
+ * read line by line names how many items it has instead (the lines are on the screen), and a
+ * very long customer name is shortened for speech. Deterministic, so the stored read-back can be
+ * rebuilt and compared.
  */
 function buildReadback(businessId, invoice, language) {
   const w = WORDS[language];
@@ -101,10 +109,15 @@ function buildReadback(businessId, invoice, language) {
       total: amount(l.taxablePaise),
     }),
   );
-  const parts = [`${w.head[invoice.kind](customer?.name ?? "")}${w.colon}${lines.join(w.sep)}${w.end}`];
-  if (invoice.kind === "tax_invoice") parts.push(w.tax({ rate: rateOf(invoice), tax: amount(invoice.totals.taxPaise), igst: !invoice.intraState }));
-  parts.push(w.total(amount(invoice.totals.totalPaise)), w.ask);
-  return parts.join(" ");
+  const tail = [];
+  if (invoice.kind === "tax_invoice") tail.push(w.tax({ rate: rateOf(invoice), tax: amount(invoice.totals.taxPaise), igst: !invoice.intraState }));
+  tail.push(w.total(amount(invoice.totals.totalPaise)), w.ask);
+  const sentence = (name, body) => [`${w.head[invoice.kind](name)}${w.colon}${body}${w.end}`, ...tail].join(" ");
+  const name = customer?.name ?? "";
+  const full = sentence(name, lines.join(w.sep));
+  if (bytes(full) <= SPEAK_MAX_BYTES) return full;
+  if (lines.length === 1) return fitOnePiece((v) => sentence(v.name, lines[0]), { name }, ["name"]);
+  return fitOnePiece((v) => sentence(v.name, w.count(invoice.lines.length)), { name }, ["name"]);
 }
 
 const businessLanguage = (businessId) => {

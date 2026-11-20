@@ -893,7 +893,8 @@ async function askApproval(ctx, args, language) {
   if (readBefore && !args.repeat) return awaitingAnswer(ctx, approval, result, language);
 
   await readOut(ctx, approval, readback, language);
-  return { ...result, readbackSpoken: true, say: phrase("approval_question", language) };
+  // The read-back ends with its own question: the model says nothing on top of it.
+  return outcome.waitForOwner({ ...result, readbackSpoken: true }, "confirm_approval");
 }
 
 /** The offer question get_ranked_deals ends with, in every language it is said in. */
@@ -930,7 +931,7 @@ async function offerAccepted(ctx, language) {
     offerAccepted: true,
     readbackStarted: Boolean(asked.readbackSpoken),
     next: "confirm_approval on the owner's answer",
-    hint: "The owner said yes to hearing the deal, so the server has read it out now and asked. Nothing is approved yet. Say only `say` and wait; the owner's next yes or no goes to confirm_approval.",
+    hint: `The owner said yes to hearing the deal. Nothing is approved yet. ${asked.readbackSpoken ? outcome.SILENT_HINT : "Say only `say` and wait."} The owner's next yes or no goes to confirm_approval.`,
   };
 }
 
@@ -1127,7 +1128,8 @@ async function askRule(ctx, { kind, params }, language, { question, tap }) {
     return { ...result, readbackSpoken: false, say: `${sentence} ${tap}`, message: `The rule could not be read out: ${err.message}` };
   }
   agentRules.recordSpoken(ctx.businessId, rule.id, { agentId: ctx.agentId, text, sessionId: ctx.sessionId ?? null });
-  return { ...result, readbackSpoken: true, next: "confirm_rule", hint: "The server read the rule out and asked the question. Wait for the owner; their yes or no goes to confirm_rule.", say: question };
+  // The rule and its question went out as one /speak piece: the model says nothing on top of it.
+  return outcome.waitForOwner({ ...result, readbackSpoken: true }, "confirm_rule");
 }
 
 /** A rule already read out in this call: nothing is spoken again; the owner's answer so far tells the model which confirm_rule to make. */
@@ -1163,11 +1165,12 @@ async function offerUsualQuantity(ctx, requirement, language) {
   if (!ctx.agentId || requirement.quantity != null) return null;
   const rule = policy.usualQuantity(ctx.businessId, requirement.item);
   if (!rule || (requirement.unit && !sameUnit(requirement.unit, rule.params.unit))) return null;
-  const text = phrase("usual_quantity_offer", language, {
+  // The offer and its question in one /speak piece: the model says nothing on top of it.
+  const text = `${phrase("usual_quantity_offer", language, {
     item: spokenItem(ctx.businessId, requirement, language),
     quantity: money(rule.params.quantity),
     unit: unitWord(rule.params.unit, language, rule.params.quantity !== 1),
-  });
+  })} ${phrase("usual_quantity_question", language)}`;
   require("../agora/narrator").holdForRule(ctx.businessId, rule.id);
   try {
     await require("../agora/agent").speak(ctx.agentId, text, { priority: "APPEND", interruptable: false });
@@ -1300,7 +1303,7 @@ const TOOLS = [
       if (missing.length) {
         const offer = missing.includes("quantity") ? await offerUsualQuantity(ctx, requirement, language) : null;
         if (offer) {
-          return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, usualQuantity: offer, next: "save_requirement with use_usual_quantity on a yes", say: phrase("usual_quantity_question", language) };
+          return outcome.waitForOwner({ requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, usualQuantity: offer }, "save_requirement with use_usual_quantity on a yes");
         }
         const say = phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") });
         return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, say };
@@ -1571,7 +1574,7 @@ const TOOLS = [
         if (!laterYes) throw err;
         const deal = approvals.loadDeal(ctx.businessId, approval.quote_id);
         await readOut(ctx, approval, spokenReadback(ctx, approval.quote_id, deal, language), language);
-        return { approvalId: approval.id, status: "pending", readbackSpoken: true, readAgain: true, refused: err.code, next: "confirm_approval on the owner's answer", say: phrase("approval_question", language) };
+        return outcome.waitForOwner({ approvalId: approval.id, status: "pending", readbackSpoken: true, readAgain: true, refused: err.code }, "confirm_approval");
       }
       const result = { approvalId: decided.id, status: decided.status, evidenceUtterance: decided.evidence_utterance };
       if (decided.status !== "approved") return outcome.settle(ctx, phrase("approval_rejected", language), language, result);
@@ -1849,6 +1852,8 @@ async function callTool(ctx, name, args = {}) {
   }
   if (replyLanguage) require("../agora/narrator").useLanguage(ctx.businessId, replyLanguage);
   const end = toolCalls.begin(ctx.businessId, name, { answer: Boolean(args?.decision || args?.confirm) });
+  // The owner has answered a read-back by voice, so it has finished playing: the result line need not wait for its estimate.
+  if (ctx.agentId && (args?.decision || args?.confirm)) require("../agora/agent").releaseLane(ctx.agentId);
   try {
     // The tool's own first /history read reuses the one just made for the language (one round trip).
     return await require("../agora/agent").withHistorySnapshot(ctx.agentId, snapshot, () => tool.handler(ctx, args ?? {}, language, { businessLanguage }));
@@ -1860,7 +1865,7 @@ async function callTool(ctx, name, args = {}) {
     // The server already acted on this answer (src/agora/confirm-watch.js) and said the result:
     // the model's late call finds nothing waiting, and is told so instead of "there is nothing".
     if (NOTHING_WAITING.has(toolError.code) && require("../agora/confirm-watch").doneRecently(ctx.businessId, name)) {
-      return { alreadyDone: true, by: "server", hint: outcome.SPOKEN_HINT, say: outcome.HAND_BACK[langKey(language)] };
+      return { alreadyDone: true, by: "server", hint: outcome.DONE_HINT, say: outcome.HAND_BACK[langKey(language)] };
     }
     throw toolError;
   } finally {

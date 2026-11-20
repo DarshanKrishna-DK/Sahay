@@ -180,7 +180,7 @@ test("live check stall: a yes to 'read this deal out?' that reaches confirm_appr
   assert.equal(asked.status, "pending");
   assert.equal(asked.readbackSpoken, true);
   assert.equal(asked.quoteId, quote.id, "the very deal that was offered");
-  assert.equal(asked.say, "क्या मैं ऑर्डर कर दूँ?");
+  assert.equal(asked.say, "", "the read-back carries its own question; the model says nothing");
   assert.match(asked.hint, /Nothing is approved/);
   // The server spoke the read-back and recorded it, exactly as request_approval does.
   assert.match(call.spoken.join(" "), /Lakshmi Traders.*कुल 3250 रुपये/);

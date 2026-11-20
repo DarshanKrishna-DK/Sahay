@@ -31,7 +31,9 @@ const hsnSpoken = (hsn) => hsn.split("").join(" ");
 function readback({ item, hsn, gstRate, salePrice, unitWord }, language) {
   const sentence = READBACK[language];
   if (!sentence) throw new SellError("UNSUPPORTED_LANGUAGE", `No read-back wording for "${language}".`);
-  return sentence({ item, hsnSpoken: hsnSpoken(hsn), rate: String(gstRate), price: salePrice != null ? String(salePrice) : null, unit: unitWord });
+  // One /speak piece (src/agora/speech-fit.js): only a very long item name is shortened for speech.
+  const values = { item, hsnSpoken: hsnSpoken(hsn), rate: String(gstRate), price: salePrice != null ? String(salePrice) : null, unit: unitWord };
+  return require("../agora/speech-fit").fitOnePiece(sentence, values, ["item"]);
 }
 
 /** Validate what the owner said before anything is read back. */

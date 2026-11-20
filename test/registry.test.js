@@ -19,6 +19,8 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
+/** The server's outcome line is followed, in the same /speak piece, by its hand-back question; the model says nothing. */
+const outcomeSpoken = (line, out) => Object.values(require("../src/agora/outcome").HAND_BACK).some((hand) => line === `${out.outcome} ${hand}`);
 const registry = require("../src/tools/registry");
 const { ToolError } = require("../src/tools/errors");
 const agent = require("../src/agora/agent");
@@ -341,7 +343,7 @@ test("in a call, request_approval speaks the read-back itself (APPEND, not inter
   const call = fakeCall(t);
 
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
-  assert.equal(asked.say, "क्या मैं ऑर्डर कर दूँ?");
+  assert.equal(asked.say, "", "the read-back carries its own question; the model says nothing");
   assert.equal(asked.readbackSpoken, true);
   assert.equal(asked.readback, undefined, "the model gets no figures to re-read");
   // The stored read-back keeps the owner's words ("basmati rice"); the spoken one names the item in Devanagari (E2E r4).
@@ -354,8 +356,8 @@ test("in a call, request_approval speaks the read-back itself (APPEND, not inter
   // Asked again in another language: not read again (E2E r4), unless the owner asks to hear it.
   assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN" })).say, "Shall I place the order?");
   assert.equal(call.spoken.length, 1);
-  assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN", repeat: true })).say, "Shall I place the order?");
-  assert.match(call.spoken.at(-1), /^Order from Lakshmi Traders: .* Total 3250 rupees\./, "spoken again, in the owner's language");
+  assert.equal((await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN", repeat: true })).say, "", "read out again: the server asks");
+  assert.match(call.spoken.at(-1), /^Lakshmi Traders: .* Total 3250 rupees/, "spoken again, in the owner's language");
 });
 
 test("confirm_approval by voice approves on a clear yes to the read-back the server spoke, and never on anything else", async (t) => {
@@ -381,7 +383,7 @@ test("confirm_approval by voice approves on a clear yes to the read-back the ser
   call.owner("हाँ जी, कर दो");
   const spokenBefore = call.spoken.length;
   const again = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
-  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["pending", true, "NOT_AFFIRMATIVE", "क्या मैं ऑर्डर कर दूँ?"]);
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["pending", true, "NOT_AFFIRMATIVE", ""]);
   assert.equal(call.spoken.length, spokenBefore + 1, "the read-back, spoken by the server again");
   assert.equal(call.spoken.at(-1), repo.listApprovalReadbacks(businessId, { approval_id: asked.approvalId, agent_id: "AGV" })[0].spoken_text, "the same words as the first read-back");
   assert.equal(repo.listApprovalReadbacks(businessId, { approval_id: asked.approvalId, agent_id: "AGV" }).length, 2);
@@ -395,9 +397,9 @@ test("confirm_approval by voice approves on a clear yes to the read-back the ser
   assert.match(ok.orderId, /^ord_/);
   assert.equal(ok.outcome, `आपकी मंज़ूरी दर्ज हो गई। ऑर्डर बन गया, खरीद आदेश नंबर ${ok.poNumber}।`);
   assert.equal(ok.outcomeSpoken, true);
-  assert.equal(call.spoken.at(-1), ok.outcome);
+  assert.ok(outcomeSpoken(call.spoken.at(-1), ok), call.spoken.at(-1));
   assert.equal(call.speakBodies.at(-1).interruptable, false);
-  assert.equal(ok.say, "और कुछ बताइए?");
+  assert.equal(ok.say, "");
   assert.equal(repo.listOrders(businessId).length, 1);
   const row = repo.getApproval(businessId, asked.approvalId);
   assert.equal(row.decided_via, "voice");
@@ -422,7 +424,7 @@ test("review #2: a yes said before the read-back, or with no read-back spoken, d
   const quiet = seedBusiness("en-IN");
   const quietQuote = seedQuote(quiet).quote;
   const offCall = await registry.callTool(ownerCtx(quiet), "request_approval", { quoteId: quietQuote.id });
-  assert.match(offCall.say, /^Order from Lakshmi Traders/, "without a call the read-back is the model's to say");
+  assert.match(offCall.say, /^Lakshmi Traders: /, "without a call the read-back is the model's to say");
   call.owner("yes");
   await expectToolError(registry.callTool(ownerCtx(quiet, { agentId: "AGO" }), "confirm_approval", { decision: "approve" }), "READBACK_NOT_SPOKEN");
 });
@@ -650,7 +652,7 @@ test("request_approval with no id takes the best deal; a tie for best is named, 
   const { need, quote } = seedQuote(businessId);
   const asked = await registry.callTool(ctx, "request_approval", {});
   assert.equal(asked.quoteId, quote.id);
-  assert.match(asked.say, /^Order from Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg\./);
+  assert.match(asked.say, /^Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg,/);
 
   const other = repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name: "Ganesh Stores", listed_price: 64, listed_unit: "kg" });
   const neg = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: other.id, counterpart: "human" });
@@ -668,7 +670,7 @@ test("request_approval's readback follows reply_language; the stored readback st
   const businessId = seedBusiness("hi-IN");
   const { quote } = seedQuote(businessId);
   const asked = await registry.callTool(ownerCtx(businessId), "request_approval", { quoteId: quote.id, reply_language: "en-IN" });
-  assert.match(asked.say, /^Order from Lakshmi Traders: .* Total 3250 rupees\./);
+  assert.match(asked.say, /^Lakshmi Traders: .* Total 3250 rupees/);
   assert.match(repo.getApproval(businessId, asked.approvalId).readback, /कुल 3250 रुपये/);
 });
 
@@ -899,7 +901,7 @@ test("E2E r2 bug 5: English and Kannada say lines never carry the Devanagari ite
   const { need, quote } = seedQuote(businessId);
   repo.updateRequirement(businessId, need.id, { item: "बासमती चावल" });
   const en = await registry.callTool(ctx, "request_approval", { quoteId: quote.id, reply_language: "en-IN" });
-  assert.match(en.say, /^Order from Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg\./);
+  assert.match(en.say, /^Lakshmi Traders: 50 kg of basmati rice at 62 rupees per kg,/);
   assert.doesNotMatch(en.say, /\p{Script=Devanagari}/u);
   assert.match(repo.getApproval(businessId, en.approvalId).readback, /बासमती चावल/, "the stored readback keeps the owner's words");
 
@@ -1017,7 +1019,7 @@ test("E2E r4 bug 2: the owner asking to hear the deal again (repeat) reads it ag
   call.owner("can you read it again");
   const repeated = await registry.callTool(ctx, "request_approval", { repeat: true });
   assert.equal(call.spoken.length, 2, "read out again on request");
-  assert.equal(repeated.say, "Shall I place the order?");
+  assert.equal(repeated.say, "");
   assert.equal(repo.listApprovalReadbacks(businessId).length, 2);
 
   call.owner("no");

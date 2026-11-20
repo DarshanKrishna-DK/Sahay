@@ -392,7 +392,8 @@ function sellTools({ ownerObj, idArg, withHistory }) {
       throw new ToolError("READBACK_NOT_SPOKEN", sayFor("speak_failed", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
     }
     gate.recordInvoiceReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
-    return { ...result, readbackSpoken: true, next: "confirm_invoice", say: phrase("invoice_question", language) };
+    // The read-back ends with its own question: the model says nothing on top of it.
+    return outcome.waitForOwner({ ...result, readbackSpoken: true }, "confirm_invoice");
   }
 
   return [
@@ -493,7 +494,8 @@ function sellTools({ ownerObj, idArg, withHistory }) {
           throw new ToolError("READBACK_NOT_SPOKEN", sayFor("speak_failed", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
         }
         itemTax.recordSpoken(ctx.businessId, { itemName: name, unit: itemUnit, salePrice: args.sale_price ?? null, hsn, gstRate, agentId: ctx.agentId, text, sessionId: ctx.sessionId ?? null });
-        return { saved: false, readbackSpoken: true, next: "set_item with confirm true on a clear yes", say: phrase("item_tax_question", language) };
+        // The read-back ends with its own question: the model says nothing on top of it.
+        return outcome.waitForOwner({ saved: false, readbackSpoken: true }, "set_item with confirm true on a clear yes");
       }),
     },
     {
@@ -578,7 +580,7 @@ function sellTools({ ownerObj, idArg, withHistory }) {
           const draft = ctx.agentId && args.decision === "approve" ? draftOfThisCall(ctx, args.invoiceId) : null;
           if (!draft) throw new ToolError("NO_PENDING_INVOICE", phrase("no_invoice", language), { status: 409 });
           const asked = await askInvoice(ctx, { invoiceId: draft.id }, language);
-          return { ...asked, status: "asked", hint: "The bill was not read out before, so the server has read it out now and asked. Wait for the owner; their yes or no goes to confirm_invoice." };
+          return { ...asked, status: "asked", hint: `The bill was not read out before, so the server has read it out now. ${asked.hint ?? ""}`.trim() };
         }
         if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", SAY.EVIDENCE_REQUIRED[langKey(language)], { status: 409 });
         const approval = pending.at(-1);

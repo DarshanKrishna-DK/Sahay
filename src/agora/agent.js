@@ -21,13 +21,20 @@ const { config } = require("../config");
 const { buildRtcRtmToken } = require("./token");
 
 const REST_BASE = "https://api.agora.io/api/conversational-ai-agent";
+/**
+ * MURF_REGION -> Falcon stream-input URL (murf.ai/api/docs/api-reference/text-to-speech/stream-input,
+ * checked 2026-11-20). Default global. us-east is opt-in: it allows 5 concurrent Falcon streams
+ * against 2 on global and every other region (murf.ai/api/docs/resources/rate-limits), at the cost
+ * of a longer round trip from India.
+ */
 const MURF_BASE_URLS = {
   global: "wss://global.api.murf.ai/v1/speech/stream-input",
   in: "wss://in.api.murf.ai/v1/speech/stream-input",
+  "us-east": "wss://us-east.api.murf.ai/v1/speech/stream-input",
 };
 const MURF_MODEL = "FALCON";
 const LLM_MODEL = "gpt-4.1-mini";
-const SPEAK_MAX_BYTES = 500; // docs limit 512 bytes; kept under it on purpose
+const { SPEAK_MAX_BYTES } = require("./speech-fit"); // docs limit 512 bytes; kept under it on purpose
 /**
  * Hard cap on one owner call. The agent's RTC+RTM token and the MCP bearer both live this long
  * and are not renewed, so the cap must outlast any real call: with 30 min the agent's token
@@ -267,7 +274,7 @@ function rulesSection(rules) {
 }
 
 const TEACHING =
-  "Teaching: when the owner tells you how they like to buy (the most they will pay for an item, a vendor to prefer or avoid, a usual quantity, a reply language, how hard to bargain), call teach_rule with that one rule. The server reads the rule out itself; say only the tool's `say` question and wait. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no). A typed message never keeps a rule: if the owner types yes, ask them to tap the tick on the rule card on the screen. To drop a rule call forget_rule; to tell the owner what their Sahay knows call get_my_agent. When save_requirement returns usualQuantity, say only its `say`; on the owner's yes call save_requirement with use_usual_quantity true and nothing else.";
+  "Teaching: when the owner tells you how they like to buy (the most they will pay for an item, a vendor to prefer or avoid, a usual quantity, a reply language, how hard to bargain), call teach_rule with that one rule. The server reads the rule out itself and asks the question; the tool's `say` is empty: say nothing and wait. When the owner answers, call confirm_rule with no id (keep on a clear yes, forget on a no). A typed message never keeps a rule: if the owner types yes, ask them to tap the tick on the rule card on the screen. To drop a rule call forget_rule; to tell the owner what their Sahay knows call get_my_agent. When save_requirement returns usualQuantity, the server has asked about it and `say` is empty: say nothing; on the owner's yes call save_requirement with use_usual_quantity true and nothing else.";
 
 /**
  * Reply language, every turn, with no switching command (owner requirement 2026-11-20). Sarvam
@@ -309,12 +316,12 @@ const SPOKEN_STYLE = [
 const SHOP_WORK = [
   "Selling: a sale to a customer is a bill. Call draft_invoice with the customer and each line (item, quantity, unit, and price per unit if said), then request_invoice_approval in the same turn. A sale is never save_requirement: save_requirement is only for something the shop buys. If draft_invoice says an item is not saved yet, call set_item with its name, unit and selling price; pass hsn and gst_rate only when the owner said both, never fill them yourself; the server reads them back, and on the owner's clear yes call set_item again with only confirm true. When the owner asks to add a customer, call add_customer at once with the name; phone, GSTIN, state and address are optional, so never ask for them before saving. A sale never calls save_requirement and never asks about vendors or a delivery city. The owner's yes or no to a bill goes to confirm_invoice; a yes to 'shall I read it out?' also goes to confirm_invoice, which reads the bill out first.",
   "GST: bills are plain bills without GST until the shop's GSTIN is saved. Never ask for the shop's GSTIN unless the owner says the shop is GST-registered; then ask them to add the GST number in the Sell settings on the screen.",
-  "Khata: when the owner says a customer paid, call record_payment with customer, amount, mode (cash or upi) and owner_words. The server reads the payment back; say only its `say` and wait. When the owner answers, call record_payment again with only decision (confirm on a clear yes, cancel on a no). who_owes_me tells who owes how much (pass customer for one person). send_payment_reminder prepares a reminder the owner sends from the WhatsApp button on the screen; nothing is sent by itself.",
+  "Khata: when the owner says a customer paid, call record_payment with customer, amount, mode (cash or upi) and owner_words. The server reads the payment back and asks; `say` is empty: say nothing and wait. When the owner answers, call record_payment again with only decision (confirm on a clear yes, cancel on a no). who_owes_me tells who owes how much (pass customer for one person). send_payment_reminder prepares a reminder the owner sends from the WhatsApp button on the screen; nothing is sent by itself.",
   "Stock: set_opening_stock when the owner says how much of an item they have; get_stock for what is left or low; mark_order_delivered when a purchase order's goods have arrived; set_reorder_level when the owner says at what level to buy more (the server reads the rule out as a question; the owner's answer goes to confirm_rule, never to set_reorder_level again). When the server has asked whether to buy more of a low item (\"... कम है ... और मँगाऊँ?\"), the owner's yes or no goes to confirm_reorder with no item: a yes starts a vendor search only, never an order.",
-  "Confirmations: for every deal, bill, payment received, item tax, rule or reorder, the server reads it out first; you say only the tool's `say` question, never repeat its figures, then wait. Only the owner's spoken yes after that read-back counts: a typed yes never counts (ask the owner to say it aloud or press the yes button on the card on the screen), and silence, maybe or a question is not a yes. The answer goes to the tool for that kind: confirm_approval for a deal, confirm_invoice for a bill, record_payment with decision for a payment, set_item with confirm for an item's tax, confirm_rule for a rule or a reorder level, confirm_reorder for buying more. If more than one thing is waiting, the owner's answer goes to the one read out last.",
-  'Hindi sale and payment. Owner: "Ramesh Traders को 50 किलो बासमती, 90 रुपये किलो।" You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say: "बिल बनाऊँ, हाँ या ना?" Owner: "हाँ, बना दो।" You call confirm_invoice with approve; the server says the result aloud itself, and you say only that tool\'s say. Owner: "रमेश ने दो हज़ार रुपये नकद दिए।" You call record_payment; the server reads it back; you say its say. Owner: "हाँ।" You call record_payment with decision confirm and say only its say.',
-  'Kannada sale and payment. Owner: "Ramesh Traders ಅವರಿಗೆ 50 ಕಿಲೋ ಬಾಸ್ಮತಿ, ಕಿಲೋಗೆ 90 ರೂಪಾಯಿ." You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say: "ಬಿಲ್ ಮಾಡಲೇ, ಹೌದು ಅಥವಾ ಇಲ್ಲ?" Owner: "ಹೌದು, ಮಾಡಿ." You call confirm_invoice with approve and say only its say. Owner: "ರಮೇಶ್ ಎರಡು ಸಾವಿರ ರೂಪಾಯಿ ನಗದು ಕೊಟ್ರು." You call record_payment; the server reads it back. Owner: "ಹೌದು." You call record_payment with decision confirm and say only its say.',
-  'English sale and payment. Owner: "Ramesh Traders, 50 kilos of basmati at 90 rupees a kilo." You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say. Owner: "Yes, go ahead." You call confirm_invoice with approve and say only its say. Owner: "Ramesh paid two thousand rupees in cash." You call record_payment; the server reads it back. Owner: "Yes." You call record_payment with decision confirm and say only its say.',
+  "Confirmations: for every deal, bill, payment received, item tax, rule or reorder, the server reads it out first and asks the yes/no question itself; the tool's `say` is then empty: say nothing at all (not the question, never a figure) and wait for the owner. Whenever a tool's `say` is empty, say nothing. Only the owner's spoken yes after that read-back counts: a typed yes never counts (ask the owner to say it aloud or press the yes button on the card on the screen), and silence, maybe or a question is not a yes. The answer goes to the tool for that kind: confirm_approval for a deal, confirm_invoice for a bill, record_payment with decision for a payment, set_item with confirm for an item's tax, confirm_rule for a rule or a reorder level, confirm_reorder for buying more. If more than one thing is waiting, the owner's answer goes to the one read out last.",
+  'Hindi sale and payment. Owner: "Ramesh Traders को 50 किलो बासमती, 90 रुपये किलो।" You call draft_invoice and request_invoice_approval; the server reads the bill out and asks; you say nothing. Owner: "हाँ, बना दो।" You call confirm_invoice with approve; the server says the result aloud itself, and you say nothing. Owner: "रमेश ने दो हज़ार रुपये नकद दिए।" You call record_payment; the server reads it back and asks; you say nothing. Owner: "हाँ।" You call record_payment with decision confirm and say nothing: the server speaks the result.',
+  'Kannada sale and payment. Owner: "Ramesh Traders ಅವರಿಗೆ 50 ಕಿಲೋ ಬಾಸ್ಮತಿ, ಕಿಲೋಗೆ 90 ರೂಪಾಯಿ." You call draft_invoice and request_invoice_approval; the server reads the bill out and asks; you say nothing. Owner: "ಹೌದು, ಮಾಡಿ." You call confirm_invoice with approve and say nothing: the server speaks the result. Owner: "ರಮೇಶ್ ಎರಡು ಸಾವಿರ ರೂಪಾಯಿ ನಗದು ಕೊಟ್ರು." You call record_payment; the server reads it back. Owner: "ಹೌದು." You call record_payment with decision confirm and say nothing: the server speaks the result.',
+  'English sale and payment. Owner: "Ramesh Traders, 50 kilos of basmati at 90 rupees a kilo." You call draft_invoice and request_invoice_approval; the server reads the bill out; you say its say. Owner: "Yes, go ahead." You call confirm_invoice with approve and say nothing: the server speaks the result. Owner: "Ramesh paid two thousand rupees in cash." You call record_payment; the server reads it back. Owner: "Yes." You call record_payment with decision confirm and say nothing: the server speaks the result.',
 ];
 
 /**
@@ -362,7 +369,7 @@ function systemPrompt(business, { now = new Date(), rules = [], fillerWords = tr
     "Jobs: when the owner asks to search or to negotiate, call start_sourcing or start_negotiation every time, even to try again after a negotiation ended or failed; the tool itself answers if one is still running. Never say a search or negotiation is already running, finished or failed from memory of earlier turns: that comes only from a tool result in this turn or from the latest Call status system message, which the server keeps current.",
     "Sourcing searches real vendors listed on IndiaMART. Never call those vendors, or the search, simulated.",
     "Negotiation: call start_negotiation without a vendor to negotiate with a simulated vendor priced from the best real listing that has a comparable price, unless the owner names a vendor by rank or asks for a real vendor to join by link (counterpart human). Only that negotiation counterpart is simulated: call it a simulated vendor (सिम्युलेटेड विक्रेता / ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್), and use the word simulated for nothing else.",
-    "Approval: before any order call request_approval once (no id: it takes the best deal). When get_ranked_deals asked whether to read the deal out for approval and the owner says yes, that yes asks to hear the deal and approves nothing: call request_approval, not confirm_approval. The server itself reads the deal out to the owner; you only say the tool's `say` question, never repeat the figures, then wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer, and never ask whether to ask for approval about a deal already read out; call request_approval again only if the owner asks to hear the deal again, with repeat true. If the owner says maybe or later, say there is no hurry: the deal keeps waiting and their next yes or no still goes to confirm_approval. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words. A typed yes never approves: the owner presses the yes card on the screen or says it aloud.",
+    "Approval: before any order call request_approval once (no id: it takes the best deal). When get_ranked_deals asked whether to read the deal out for approval and the owner says yes, that yes asks to hear the deal and approves nothing: call request_approval, not confirm_approval. The server itself reads the deal out to the owner and asks the question itself; the tool's `say` is empty: say nothing, never repeat the figures, and wait for the owner's answer. Once request_approval has returned, the owner's next yes or no answers it: call confirm_approval with no id (the one deal waiting), decision approve on a clear yes, reject on a no. Never call request_approval again for that answer, and never ask whether to ask for approval about a deal already read out; call request_approval again only if the owner asks to hear the deal again, with repeat true. If the owner says maybe or later, say there is no hurry: the deal keeps waiting and their next yes or no still goes to confirm_approval. If a tool result has a `hint` or `next`, follow it. Silence, maybe, or a question is not a yes: ask again. The server checks the owner's own words. A typed yes never approves: the owner presses the yes card on the screen or says it aloud.",
     "Never say an order exists unless create_order returned an orderId or the latest Call status says the order was placed. Never say a payment link exists unless create_payment_link returned a url. Payment links are Razorpay test mode.",
     "Usual order of buying: save_requirement, start_sourcing, get_shortlist, start_negotiation, get_ranked_deals, request_approval, confirm_approval (on approve it places the order itself: no create_order after it), create_payment_link. Use get_job_status and get_order_status when the owner asks how things are going.",
     TEACHING,
@@ -556,6 +563,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
   }
   const prompt = promptFor(tuning);
   callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "", fillerWords: tuning });
+  bindLane(started.agentId, businessId);
   return { ...started, language: lang, voiceTuning: tuning, disclosure: disclosureText({ ...business, language: lang }) };
 }
 
@@ -609,6 +617,7 @@ async function refreshRules(agentId, businessId) {
 async function stopAgent(agentId) {
   if (!agentId) return { stopped: false };
   callPrompts.delete(agentId);
+  laneOfAgent.delete(agentId);
   try {
     await call("POST", `/agents/${encodeURIComponent(agentId)}/leave`, undefined, { retry: true });
     return { stopped: true };
@@ -680,8 +689,81 @@ function splitUtf8(text, maxBytes = SPEAK_MAX_BYTES) {
 }
 
 /**
+ * Speech lanes: at most ONE server-initiated line in flight per business (Murf Falcon allows 2
+ * concurrent streams outside US-East, and a stream over the limit closes the WebSocket with 4029,
+ * stopping every context on it: agora-findings.md "Live check 129a071 stall"). The owner's agent
+ * and, during a negotiation, the negotiator and simulated vendor agents share their business's
+ * lane, so a narrator line never plays on top of a read-back or a negotiation line.
+ *
+ * Agora does not tell the server when a /speak line has finished, so a line is taken to last
+ * as long as the negotiation loop already assumes (msPerChar per character, at least minLineMs).
+ * Every /speak piece waits in its lane until the previous piece is expected to have finished, at
+ * most maxWaitMs (a tool must answer within the MCP timeout_ms of 10 s); after that it is sent
+ * anyway and the overlap is logged. INTERRUPT cuts what is playing, so it never waits.
+ * releaseLane: the owner has answered by voice, so the line before it has finished.
+ */
+const pacing = { msPerChar: config.speech?.msPerChar ?? 75, minLineMs: config.speech?.minLineMs ?? 1500, maxWaitMs: 5000 };
+/** lane key -> { busyUntil: ms, tail: Promise } */
+const lanes = new Map();
+/** agentId -> lane key (owner agents and negotiation agents are bound to their business) */
+const laneOfAgent = new Map();
+
+const lineMs = (text) => Math.max(pacing.minLineMs, String(text).length * pacing.msPerChar);
+const laneKey = (agentId) => laneOfAgent.get(agentId) ?? `agent:${agentId}`;
+const laneOf = (key) => {
+  if (!lanes.has(key)) lanes.set(key, { busyUntil: 0, tail: Promise.resolve() });
+  return lanes.get(key);
+};
+
+/** Bind an agent's /speak lines to its business's lane (owner and negotiation agents). */
+function bindLane(agentId, businessId) {
+  if (agentId && businessId) laneOfAgent.set(agentId, `business:${businessId}`);
+}
+
+/** The owner answered by voice: whatever this agent's lane was playing has ended. */
+function releaseLane(agentId) {
+  const lane = agentId ? lanes.get(laneKey(agentId)) : null;
+  if (lane) lane.busyUntil = Math.min(lane.busyUntil, Date.now());
+}
+
+/** Milliseconds until this agent's lane is expected to be quiet (0 when it is). */
+function laneBusyMs(agentId) {
+  const lane = agentId ? lanes.get(laneKey(agentId)) : null;
+  return lane ? Math.max(0, lane.busyUntil - Date.now()) : 0;
+}
+
+/** Tests: change the pacing (pass nothing to read it). */
+function configureSpeechPacing(overrides = {}) {
+  Object.assign(pacing, overrides);
+  return { ...pacing };
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Send one /speak piece in its lane: after the lane's current line (at most maxWaitMs), then mark the lane busy for this piece. */
+function sendInLane(agentId, body) {
+  const lane = laneOf(laneKey(agentId));
+  const send = async () => {
+    if (body.priority !== "INTERRUPT") {
+      const deadline = Date.now() + pacing.maxWaitMs;
+      while (Date.now() < lane.busyUntil && Date.now() < deadline) await pause(Math.min(lane.busyUntil, deadline) - Date.now());
+      if (Date.now() < lane.busyUntil) timingLog(`[agora] /speak sent ${lane.busyUntil - Date.now()} ms before the previous line is expected to end (waited ${pacing.maxWaitMs} ms)`);
+    }
+    const result = await call("POST", `/agents/${encodeURIComponent(agentId)}/speak`, body);
+    lane.busyUntil = Date.now() + lineMs(body.text);
+    return result;
+  };
+  // INTERRUPT cuts the lane at once; everything else is sent in order.
+  const run = body.priority === "INTERRUPT" ? send() : lane.tail.then(send, send);
+  if (body.priority !== "INTERRUPT") lane.tail = run.catch(() => {});
+  return run;
+}
+
+/**
  * POST /speak. Text over the byte limit is sent as several requests: the first
- * with the given priority, the rest APPEND so they play in order.
+ * with the given priority, the rest APPEND so they play in order. Every piece goes
+ * through the agent's speech lane (see above), so pieces never overlap each other
+ * or another server line of the same business.
  * @param {{priority?: 'INTERRUPT'|'APPEND'|'IGNORE', interruptable?: boolean}} [options]
  */
 async function speak(agentId, text, { priority = "APPEND", interruptable = true } = {}) {
@@ -691,13 +773,7 @@ async function speak(agentId, text, { priority = "APPEND", interruptable = true 
   if (!pieces.length) throw new AgoraError("SPEAK_INVALID", "Nothing to speak.");
   const results = [];
   for (const [index, piece] of pieces.entries()) {
-    results.push(
-      await call("POST", `/agents/${encodeURIComponent(agentId)}/speak`, {
-        text: piece,
-        priority: index === 0 ? priority : "APPEND",
-        interruptable,
-      }),
-    );
+    results.push(await sendInLane(agentId, { text: piece, priority: index === 0 ? priority : "APPEND", interruptable }));
   }
   return { pieces: pieces.length, results };
 }
@@ -784,6 +860,10 @@ module.exports = {
   updateCallStatus,
   refreshRules,
   speak,
+  bindLane,
+  releaseLane,
+  laneBusyMs,
+  configureSpeechPacing,
   think,
   history,
   withHistorySnapshot,

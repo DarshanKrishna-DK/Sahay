@@ -14,6 +14,7 @@ const db = require("./db");
 const events = require("./events");
 const repo = require("./db/repo");
 const { sameUnit, unitWord } = require("./procurement/units");
+const { fitOnePiece } = require("./agora/speech-fit");
 
 class ApprovalError extends Error {
   constructor(code, message) {
@@ -79,36 +80,44 @@ function loadDeal(businessId, quoteId) {
   };
 }
 
+/**
+ * The deal read-back, short enough for ONE /speak piece (src/agora/speech-fit.js; live check
+ * 129a071: a two-piece read-back plus the model's own question went over Murf's 2 streams and the
+ * call stalled). Vendor, the simulated-vendor label, quantity, item, price per unit, freight when
+ * it changes the total, the landed total, delivery only when quoted, and the yes/no question.
+ */
 const READBACK = {
   en: (d, unit) => {
-    const freight = d.freight == null ? "Freight is not quoted and is not in this total." : d.freight === 0 ? "No freight charge." : `Freight ${amountText(d.freight)} rupees.`;
-    const lead = d.leadTimeDays == null ? "Delivery time is not confirmed." : d.leadTimeDays === 0 ? "Delivery the same day." : `Delivery in ${d.leadTimeDays} ${d.leadTimeDays === 1 ? "day" : "days"}.`;
-    const vendor = d.simulated ? `${d.vendorName} (${repo.SIMULATED_LABEL}, not a real supplier)` : d.vendorName;
-    return `Order from ${vendor}: ${amountText(d.quantity)} ${unit(d.quantity)} of ${d.item} at ${amountText(d.unitPrice)} rupees per ${unit(1)}. ${freight} Total ${amountText(d.total)} rupees. ${lead} Shall I confirm this order?`;
+    const vendor = d.simulated ? `${d.vendorName} (${repo.SIMULATED_LABEL})` : d.vendorName;
+    const freight = d.freight == null ? ", freight extra" : d.freight === 0 ? "" : `, freight ${amountText(d.freight)} rupees`;
+    const lead = d.leadTimeDays == null ? "" : d.leadTimeDays === 0 ? ", delivery the same day" : `, delivery in ${d.leadTimeDays} ${d.leadTimeDays === 1 ? "day" : "days"}`;
+    return `${vendor}: ${amountText(d.quantity)} ${unit(d.quantity)} of ${d.item} at ${amountText(d.unitPrice)} rupees per ${unit(1)}${freight}. Total ${amountText(d.total)} rupees${lead}. Shall I confirm this order?`;
   },
   hi: (d, unit) => {
-    const freight = d.freight == null ? "भाड़ा बताया नहीं गया है और इस कुल में शामिल नहीं है।" : d.freight === 0 ? "भाड़ा नहीं लगेगा।" : `भाड़ा ${amountText(d.freight)} रुपये।`;
-    const lead = d.leadTimeDays == null ? "डिलीवरी का समय तय नहीं हुआ है।" : d.leadTimeDays === 0 ? "डिलीवरी उसी दिन।" : `डिलीवरी ${d.leadTimeDays} दिन में।`;
-    const vendor = d.simulated ? `${d.vendorName} (सिम्युलेटेड वेंडर, असली विक्रेता नहीं)` : d.vendorName;
-    return `${vendor} से ऑर्डर: ${amountText(d.quantity)} ${unit(d.quantity)} ${d.item}, ${amountText(d.unitPrice)} रुपये प्रति ${unit(1)} के भाव पर। ${freight} कुल ${amountText(d.total)} रुपये। ${lead} क्या मैं यह ऑर्डर पक्का करूँ?`;
+    const vendor = d.simulated ? `${d.vendorName} (सिम्युलेटेड वेंडर)` : d.vendorName;
+    const freight = d.freight == null ? ", भाड़ा अलग" : d.freight === 0 ? "" : `, भाड़ा ${amountText(d.freight)} रुपये`;
+    const lead = d.leadTimeDays == null ? "" : d.leadTimeDays === 0 ? ", डिलीवरी उसी दिन" : `, डिलीवरी ${d.leadTimeDays} दिन में`;
+    return `${vendor} से ${amountText(d.quantity)} ${unit(d.quantity)} ${d.item}, ${amountText(d.unitPrice)} रुपये प्रति ${unit(1)}${freight}। कुल ${amountText(d.total)} रुपये${lead}। क्या मैं यह ऑर्डर पक्का करूँ?`;
   },
   kn: (d, unit) => {
-    const freight = d.freight == null ? "ಸಾಗಣೆ ವೆಚ್ಚ ತಿಳಿಸಿಲ್ಲ, ಅದು ಈ ಒಟ್ಟು ಮೊತ್ತದಲ್ಲಿ ಸೇರಿಲ್ಲ." : d.freight === 0 ? "ಸಾಗಣೆ ವೆಚ್ಚ ಇಲ್ಲ." : `ಸಾಗಣೆ ವೆಚ್ಚ ${amountText(d.freight)} ರೂಪಾಯಿ.`;
-    const lead = d.leadTimeDays == null ? "ಡೆಲಿವರಿ ಸಮಯ ಖಚಿತವಾಗಿಲ್ಲ." : d.leadTimeDays === 0 ? "ಅದೇ ದಿನ ಡೆಲಿವರಿ." : d.leadTimeDays === 1 ? "1 ದಿನದಲ್ಲಿ ಡೆಲಿವರಿ." : `${d.leadTimeDays} ದಿನಗಳಲ್ಲಿ ಡೆಲಿವರಿ.`;
-    const vendor = d.simulated ? `${d.vendorName} (ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್, ನಿಜವಾದ ಮಾರಾಟಗಾರ ಅಲ್ಲ)` : d.vendorName;
-    return `${vendor} ಅವರಿಂದ ಆರ್ಡರ್: ${amountText(d.quantity)} ${unit(d.quantity)} ${d.item}, ಒಂದು ${unit(1)} ಬೆಲೆ ${amountText(d.unitPrice)} ರೂಪಾಯಿ. ${freight} ಒಟ್ಟು ${amountText(d.total)} ರೂಪಾಯಿ. ${lead} ಈ ಆರ್ಡರ್ ಖಚಿತಪಡಿಸಲೇ?`;
+    const vendor = d.simulated ? `${d.vendorName} (ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್)` : d.vendorName;
+    const freight = d.freight == null ? ", ಸಾಗಣೆ ವೆಚ್ಚ ಬೇರೆ" : d.freight === 0 ? "" : `, ಸಾಗಣೆ ${amountText(d.freight)} ರೂಪಾಯಿ`;
+    const lead = d.leadTimeDays == null ? "" : d.leadTimeDays === 0 ? ", ಅದೇ ದಿನ ಡೆಲಿವರಿ" : `, ${d.leadTimeDays} ದಿನದಲ್ಲಿ ಡೆಲಿವರಿ`;
+    return `${vendor} ಅವರಿಂದ ${amountText(d.quantity)} ${unit(d.quantity)} ${d.item}, ಒಂದು ${unit(1)}ಗೆ ${amountText(d.unitPrice)} ರೂಪಾಯಿ${freight}. ಒಟ್ಟು ${amountText(d.total)} ರೂಪಾಯಿ${lead}. ಈ ಆರ್ಡರ್ ಖಚಿತಪಡಿಸಲೇ?`;
   },
 };
 
 /**
  * The money sentence: vendor, quantity, unit price, freight, landed total and
  * lead time, in the given language and its own script. Amounts are plain digits
- * so a speech engine reads them as numbers.
+ * so a speech engine reads them as numbers. Always one /speak piece: a very long
+ * vendor or item name is shortened word by word for speech (figures never are).
  */
 function buildReadback(deal, language = deal.language) {
   const sentence = READBACK[language];
   if (!sentence) throw new ApprovalError("UNSUPPORTED_LANGUAGE", `No read-back wording for "${language}".`);
-  return sentence(deal, (quantity) => unitWord(deal.unit, language, quantity !== 1, { short: true }));
+  const unit = (quantity) => unitWord(deal.unit, language, quantity !== 1, { short: true });
+  return fitOnePiece((v) => sentence({ ...deal, vendorName: v.vendor, item: v.item }, unit), { vendor: deal.vendorName, item: deal.item }, ["vendor", "item"]);
 }
 
 /** True when a stored approval still describes the deal as the database has it now. */
