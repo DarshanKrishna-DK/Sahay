@@ -316,7 +316,7 @@ function createApiRouter() {
     wrap(async (req, res) => {
       let claims = null;
       try {
-        claims = auth.verifySession(cookieValue(req), { scope: "browser" });
+        claims = auth.verifyBrowserSession(auth.cookieToken(req)); // a logged-out or claimed device cookie is not signed in
       } catch {
         claims = null;
       }
@@ -524,7 +524,7 @@ function createApiRouter() {
     }),
   );
 
-  router.get("/api/events", events.sseHandler);
+  router.get("/api/events", limitedEventStream);
 
   /* "My Sahay": profile, rules and memories of the session's business. */
   router.get("/api/agent", (req, res) => {
@@ -667,12 +667,33 @@ function limitVoice(req, kind) {
   );
 }
 
-function cookieValue(req) {
-  for (const part of String(req.headers.cookie ?? "").split(";")) {
-    const eq = part.indexOf("=");
-    if (eq !== -1 && part.slice(0, eq).trim() === auth.COOKIE_NAME) return part.slice(eq + 1).trim();
+/**
+ * Event streams (GET /api/events), tracked here so that a business holds at most
+ * SSE_PER_BUSINESS open streams (security review r2 #11) and logout can close the streams its
+ * session opened. src/events.js keeps serving each stream; this only admits and ends them.
+ */
+const SSE_PER_BUSINESS = 5;
+const openStreams = new Map(); // businessId -> Set<{ res, sessionId }>
+
+function limitedEventStream(req, res, next) {
+  const { businessId, sessionId } = req.auth;
+  const mine = openStreams.get(businessId) ?? new Set();
+  if (mine.size >= SSE_PER_BUSINESS) {
+    return next(new HttpError(429, "TOO_MANY_STREAMS", `At most ${SSE_PER_BUSINESS} Sahay tabs can follow this shop at once. Close one and reload.`, undefined, { retryAfterSeconds: 30 }));
   }
-  return null;
+  const entry = { res, sessionId };
+  mine.add(entry);
+  openStreams.set(businessId, mine);
+  res.on("close", () => {
+    mine.delete(entry);
+    if (mine.size === 0 && openStreams.get(businessId) === mine) openStreams.delete(businessId);
+  });
+  events.sseHandler(req, res);
+}
+
+/** End every open event stream a browser session opened (logout). */
+function closeSessionStreams(sessionId) {
+  for (const set of openStreams.values()) for (const { res, sessionId: owner } of set) if (owner === sessionId) res.destroy(); // a write racing the close is dropped, not an error
 }
 
 /**
@@ -707,5 +728,6 @@ function errorHandler(err, req, res, _next) {
 
 module.exports = {
   createApiRouter, createVendorRouter, createPayRouter, errorHandler, stopAllVoice, checkAgents, payLimited,
+  closeSessionStreams, SSE_PER_BUSINESS,
   voice, HttpError, RATE, RTC_SDK, VENDOR_PAGE, RENEW_KEY_HEADER, USER_UID, AGENT_UID, JOIN_RETRY_MS,
 };

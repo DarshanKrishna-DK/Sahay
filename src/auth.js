@@ -97,12 +97,24 @@ function bearerToken(req) {
   return match ? match[1] : null;
 }
 
+/**
+ * A browser session the server still honours: the signed token, not logged out, and (account) still
+ * linked to its business or (device) its business not yet claimed by an account
+ * (src/accounts/browser-sessions.js). Throws AuthError like verifySession.
+ */
+function verifyBrowserSession(token) {
+  const claims = verifySession(token, { scope: "browser" });
+  const refused = require("./accounts/browser-sessions").check(claims);
+  if (refused) throw new AuthError(refused, "This session has ended. Log in again.");
+  return claims;
+}
+
 /** Build middleware that sets `req.auth` from a verified token, or answers 401. */
-function guard(readToken, scope) {
+function guard(readToken, verify) {
   return (req, res, next) => {
     let auth;
     try {
-      auth = verifySession(readToken(req), { scope });
+      auth = verify(readToken(req));
     } catch (err) {
       if (!(err instanceof AuthError) || err.code === "NO_SECRET") return next(err);
       return res.status(401).json({ error: "unauthorized", code: err.code });
@@ -112,11 +124,11 @@ function guard(readToken, scope) {
   };
 }
 
-/** Browser routes: the HttpOnly session cookie. */
-const requireSession = guard(cookieToken, "browser");
+/** Browser routes: the HttpOnly session cookie, checked against the server's session state. */
+const requireSession = guard(cookieToken, verifyBrowserSession);
 
 /** The MCP endpoint: `Authorization: Bearer <token>` signed for one agent session. */
-const requireBearer = guard(bearerToken, "mcp");
+const requireBearer = guard(bearerToken, (token) => verifySession(token, { scope: "mcp" }));
 
 /** Set the browser session cookie. The token never reaches page scripts. */
 function setSessionCookie(req, res, token) {
@@ -138,7 +150,7 @@ function clearSessionCookie(res) {
 
 module.exports = {
   AuthError, COOKIE_NAME, cookieToken,
-  signSession, verifySession,
+  signSession, verifySession, verifyBrowserSession,
   requireSession, requireBearer,
   setSessionCookie, clearSessionCookie,
 };

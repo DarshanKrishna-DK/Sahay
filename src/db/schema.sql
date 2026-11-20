@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS passkeys (
 );
 CREATE INDEX IF NOT EXISTS passkeys_account ON passkeys(account_id);
 
+-- Browser sessions ended before their signed token expires (src/accounts/browser-sessions.js):
+-- the token carries its own expiry, so a row here refuses it early (logout). session_id is the
+-- token's sessionId; rows whose token has expired anyway (expires_at, Unix seconds) are pruned.
+CREATE TABLE IF NOT EXISTS revoked_sessions (
+  session_id   TEXT PRIMARY KEY,
+  business_id  TEXT NOT NULL,
+  reason       TEXT NOT NULL CHECK (reason IN ('logout')),
+  revoked_at   TEXT NOT NULL,
+  expires_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS revoked_sessions_expiry ON revoked_sessions(expires_at);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id          TEXT PRIMARY KEY,
   business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,

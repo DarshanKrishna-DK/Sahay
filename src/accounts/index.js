@@ -15,6 +15,7 @@ const pin = require("./pin");
 const lockout = require("./lockout");
 const store = require("./store");
 const passkeys = require("./passkeys");
+const sessions = require("./browser-sessions");
 
 /**
  * Create an account. With `claimBusinessId` (a device-session business nobody owns), the
@@ -117,5 +118,5 @@ function primaryBusiness(accountId) {
 module.exports = {
   AccountError, normalisePhone, maskPhone, isPin: pin.isPin,
   register, loginWithPin, primaryBusiness, deviceBusinessToClaim,
-  store, passkeys,
+  store, passkeys, sessions,
 };

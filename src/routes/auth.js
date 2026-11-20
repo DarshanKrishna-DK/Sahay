@@ -32,7 +32,7 @@ const repo = require("../db/repo");
 const events = require("../events");
 const accounts = require("../accounts");
 const { AccountError, store, passkeys } = accounts;
-const { HttpError, RATE } = require("./api");
+const { HttpError, RATE, closeSessionStreams } = require("./api");
 const { clientAddress, rateCheck } = require("../client-address");
 
 const LANGUAGES = ["hi-IN", "kn-IN", "en-IN"];
@@ -119,10 +119,13 @@ function accessCodeMatches(given) {
 
 const businessView = (b) => ({ id: b.id, name: b.name, city: b.city, state: b.state, language: b.language });
 
-/** Verified browser claims from the cookie, or null. A missing signing secret is a server error, not "signed out". */
+/**
+ * Claims of a browser session the server still honours (not logged out; see auth.verifyBrowserSession),
+ * or null. A missing signing secret is a server error, not "signed out".
+ */
 function cookieClaims(req) {
   try {
-    return auth.verifySession(auth.cookieToken(req), { scope: "browser" });
+    return auth.verifyBrowserSession(auth.cookieToken(req));
   } catch (err) {
     if (err?.code === "NO_SECRET") throw err;
     return null;
@@ -225,10 +228,15 @@ function createAuthRouter() {
     }),
   );
 
+  // Logout ends the session on the server too (security review r2 #5): any copy of this cookie is
+  // refused from now on, and the event streams it opened are closed.
   router.post("/api/auth/logout", (req, res) => {
     const who = signedIn(req);
+    const claims = cookieClaims(req);
+    if (claims) accounts.sessions.revoke(claims, "logout");
     auth.clearSessionCookie(res);
     if (who) events.emit(who.business.id, "account.signed_out", { accountId: who.account.id }, { actor: "owner" });
+    if (claims) closeSessionStreams(claims.sessionId);
     res.status(204).end();
   });
 

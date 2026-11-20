@@ -242,6 +242,84 @@ test("login with the right PIN answers {account, business} and a cookie; me read
   });
 });
 
+test("logout revokes the session on the server: the old token is 401 everywhere, a new login works", async () => {
+  await withApp(async (base) => {
+    const reg = await register(base);
+    const login = await call(base, "POST", "/api/auth/login", { body: { phone: reg.body.phone, pin: "4821" } });
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: login.cookie })).status, 200);
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: reg.cookie })).status, 200, "the register session is a separate session");
+
+    assert.equal((await call(base, "POST", "/api/auth/logout", { cookie: login.cookie })).status, 204);
+    const after = await call(base, "GET", "/api/agent", { cookie: login.cookie });
+    assert.equal(after.status, 401, "a copy of the logged-out cookie is refused");
+    assert.equal(after.json.code, "SESSION_REVOKED");
+    assert.equal((await call(base, "GET", "/api/sell", { cookie: login.cookie })).status, 401, "on every router behind requireSession");
+    assert.equal((await call(base, "GET", "/api/auth/me", { cookie: login.cookie })).status, 401);
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: reg.cookie })).status, 200, "other sessions of the account stay");
+    assert.equal(repo.listAudit(reg.json.business.id, { type: "account.signed_out" }).length, 1);
+
+    const again = await call(base, "POST", "/api/auth/login", { body: { phone: reg.body.phone, pin: "4821" } });
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: again.cookie })).status, 200);
+    assert.equal((await call(base, "POST", "/api/auth/logout")).status, 204, "logout without a cookie is harmless");
+  });
+});
+
+test("a business may hold at most five open event streams; logout closes the streams its session opened", async () => {
+  const { SSE_PER_BUSINESS } = require("../src/routes/api");
+  await withApp(async (base) => {
+    const reg = await register(base);
+    const controllers = [];
+    const open = async (cookie) => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      const res = await fetch(`${base}/api/events`, { headers: { Cookie: cookie, "CF-Connecting-IP": "198.51.100.7" }, signal: controller.signal });
+      return res;
+    };
+    try {
+      const streams = [];
+      for (let i = 0; i < SSE_PER_BUSINESS; i++) {
+        const res = await open(reg.cookie);
+        assert.equal(res.status, 200, `stream ${i + 1}`);
+        streams.push(res);
+      }
+      const extra = await open(reg.cookie);
+      assert.equal(extra.status, 429);
+      assert.equal((await extra.json()).code, "TOO_MANY_STREAMS");
+
+      assert.equal((await call(base, "POST", "/api/auth/logout", { cookie: reg.cookie })).status, 204);
+      const reader = streams[0].body.getReader();
+      let ended = false;
+      const deadline = Date.now() + 3000;
+      while (!ended && Date.now() < deadline) ended = await reader.read().then((r) => r.done, () => true);
+      assert.equal(ended, true, "the logged-out session's stream was ended by the server");
+      const again = await open(reg.cookie);
+      assert.equal(again.status, 401, "and cannot be reopened with the old cookie");
+    } finally {
+      for (const c of controllers) c.abort();
+    }
+  });
+});
+
+test("claiming a device business ends every old device token for it; an account unlinked from its business loses the session", async () => {
+  await withApp(async (base) => {
+    const device = await call(base, "POST", "/api/session", { body: { name: "Old Device Shop", city: "Mysuru", language: "kn-IN", accessCode: CODE }, ip: freshIp() });
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: device.cookie })).status, 200);
+    const out = await register(base, { name: "Old Device Shop", language: "kn-IN", accessCode: undefined }, { cookie: device.cookie });
+    assert.equal(out.status, 201);
+    const old = await call(base, "GET", "/api/agent", { cookie: device.cookie });
+    assert.equal(old.status, 401, "the device cookie (on this or any other browser) no longer opens the claimed business");
+    assert.equal(old.json.code, "DEVICE_SESSION_CLAIMED");
+    const reopened = await call(base, "POST", "/api/session", { cookie: device.cookie, body: {} });
+    assert.equal(reopened.status, 400, "POST /api/session does not treat the dead device cookie as signed in");
+    assert.equal((await call(base, "GET", "/api/agent", { cookie: out.cookie })).status, 200, "the account's own session works");
+
+    require("../src/db").prepare("DELETE FROM account_businesses WHERE account_id = ?").run(out.json.account.id);
+    const unlinked = await call(base, "GET", "/api/agent", { cookie: out.cookie });
+    assert.equal(unlinked.status, 401);
+    assert.equal(unlinked.json.code, "ACCOUNT_NOT_LINKED");
+  });
+});
+
 test("GET /api/auth/me is 401 NOT_SIGNED_IN without a cookie, with a device-only cookie, or with a forged account", async () => {
   await withApp(async (base) => {
     const none = await call(base, "GET", "/api/auth/me");
