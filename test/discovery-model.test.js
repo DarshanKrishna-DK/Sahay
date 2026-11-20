@@ -105,3 +105,49 @@ test("the board's files never ship sample data", () => {
     assert.doesNotMatch(src, /lorem|sample row|Ravi Traders|Gupta Store|Maharaja Wholesalers|Shreeji Agency/i, f);
   }
 });
+
+test("GET /api/discovery: sellers with source, rating count and real links; live offers by round; the pending deal leads", async () => {
+  const { fromDiscovery } = await load();
+  const payload = {
+    requirement: { id: "r1", item: "Basmati rice", quantity: 200, unit: "kg", city: "Bengaluru", maxPrice: 90 },
+    search: { status: "done", count: 3 },
+    sellers: [
+      { rank: 1, vendorId: "v1", name: "Paras Traders", city: "Delhi", source: "indiamart", sourceLabel: "IndiaMART", simulated: false, listedPriceText: "Rs 58/Kg", listedUnit: "Kg", comparablePrice: 58, priceUnit: "kg", rating: 4.3, ratingCount: 120, sourceUrl: "https://www.indiamart.com/p/1" },
+      { rank: 2, vendorId: "v2", name: "Own Kirana Supplier", source: "own_supplier", simulated: false, sourceUrl: "https://t.me/x" },
+      { rank: null, vendorId: "v3", name: "Sim Foods", source: "simulated", simulated: true, avoided: true },
+    ],
+    negotiations: [{ negotiationId: "n1", vendorId: "v1", vendorName: "Paras Traders", simulated: false, running: true, createdAt: "2",
+      offers: [{ speaker: "vendor", price: 62, unit: "kg", round: 1 }, { speaker: "sahay", price: 52, unit: "kg", round: 1 }, { speaker: "vendor", price: 58, unit: "kg", round: 2 }],
+      agreed: null, agreedPrice: null }],
+    deals: [{ quoteId: "q1", vendorId: "v1", vendorName: "Paras Traders", unitPrice: 58, unit: "kg", quantity: 200, landedCost: 11800 }],
+    bestQuote: { quoteId: "q1", vendorId: "v1", vendorName: "Paras Traders", unitPrice: 58, unit: "kg", quantity: 200, landedCost: 11800 },
+    pendingApproval: { approvalId: "a1", quoteId: "q1", totalAmount: 11900, readback: "read back" },
+  };
+  const b = fromDiscovery(payload);
+  assert.equal(b.need.item, "Basmati rice");
+  assert.deepEqual(b.sellers.map((s) => [s.id, s.source, s.url, s.ratingCount, s.avoided]), [
+    ["v1", "indiamart", "https://www.indiamart.com/p/1", 120, false],
+    ["v2", "supplier", null, null, false],
+    ["v3", "simulated", null, null, true],
+  ]);
+  assert.equal(b.sellers[0].live, true);
+  assert.deepEqual(b.bargain.rounds.map((r) => [r.round, r.ask, r.counter]), [[1, 62, 52], [2, 58, null]]);
+  assert.equal(b.bargain.best, 58);
+  assert.equal(b.bargain.noDeal, false);
+  assert.equal(b.deal.approvalId, "a1");
+  assert.equal(b.deal.total, 11900, "the approval's own total");
+  delete payload.pendingApproval;
+  const q = fromDiscovery(payload);
+  assert.equal(q.deal.approvalId, null, "no pending approval: nothing to say yes to, only the best quote");
+  assert.equal(q.deal.total, 11800);
+  assert.deepEqual(fromDiscovery({ requirement: null }).sellers, []);
+  assert.equal(fromDiscovery({ requirement: { id: "r" }, search: { status: "running" } }).searching, true);
+  assert.equal(fromDiscovery({ requirement: { id: "r" }, search: { status: "failed", error: "IndiaMART did not answer" } }).searchError, "IndiaMART did not answer");
+});
+
+test("a refused seller pick shows the server's own words", async () => {
+  const { refusalWords } = await load();
+  assert.equal(refusalWords({ code: "NO_LISTED_PRICE", message: "No price listed.", say: "Paras Traders has no price listed; try Sim Foods." }), "Paras Traders has no price listed; try Sim Foods.");
+  assert.equal(refusalWords({ code: "BUSY", message: "Sahay is already bargaining." }), "Sahay is already bargaining.");
+  assert.equal(refusalWords(null), null);
+});

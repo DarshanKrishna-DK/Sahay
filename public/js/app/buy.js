@@ -73,7 +73,9 @@ export function createBuy() {
     const lad = m ? ladderRows(m.negotiation) : null;
     const deal = req ? bestDeal({ quotes: state.quotes, approvals: state.approvals, negotiation: m.negotiation, agreed: lad.agreed, unit: lad.unit }, req) : null;
     const onBoard = deal && deal.approvalId ? `approval:${deal.approvalId}` : null;
-    const rows = needs.filter((r) => r.kind === "buy" && r.key !== onBoard);
+    // Only a deal still waiting ("pending") is offered: an expired one comes back closed (rejected, closedBy system).
+    const pendingKey = (k) => { const m2 = /^approval:(.+)$/.exec(String(k || "")); const ap = m2 ? state.approvals.get(m2[1]) : null; return Boolean(ap && ap.status === "pending"); };
+    const rows = needs.filter((r) => r.kind === "buy" && r.key !== onBoard && pendingKey(r.key));
     patch(needsBox, JSON.stringify([langKey(), rows.map((r) => [r.key, r.phase, r.line, r.amountText, r.meta, r.simulated])]), () => (rows.length
       ? card({ title: t("b5.needsYou"), needs: true, cls: "b5-needs",
         body: list(rows.map((r) => ({

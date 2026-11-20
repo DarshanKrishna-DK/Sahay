@@ -130,3 +130,107 @@ export function boardPhase({ req, sellers = [], rounds = [], deal = null, search
   if (sellers.length) return "sellers";
   return searching ? "searching" : "sellers";
 }
+
+/* ------------------------------------------------- GET /api/discovery -- */
+
+const SOURCES = { indiamart: "indiamart", own_supplier: "supplier", simulated: "simulated", human: "vendor" };
+const RUNNING_JOB = new Set(["running", "queued"]);
+
+/**
+ * The board's view of one GET /api/discovery answer (src/procurement/board.js), in the shapes the
+ * board draws: { need, sellers, bargain, deal, searching, searchError }.
+ *   sellers  [{ id, name, city, price, unit, priceText, rating, ratingCount, source, url, rank, avoided, bargaining, live }]
+ *   bargain  { negotiationId, vendorId, vendorName, simulated, running, rounds, agreed, best, noDeal, unit } | null
+ *   deal     { vendorId, vendorName, simulated, unitPrice, unit, quantity, total, approvalId, quoteId } | null
+ * Only a "pending" approval is ever offered for a yes (the server sends pendingApproval only for
+ * one; an expired approval comes back closed and is never offered).
+ */
+export function fromDiscovery(d) {
+  const empty = { need: null, sellers: [], bargain: null, deal: null, searching: false, searchError: null };
+  if (!d || typeof d !== "object" || !d.requirement) return empty;
+  const r = d.requirement;
+  const need = needCard({ id: r.id, item: r.item, quantity: r.quantity, unit: r.unit, city: r.city, maxPrice: r.maxPrice, deliveryBy: r.deliveryBy });
+  const negos = Array.isArray(d.negotiations) ? d.negotiations : [];
+  const sellers = (Array.isArray(d.sellers) ? d.sellers : []).map((s) => {
+    const source = SOURCES[s.source] || (s.simulated ? "simulated" : "indiamart");
+    const mine = negos.filter((n) => same(n.vendorId, s.vendorId));
+    const comparable = isNum(s.comparablePrice);
+    return {
+      id: String(s.vendorId),
+      name: s.name || "",
+      city: s.city || null,
+      price: comparable ? s.comparablePrice : isNum(s.listedPrice) ? s.listedPrice : null,
+      unit: comparable ? s.priceUnit || null : s.listedUnit || null,
+      priceText: typeof s.listedPriceText === "string" && s.listedPriceText.trim() ? s.listedPriceText.trim() : null,
+      rating: isNum(s.rating) ? s.rating : null,
+      ratingCount: isNum(s.ratingCount) ? s.ratingCount : null,
+      source,
+      url: source === "indiamart" ? listingUrl(s.sourceUrl) : null,
+      rank: isNum(s.rank) ? s.rank : null,
+      avoided: Boolean(s.avoided),
+      bargaining: mine.length > 0,
+      live: mine.some((n) => n.running),
+    };
+  });
+
+  const byNewest = negos.slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const n = byNewest.find((x) => x.running) || byNewest[0] || null;
+  let bargain = null;
+  if (n) {
+    const rounds = new Map();
+    let k = 0;
+    const offers = Array.isArray(n.offers) ? n.offers : [];
+    for (const o of offers) {
+      if (!isNum(o.price)) continue;
+      const key = isNum(o.round) ? o.round : `x${++k}`;
+      if (!rounds.has(key)) rounds.set(key, { round: isNum(o.round) ? o.round : rounds.size + 1, ask: null, counter: null, askText: "", counterText: "" });
+      const row = rounds.get(key);
+      if (o.speaker === "vendor") { if (row.ask === null) { row.ask = o.price; row.askText = o.text || ""; } }
+      else if (row.counter === null) { row.counter = o.price; row.counterText = o.text || ""; }
+    }
+    const list = [...rounds.values()].sort((a, b) => a.round - b.round);
+    const asks = list.map((x) => x.ask).filter(isNum);
+    const unit = (offers.find((o) => o.unit) || {}).unit || "";
+    bargain = {
+      negotiationId: n.negotiationId, vendorId: n.vendorId, vendorName: n.vendorName || null, simulated: Boolean(n.simulated),
+      running: Boolean(n.running), rounds: list,
+      agreed: isNum(n.agreedPrice) ? n.agreedPrice : null,
+      best: asks.length ? Math.min(...asks) : null,
+      noDeal: !n.running && n.agreed === false,
+      unit,
+    };
+  }
+
+  const deals = Array.isArray(d.deals) ? d.deals : [];
+  const p = d.pendingApproval;
+  let deal = null;
+  if (p && p.approvalId) {
+    const q = deals.find((x) => same(x.quoteId, p.quoteId)) || {};
+    deal = { vendorId: q.vendorId ?? null, vendorName: q.vendorName || null, simulated: Boolean(q.simulated || p.simulated),
+      unitPrice: isNum(q.unitPrice) ? q.unitPrice : null, unit: q.unit || null, quantity: isNum(q.quantity) ? q.quantity : need.quantity,
+      total: isNum(p.totalAmount) ? p.totalAmount : isNum(q.landedCost) ? q.landedCost : null, approvalId: String(p.approvalId), quoteId: p.quoteId ?? null };
+  } else if (d.bestQuote) {
+    const q = d.bestQuote;
+    deal = { vendorId: q.vendorId ?? null, vendorName: q.vendorName || null, simulated: Boolean(q.simulated),
+      unitPrice: isNum(q.unitPrice) ? q.unitPrice : null, unit: q.unit || null, quantity: isNum(q.quantity) ? q.quantity : need.quantity,
+      total: isNum(q.landedCost) ? q.landedCost : null, approvalId: null, quoteId: q.quoteId ?? null };
+  } else if (bargain && bargain.agreed !== null) {
+    deal = { vendorId: bargain.vendorId, vendorName: bargain.vendorName, simulated: bargain.simulated, unitPrice: bargain.agreed, unit: bargain.unit || null,
+      quantity: need.quantity, total: null, approvalId: null, quoteId: null };
+  }
+
+  const search = d.search || null;
+  return {
+    need, sellers, bargain, deal,
+    searching: Boolean(search && RUNNING_JOB.has(search.status)),
+    searchError: search && search.status === "failed" && search.error ? String(search.error) : null,
+  };
+}
+
+/** The words for a refused "Bargain with this seller": the server's own (say, else message). */
+export function refusalWords(err) {
+  if (!err) return null;
+  if (typeof err.say === "string" && err.say.trim()) return err.say.trim();
+  if (typeof err.message === "string" && err.message.trim()) return err.message.trim();
+  return null;
+}
