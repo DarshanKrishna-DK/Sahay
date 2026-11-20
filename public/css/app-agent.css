@@ -1,0 +1,504 @@
+/* Sahay home (#/sahay), the composer and the call dock. Owner: W2 (talk.js, orb.js, hud.js,
+   composer.js, call-dock.js). Tokens: tokens-v3.css; primitives (keycap, chip, card, glass, pill,
+   icon-btn, spinner, error-line) from components-v3.css. Class prefix: sh-.
+   One bold moment: the lime orb in its piano-black well. Everything around it stays quiet.
+   Size classes (README-v3): phone <= 599, phoneLand (h <= 500, w >= 568, landscape),
+   tablet 600-1023, laptop 1024-1599, wide >= 1600. */
+
+/* ================================================================ layout -- */
+
+.sh-home {
+  --orb: 136px;
+  --convo-max: clamp(132px, 30dvh, 340px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "top" "talk" "stage" "composer";
+  align-content: end;
+  gap: var(--s-4);
+  width: 100%;
+  max-width: 640px;
+  margin-inline: auto;
+  padding-block: var(--s-3) var(--s-4);
+  /* The orb sits in the bottom half on a phone: fill the space between capsule and dock. */
+  min-height: calc(100dvh - var(--capsule-h) - var(--dock-h) - var(--dock-lift) - var(--dock-gap) * 2 - var(--safe-t) - var(--safe-b) - 56px);
+}
+.sh-top { grid-area: top; min-width: 0; }
+.sh-talk { grid-area: talk; min-width: 0; }
+.sh-stage { grid-area: stage; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--s-3); }
+.sh-composer { grid-area: composer; }
+
+/* Phone and tablet portrait order: now line, orb, label, notes, controls (thumb zone). */
+.sh-hud { order: 1; }
+.sh-orb-wrap { order: 2; }
+.sh-orb-label { order: 3; }
+.sh-hint { order: 4; }
+.sh-notes { order: 5; }
+.sh-strip { order: 6; }
+
+@media (min-width: 600px) {
+  .sh-home { --orb: 180px; --convo-max: clamp(160px, 34dvh, 420px); min-height: calc(100dvh - 120px); }
+}
+
+/* Laptop: orb + label + now line + controls on the left half, conversation + composer on the
+   right half, Today tiles under both. */
+@media (min-width: 1024px) {
+  .sh-home {
+    --orb: 240px;
+    --convo-max: calc(100dvh - 260px);
+    max-width: var(--content-max);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "stage talk" "stage composer" "top top";
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    align-content: stretch;
+    column-gap: var(--s-6);
+    min-height: calc(100dvh - 96px);
+  }
+  .sh-stage { justify-content: center; position: sticky; top: var(--s-5); align-self: start; padding-block: var(--s-5); }
+  .sh-orb-wrap { order: 1; }
+  .sh-orb-label { order: 2; }
+  .sh-hud { order: 3; }
+  .sh-talk { display: flex; flex-direction: column; justify-content: flex-end; }
+}
+@media (min-width: 1600px) { .sh-home { --orb: 280px; } }
+
+/* Phone landscape: orb + controls left (40 %), conversation right. */
+@media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
+  .sh-home {
+    --orb: 112px;
+    --convo-max: calc(100dvh - 120px);
+    max-width: none;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-areas: "stage talk" "stage composer" "top top";
+    align-content: start;
+    min-height: 0;
+  }
+  .sh-stage { gap: var(--s-2); }
+  .sh-orb-wrap { order: 1; }
+  .sh-orb-label { order: 2; }
+  .sh-hud { order: 3; }
+}
+
+/* ================================================================== orb -- */
+
+.sh-orb-wrap { display: grid; place-items: center; padding: 14px; }
+.sh-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--orb);
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--lime);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-micro) var(--ease-out);
+}
+.sh-orb[aria-disabled="true"] { cursor: default; }
+.sh-orb > span { position: absolute; border-radius: 50%; pointer-events: none; }
+.sh-orb:focus-visible { outline: none; }
+.sh-orb:focus-visible .sh-orb-well { box-shadow: var(--focus-ring), inset 0 2px 1px rgba(255, 255, 255, .16), inset 0 -12px 28px rgba(0, 0, 0, .7); }
+.sh-orb:not([aria-disabled="true"]):active { transform: scale(.97); }
+.sh-orb:not([aria-disabled="true"]):active .sh-orb-well { box-shadow: var(--press); }
+
+/* The well: polished piano black, specular bloom top-left, a hard lip under it. */
+.sh-orb-well {
+  inset: 0;
+  background:
+    radial-gradient(58% 44% at 34% 20%, rgba(255, 255, 255, .15), transparent 62%),
+    radial-gradient(circle at 50% 60%, var(--piano-2) 0%, var(--piano-1) 52%, var(--piano-0) 78%);
+  box-shadow:
+    inset 0 2px 1px rgba(255, 255, 255, .16),
+    inset 0 -12px 28px rgba(0, 0, 0, .7),
+    0 0 0 1px var(--hairline),
+    var(--shadow-3);
+}
+.sh-orb-core { inset: 19%; display: grid; place-items: center; transition: opacity var(--t-med) var(--ease-out); }
+.sh-orb-core .torb { display: block; }
+
+/* The rim: one ring that tells the state with its pattern (plus the words under the orb). */
+.sh-orb-ring {
+  inset: -7px;
+  border: 2px solid rgba(var(--hex-rgb), .35);
+  transition: border-color var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
+}
+/* The live voice level: a soft lime halo that swells with the speaker's voice. */
+.sh-orb-level {
+  inset: -16px;
+  background: radial-gradient(circle, transparent 60%, rgba(var(--hex-rgb), .26) 66%, transparent 74%);
+  opacity: calc(.15 + var(--level, 0) * .85);
+  transform: scale(calc(1 + var(--level, 0) * .12));
+  transition: transform 90ms linear, opacity 90ms linear;
+}
+.sh-orb[data-visual="idle"] .sh-orb-level,
+.sh-orb[data-visual="error"] .sh-orb-level,
+.sh-orb[data-visual="connecting"] .sh-orb-level { opacity: 0; }
+
+.sh-orb[data-visual="listening"] .sh-orb-ring,
+.sh-orb[data-visual="speaking"] .sh-orb-ring { border-color: var(--lime); box-shadow: var(--glow-lime); }
+.sh-orb[data-visual="connecting"] .sh-orb-ring { border-style: dashed; border-color: rgba(var(--hex-rgb), .7); animation: sh-spin 6s linear infinite; }
+.sh-orb[data-visual="thinking"] .sh-orb-ring { border-color: rgba(var(--hex-rgb), .22); border-top-color: var(--lime); border-right-color: var(--lime); animation: sh-spin 1.4s linear infinite; }
+.sh-orb[data-visual="working"] .sh-orb-ring { border-style: dotted; border-color: var(--lime); animation: sh-spin 12s linear infinite; }
+.sh-orb[data-visual="error"] .sh-orb-ring { border-color: var(--coral); }
+.sh-orb[data-visual="error"] .sh-orb-core { opacity: .38; }
+.sh-orb[data-state="safer"] .sh-orb-ring,
+.sh-orb[data-state="mic"] .sh-orb-ring,
+.sh-orb[data-state="reconnecting"] .sh-orb-ring,
+.sh-orb[data-state="muted"] .sh-orb-ring { border-color: var(--amber); box-shadow: none; }
+.sh-orb[data-state="muted"] .sh-orb-core { opacity: .55; }
+.sh-orb[data-state="ended"] .sh-orb-ring { border-color: var(--edge); }
+/* First visit: the orb invites a tap with one slow breath of its halo. */
+.sh-orb[data-state="first"] .sh-orb-level { opacity: 1; animation: sh-breathe 2.8s var(--ease-soft) infinite; }
+
+/* Light theme: the well is porcelain, so its inner shade is olive, not black. */
+:root[data-theme="light"] .sh-orb-well {
+  box-shadow: inset 0 2px 1px rgba(255, 255, 255, .9), inset 0 -12px 26px rgba(30, 40, 15, .14), 0 0 0 1px var(--hairline), var(--shadow-3);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .sh-orb-well {
+    box-shadow: inset 0 2px 1px rgba(255, 255, 255, .9), inset 0 -12px 26px rgba(30, 40, 15, .14), 0 0 0 1px var(--hairline), var(--shadow-3);
+  }
+}
+
+/* State badge: icon on a small piano disc at the orb's lower right (never colour alone). */
+.sh-orb-badge {
+  right: 2%;
+  bottom: 2%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  background: var(--piano-surface);
+  box-shadow: var(--depth-soft), 0 0 0 2px currentColor;
+  color: var(--amber-text);
+}
+.sh-orb-badge[hidden] { display: none; }
+.sh-orb[data-visual="error"] .sh-orb-badge { color: var(--coral-text); }
+
+.sh-orb-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 18px;
+  border-radius: var(--r-pill);
+  background: var(--piano-surface);
+  box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  line-height: var(--lh-tight);
+  color: var(--text-hi);
+  text-align: center;
+}
+.sh-orb-label svg { flex: none; color: var(--text-lo); }
+.sh-orb-label[data-tone="live"] svg { color: var(--accent-text); }
+.sh-orb-label[data-tone="warn"] svg { color: var(--amber-text); }
+.sh-orb-label[data-tone="bad"] { color: var(--coral-text); }
+.sh-orb-label[data-tone="bad"] svg { color: var(--coral-text); }
+.sh-orb-label :lang(hi), .sh-orb-label :lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-body); }
+
+.sh-hint { margin: 0; max-width: 34ch; text-align: center; color: var(--text-md); font-size: var(--fs-body); }
+.sh-hint[hidden] { display: none; }
+
+/* ============================================================ call strip -- */
+
+.sh-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-3);
+  width: 100%;
+  max-width: 460px;
+}
+.sh-strip:empty { display: none; }
+.sh-ctl { flex: 1 1 0; min-width: 0; max-width: 168px; min-height: var(--touch); padding-inline: 14px; gap: 8px; }
+.sh-ctl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-strip[data-count="1"] .sh-ctl { max-width: 240px; }
+.sh-ctl-primary { flex-grow: 1.4; }
+.sh-ctl-mute.is-off { color: var(--amber-text); }
+@media (max-width: 359px) {
+  .sh-strip { gap: var(--s-2); }
+  .sh-ctl span { font-size: var(--fs-sm); }
+}
+
+/* ============================================================= notes (F8) -- */
+
+.sh-notes { display: grid; gap: var(--s-2); width: 100%; max-width: 520px; }
+.sh-notes[hidden] { display: none; }
+.sh-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s-1) var(--s-3);
+  padding: var(--s-3) var(--s-4);
+}
+.sh-note-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--piano-3); color: var(--text-md); }
+.sh-note[data-tone="bad"] .sh-note-icon { color: var(--coral-text); }
+.sh-note[data-tone="warn"] .sh-note-icon { color: var(--amber-text); }
+.sh-note[data-tone="calm"] .sh-note-icon { color: var(--ok-text); }
+.sh-note[data-tone="info"] .sh-note-icon { color: var(--cyan-text); }
+.sh-note-body { min-width: 0; }
+.sh-note-title { margin: 6px 0 0; font-weight: var(--fw-strong); font-size: var(--fs-body); color: var(--text-hi); }
+.sh-note-text { margin: var(--s-1) 0 0; font-size: var(--fs-sm); color: var(--text-md); line-height: var(--lh-body); }
+.sh-note-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+
+/* ================================================================== HUD -- */
+
+.sh-hud { display: grid; justify-items: center; gap: var(--s-2); width: 100%; }
+.sh-now { display: flex; align-items: center; justify-content: center; gap: var(--s-2); max-width: 100%; }
+.sh-now-line { display: flex; align-items: center; gap: var(--s-2); margin: 0; min-width: 0; font-size: var(--fs-body); color: var(--text-hi); }
+.sh-now-text { overflow-wrap: anywhere; }
+.sh-now-mark { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--text-lo); }
+.sh-now-line[data-tone="busy"] .sh-now-mark { background: var(--lime); box-shadow: var(--glow-lime); animation: sh-blink 1.6s ease-in-out infinite; }
+.sh-now-line[data-tone="needs"] .sh-now-mark { background: var(--coral); }
+.sh-now-line[data-tone="done"] .sh-now-mark { background: var(--ok); }
+.sh-now-line[data-tone="bad"] .sh-now-mark { background: var(--coral); }
+.sh-now-line[data-tone="needs"] .sh-now-text { color: var(--coral-text); font-weight: var(--fw-strong); }
+
+/* Trackers: Gather-style corner brackets around each real number (no box, no fill). */
+.sh-trackers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-2) var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sh-trackers[hidden] { display: none; }
+.sh-tracker {
+  --c: rgba(var(--hex-rgb), .75);
+  --b: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-family: var(--font-num);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-hi);
+  background:
+    linear-gradient(var(--c), var(--c)) top left / var(--b) 1.5px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 1.5px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / var(--b) 1.5px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 1.5px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / var(--b) 1.5px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 1.5px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / var(--b) 1.5px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 1.5px var(--b) no-repeat,
+    rgba(var(--hex-rgb), .05);
+}
+.sh-tracker svg { flex: none; color: var(--accent-text); }
+.sh-tracker[data-tone="needs"] { --c: var(--coral); }
+.sh-tracker[data-tone="needs"] svg { color: var(--coral-text); }
+.sh-tracker[data-tone="warn"] { --c: var(--amber); }
+.sh-tracker[data-tone="warn"] svg { color: var(--amber-text); }
+.sh-tracker[data-tone="calm"] { --c: rgba(var(--hex-rgb), .45); }
+.sh-tracker.is-new { animation: sh-flash 900ms var(--ease-out) 1; }
+.sh-sim { margin-left: 2px; }
+
+/* ========================================================== conversation -- */
+
+.sh-convo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: 0;
+  padding: var(--s-2) 2px var(--s-2);
+  list-style: none;
+  max-height: var(--convo-max);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+}
+.sh-bubble {
+  display: grid;
+  gap: 4px;
+  max-width: min(88%, 520px);
+  padding: 10px 16px 12px;
+  border-radius: 20px;
+  background: var(--piano-surface);
+  box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline);
+}
+.sh-bubble.is-agent { align-self: flex-start; border-bottom-left-radius: 6px; }
+.sh-bubble.is-owner {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: rgba(var(--hex-rgb), .1);
+  box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .32);
+}
+.sh-bubble-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-lo); }
+.sh-who-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--lime); box-shadow: var(--glow-lime); }
+.sh-bubble-text { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--text-hi); overflow-wrap: anywhere; }
+.sh-bubble-text:lang(hi), .sh-bubble-text:lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-indic); }
+/* The disclosure leads every conversation and carries the automated-assistant notice. */
+.sh-bubble.is-pinned { max-width: 100%; align-self: stretch; box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline), inset 0 2px 0 rgba(var(--hex-rgb), .45); }
+.sh-bubble-notice { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--accent-text); }
+.sh-bubble.is-live { box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .5); background: transparent; }
+.sh-bubble.is-live .sh-bubble-text { color: var(--text-md); }
+.sh-bubble-flag { justify-self: start; font-size: var(--fs-sm); color: var(--amber-text); }
+.sh-bubble-flag.is-hearing { color: var(--accent-text); }
+.sh-bubble-flag.is-hearing::after { content: "…"; display: inline-block; animation: sh-blink 1.2s steps(2) infinite; }
+.sh-earlier { align-self: center; }
+
+/* =========================================================== first visit -- */
+
+.sh-top[hidden] { display: none; }
+.sh-try-title { margin: 0 0 var(--s-2); text-align: center; color: var(--text-md); font-size: var(--fs-body); }
+.sh-try-list { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.sh-try { max-width: 100%; }
+.sh-try span { white-space: normal; text-align: start; }
+.sh-try[data-state="playing"] { box-shadow: 0 0 0 2px var(--lime); }
+
+/* ============================================================ Today tiles -- */
+
+.sh-today-title { margin: 0 0 var(--s-2); font-size: var(--fs-h3); font-family: var(--font-display); color: var(--text-hi); }
+.sh-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 1024px) { .sh-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sh-tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+  min-height: 96px;
+  padding: var(--s-3) var(--s-4);
+  color: var(--text-hi);
+  text-decoration: none;
+}
+.sh-tile svg { color: var(--accent-text); }
+.sh-tile-skel { display: block; min-height: 96px; border-radius: var(--r-card); }
+.sh-tiles-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-3); }
+.sh-tile-word { font-size: var(--fs-sm); color: var(--text-md); }
+.sh-tile-num { grid-column: 1 / -1; font-family: var(--font-num); font-size: var(--fs-amount); font-weight: var(--fw-display); font-variant-numeric: tabular-nums; line-height: 1.1; }
+
+/* ============================================================== composer -- */
+
+.sh-composer {
+  display: grid;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-3);
+}
+.sh-composer[hidden] { display: none; }
+.sh-composer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.sh-composer-hint { margin: 0; font-size: var(--fs-sm); color: var(--text-md); }
+.sh-composer-hint[hidden] { display: none; }
+.sh-composer-close { margin-left: auto; }
+.sh-composer-row { display: flex; align-items: flex-end; gap: var(--s-2); }
+.sh-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--touch);
+  max-height: 160px;
+  padding: 14px 18px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  background: var(--piano-1);
+  color: var(--text-hi);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  resize: none;
+}
+.sh-composer-input:focus-visible { outline: none; border-color: var(--edge-accent); box-shadow: var(--focus-ring); }
+.sh-composer-input:disabled { opacity: .7; }
+.sh-send { flex: none; width: var(--touch); padding: 0; border-radius: 50%; }
+.sh-composer-note:empty { display: none; }
+.sh-composer-note { display: grid; gap: var(--s-2); }
+.sh-composer[data-state="failed"] .sh-composer-input { border-color: var(--coral); }
+
+/* Phone: the composer rides on top of the keyboard while it is open (the dock hides). */
+@media (max-width: 599px) {
+  .sh-composer[data-kb="open"] {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--kb, 0px) + 8px);
+    z-index: var(--z-calldock);
+    width: auto;
+    background: var(--glass-fill-strong);
+    box-shadow: var(--shadow-float), 0 0 0 1px var(--edge);
+  }
+  .sh-home[data-composer="open"] .sh-top { display: none; }
+}
+
+/* ============================================================== call dock -- */
+
+.sh-calldock {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 64px;
+  padding: 6px 8px 6px 6px;
+  border-radius: var(--r-pill);
+  color: var(--text-hi);
+}
+.sh-calldock[hidden] { display: none; }
+/* Without the shell's slot: float above the phone dock, or bottom-right on larger screens. */
+.sh-calldock:not(.is-slotted) {
+  position: fixed;
+  z-index: var(--z-calldock);
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--dock-h) + var(--dock-lift) + var(--dock-gap) * 2 + var(--safe-b));
+}
+@media (min-width: 600px) {
+  .sh-calldock:not(.is-slotted) { left: auto; right: calc(16px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); max-width: 420px; }
+}
+.sh-dock-go {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  min-height: var(--touch-min);
+  padding: 0 var(--s-2) 0 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.sh-dock-go:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sh-dock-line { min-width: 0; overflow: hidden; }
+.sh-dock-words { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: var(--fw-strong); }
+.sh-calldock[data-tone="bad"] .sh-dock-words { color: var(--coral-text); }
+.sh-calldock[data-tone="warn"] .sh-dock-words { color: var(--amber-text); }
+.sh-dock-actions { display: flex; flex: none; align-items: center; gap: var(--s-2); }
+.sh-dock-mute[aria-pressed="true"] { color: var(--amber-text); }
+
+.sh-mini-orb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, var(--piano-2), var(--piano-0) 80%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 0 2px rgba(var(--hex-rgb), .45);
+}
+.sh-mini-orb[data-visual="listening"], .sh-mini-orb[data-visual="speaking"] { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 0 2px var(--lime), var(--glow-lime); }
+.sh-mini-orb[data-visual="error"] { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 0 2px var(--coral); }
+.sh-mini-orb[data-visual="error"] .torb { opacity: .4; }
+
+/* ================================================================ motion -- */
+
+@keyframes sh-spin { to { transform: rotate(360deg); } }
+@keyframes sh-breathe { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.08); opacity: 1; } }
+@keyframes sh-blink { 50% { opacity: .35; } }
+@keyframes sh-flash { from { background-color: rgba(var(--hex-rgb), .28); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-orb, .sh-orb-level, .sh-orb-ring, .sh-orb-core { transition: none; }
+  .sh-orb-ring, .sh-orb-level, .sh-now-mark, .sh-bubble-flag.is-hearing::after, .sh-tracker.is-new { animation: none !important; }
+  .sh-orb-level { transform: none; }
+  /* Thinking still reads without motion: a half-lit rim plus the word under the orb. */
+}

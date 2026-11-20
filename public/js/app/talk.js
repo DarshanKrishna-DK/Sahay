@@ -1,213 +1,321 @@
-// Talk (home): the agent orb, one line of what Sahay is doing now (read-aloud), the disclosure as the
-// first bubble, the latest three turns, and a Call / Type toggle. Voice and typed text are the
-// same agent session and transcript (VoiceCall start({ mode }) / sendText).
+// Sahay home (#/sahay; #/talk and the empty route are aliases): talking is the main act, so the
+// home is the lime orb, the call strip under it (Talk / Type / Mute / End, End its own red control),
+// the "now doing" HUD, the conversation with the disclosure pinned first, typing during a live
+// call without muting the mic (D16), and the honest recovery states (F8: safer route, network
+// blocked, call dropped, call ended, offline, a call open elsewhere, blocked audio). First visit
+// shows three "try saying" chips (instructions, never records); an idle home with no conversation
+// shows Today tiles with real numbers only. Voice and typed text are one session (call.js).
+// Logic lives in home-model.js (tested without a DOM); this file only draws it.
 
 import { h, icon, fill, patch, scripted } from "./dom.js";
-import { t } from "./i18n.js";
-import { state } from "./store.js";
-import { call, inCall, startCall, endCall, setMuted, setMode, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
+import { t, lang } from "./i18n.js";
+import "./home-strings.js";
+import { state, pendingApprovals } from "./store.js";
+import { sell, stock, pendingInvoices, loadSell, loadStock } from "./store-sell.js";
+import { call, inCall, startCall, endCall, setMuted, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { createOrb } from "./orb.js";
-import { nowLine, runningJobs, agentState } from "./activity.js";
-import { speakButton } from "./speak.js";
+import { runningJobs, agentState } from "./activity.js";
+import { createHud, setWaitingCount } from "./hud.js";
+import { createComposer } from "./composer.js";
+import { mountCallDock, onHome } from "./call-dock.js";
+import { orbView, callStrip, recoveryNotes, conversationView, isFirstVisit, todayTiles, inr, grouped } from "./home-model.js";
 
-const YES_WORDS = /^\s*(yes|yeah|ok|okay|haan|han|ha|हाँ|हां|जी हाँ|ठीक है|ಹೌದು|ಸರಿ)\s*[.!]?\s*$/i;
+// The stylesheet for this screen (until the shell links it from app.html).
+if (!document.querySelector('link[href="/css/app-agent.css"]')) {
+  document.head.append(h("link", { rel: "stylesheet", href: "/css/app-agent.css" }));
+}
 
-export function createTalk() {
-  const el = h("section", { class: "talk", "aria-labelledby": "talk-title" });
-  const title = h("h1", { class: "sr-only", id: "talk-title" });
-  // The orb always answers a tap: start when idle (or after an error, or when an old call is
-  // stuck ending), otherwise end or cancel the call. call.js drops a call object that hangs.
-  const orb = createOrb({ onPress: () => {
-    if (call.status === "idle" || call.status === "error" || call.status === "ending") startCall(call.mode === "text" ? "text" : "voice");
-    else endCall();
-  } });
-  const orbLabel = h("p", { class: "orb-label", "aria-live": "polite" });
-  const now = h("div", { class: "now" });
-  const issues = h("div", { class: "talk-issues" });
-  const controls = h("div", { class: "talk-controls" });
-  const convo = h("ol", { class: "convo", "aria-label": "" });
-  const typeRow = h("form", { class: "type-row", autocomplete: "off" });
-  const hint = h("p", { class: "talk-hint", hidden: true });
-  let hintKey = null;
-  const stage = h("div", { class: "talk-stage" }, orb.el, orbLabel, now, issues, controls);
-  const side = h("div", { class: "talk-side" }, h("h2", { class: "sr-only", id: "convo-title" }), convo, hint, typeRow);
-  el.append(title, stage, side);
+/* ------------------------------------------------- waiting tray (W3) -- */
+let waitingMod = null;
+let waitingCount = null;
+const waitingListeners = new Set();
+import("./waiting.js").then((m) => {
+  waitingMod = m;
+  if (m && typeof m.onCount === "function") m.onCount((n) => { waitingCount = n; setWaitingCount(n); for (const fn of waitingListeners) fn(); });
+}).catch(() => { /* no tray module on this build: approvals + bills count instead */ });
+const countWaiting = () => waitingCount ?? (pendingApprovals().length + pendingInvoices().length);
+function openTray() {
+  if (waitingMod && typeof waitingMod.openTray === "function") waitingMod.openTray();
+  else location.hash = "#/waiting";
+}
 
-  // Type row.
-  const input = h("input", { class: "type-input", type: "text", maxlength: 500, enterkeyhint: "send", id: "type-input" });
-  const sendBtn = h("button", { class: "icon-btn icon-btn-lg send-btn", type: "submit" }, icon("send", 24));
-  const typeLabel = h("label", { class: "sr-only", for: "type-input" });
-  const typeNote = h("p", { class: "type-note", role: "status", "aria-live": "polite" });
-  typeRow.append(typeLabel, h("div", { class: "type-pill" }, input, sendBtn), typeNote);
-  typeRow.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text || call.sending) return;
-    const ok = await sendText(text);
-    if (ok) {
-      input.value = "";
-      typeNote.textContent = YES_WORDS.test(text) && [...state.approvals.values()].some((a) => a.status === "pending") ? t("talk.typedYes") : "";
-    }
-    render(new Set(["call"]));
+const PAID = new Set(["paid", "in_transit", "delivered", "closed", "cancelled", "rejected"]);
+const online = () => navigator.onLine !== false;
+
+/* ------------------------------------------------------- try chips -- */
+const TRY = ["home.try1", "home.try2", "home.try3"];
+const VOICE_LANG = { en: "en-IN", hi: "hi-IN", kn: "kn-IN" };
+function sayOnDevice(text, done) {
+  const synth = window.speechSynthesis;
+  if (!synth || typeof window.SpeechSynthesisUtterance !== "function") { done(); return false; }
+  synth.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = VOICE_LANG[lang()] || "en-IN";
+  u.onend = done; u.onerror = done;
+  synth.speak(u);
+  return true;
+}
+
+export function createSahayHome() {
+  mountCallDock();
+  const el = h("section", { class: "sh-home", "aria-labelledby": "sh-title", dataset: { visual: "idle" } });
+  const title = h("h1", { class: "sr-only", id: "sh-title" });
+
+  const orb = createOrb({ onPress: orbPress });
+  const label = h("p", { class: "sh-orb-label", "aria-live": "polite" });
+  const hud = createHud();
+  const notes = h("div", { class: "sh-notes" });
+  const strip = h("div", { class: "sh-strip", role: "group" });
+  const hint = h("p", { class: "sh-hint", hidden: true });
+  const stage = h("div", { class: "sh-stage" }, hud.el, h("div", { class: "sh-orb-wrap" }, orb.el), label, hint, notes, strip);
+
+  const convo = h("ol", { class: "sh-convo" });
+  const convoWrap = h("section", { class: "sh-talk", "aria-labelledby": "sh-convo-title" }, h("h2", { class: "sr-only", id: "sh-convo-title" }), convo);
+  const top = h("div", { class: "sh-top" });
+
+  let keyboardBtn = null;
+  const composer = createComposer({
+    openTray,
+    waitingCount: countWaiting,
+    onOpenChange: (open, restore) => {
+      el.dataset.composer = open ? "open" : "closed";
+      renderStrip();
+      if (!open && restore && keyboardBtn) keyboardBtn.focus({ preventScroll: true });
+    },
   });
+  el.append(title, top, convoWrap, stage, composer.el);
+  el.dataset.composer = "closed";
+
+  let hintKey = null;
+  let showEarlier = false;
+  let stick = true; // keep the newest turn in view unless the owner scrolled up to read
+  convo.addEventListener("scroll", () => { stick = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40; }, { passive: true });
 
   for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
-  document.addEventListener("sahay:focus-type", () => requestAnimationFrame(() => input.focus()));
+  // The shell's "type" entry points (sahay:compose; sahay:focus-type from older callers) open the composer.
+  for (const ev of ["sahay:compose", "sahay:focus-type"]) {
+    document.addEventListener(ev, () => {
+      if (!onHome()) location.hash = "#/sahay";
+      requestAnimationFrame(() => composer.open());
+    });
+  }
   document.addEventListener("sahay:hint", (e) => { hintKey = e.detail && e.detail.key; render(new Set(["call"])); });
+  waitingListeners.add(() => render(new Set(["approvals"])));
 
-  function orbView() {
+  function view() {
+    const first = isFirstVisit({ turns: call.transcript.length, requirements: state.requirements.length, orders: state.orders.size, hasRequirement: Boolean(state.requirement) });
+    return orbView({
+      status: call.status, agentState: call.agentState, mode: call.mode, route: call.route, error: call.error,
+      ended: call.ended, online: online(), working: runningJobs().length > 0, muted: call.muted, first,
+    });
+  }
+
+  function orbPress() {
     const s = call.status;
-    const working = runningJobs().length > 0;
-    if (s === "error") return ["idle", call.error ? errorText(call.error) : t("call.failed"), "bad"];
-    if (s === "idle" && call.ended) return ["idle", t("talk.callEnded"), "bad"];
-    if (s === "mic") return ["connecting", t("talk.mic")];
-    if (s === "connecting") return ["connecting", t(call.route === "proxy" ? "talk.saferRoute" : "talk.connecting")];
-    if (s === "waiting") return ["connecting", t("talk.waiting")];
-    if (s === "reconnecting") return ["connecting", t("talk.reconnecting")];
-    if (s === "ending") return ["connecting", t("talk.ending")];
-    if (s === "live") {
-      const a = call.agentState;
-      if (a === "listening") return ["listening", call.mode === "text" ? t("talk.yourTurn") : t("talk.listening")];
-      if (a === "thinking") return ["thinking", t("talk.thinking")];
-      if (a === "speaking") return ["speaking", t("talk.speaking")];
-      return ["listening", t("talk.yourTurn")];
-    }
-    if (working) return ["working", t("talk.working")];
-    return ["idle", t("talk.tap")];
+    if (s === "idle" || s === "error") { startCall("voice"); return; }
+    // Live: the orb opens or unmutes the mic, never ends the call (D12).
+    if (inCall() && (call.micless || call.muted)) setMuted(false);
   }
 
-  function errorText(err) {
-    // Owner language only: a known code has its own line, anything else is "could not start".
-    const k = `call.${err.code}`;
-    const tr = t(k);
-    return tr !== k ? tr : t("call.failed");
+  function renderOrb(v) {
+    const pressable = call.status === "idle" || call.status === "error" || (inCall() && (call.micless || call.muted));
+    const words = t(v.key);
+    orb.set({ visual: v.visual, state: v.state, label: pressable || !inCall() ? words : `${words}. ${t("home.orb.pressLive")}`, agent: agentState(), badge: v.visual === "error" || v.tone === "warn" ? v.icon : null, pressable });
+    el.dataset.visual = v.visual;
+    el.dataset.state = v.state;
+    el.dataset.tone = v.tone;
+    patch(label, `${words}|${v.icon}|${v.tone}`, () => [icon(v.icon, 20), scripted("span", words)]);
+    label.dataset.tone = v.tone;
   }
 
-  function renderOrb() {
-    const [st, label, tone] = orbView();
-    const ends = inCall() || call.status === "mic" || call.status === "connecting";
-    orb.set(st, ends ? `${label}. ${t("talk.end")}` : label, runningJobs().length > 0, agentState());
-    orb.el.disabled = false;
-    orbLabel.textContent = label;
-    orbLabel.dataset.state = st;
-    if (tone) orbLabel.dataset.tone = tone; else delete orbLabel.dataset.tone;
+  function act(action) {
+    if (action === "start") startCall("voice");
+    else if (action === "retry") startCall(call.mode === "text" ? "text" : "voice");
+    else if (action === "hear") resumeAudio();
+    else if (action === "mute") setMuted(true);
+    else if (action === "unmute" || action === "openMic") setMuted(false);
+    else if (action === "tray") openTray();
+    else if (action === "type") composer.open();
+    else if (action === "endOther") endServerCall();
   }
 
-  function renderNow() {
-    const n = nowLine();
-    const text = t(n.key, n.vars);
-    patch(now, `${text}|${n.tone}|${document.documentElement.lang}`, () => [
-      h("p", { class: `now-line tone-${n.tone}` },
-        h("span", { class: "now-dot", "aria-hidden": "true" }),
-        scripted("span", text, { class: "now-text" })),
-      speakButton("now", { size: "sm" }),
-    ]);
+  function renderStrip() {
+    const s = callStrip({ status: call.status, mode: call.mode, muted: call.muted, micless: call.micless, autoplay: call.autoplay, error: call.error, ended: call.ended, textSupported: textSupported() });
+    strip.setAttribute("aria-label", t("home.title"));
+    const parts = [];
+    keyboardBtn = null;
+    if (s.keyboard) {
+      const open = composer.isOpen();
+      keyboardBtn = h("button", {
+        class: "keycap keycap-md keycap-secondary sh-ctl sh-ctl-type", type: "button", "aria-expanded": String(open), "aria-controls": "sh-composer-input",
+        on: { click: () => (open ? composer.close(true) : composer.open()) },
+      }, icon(open ? "x" : "keyboard", 24), h("span", { text: open ? t("home.typeClose") : t("home.type") }));
+      parts.push(keyboardBtn);
+    }
+    if (s.mute) {
+      parts.push(h("button", {
+        class: `keycap keycap-md keycap-secondary sh-ctl sh-ctl-mute${s.mute.on ? "" : " is-off"}`, type: "button",
+        "aria-pressed": s.mute.action === "openMic" ? undefined : String(call.muted),
+        "aria-label": s.mute.action === "mute" ? t("home.muteLong") : s.mute.action === "unmute" ? t("home.unmuteLong") : t(s.mute.key),
+        on: { click: () => act(s.mute.action) },
+      }, icon(s.mute.icon, 24), h("span", { text: t(s.mute.key) })));
+    }
+    if (s.primary) {
+      parts.push(h("button", { class: `keycap keycap-md keycap-primary sh-ctl sh-ctl-primary is-${s.primary.action}`, type: "button", on: { click: () => act(s.primary.action) } },
+        icon(s.primary.icon, 24), h("span", { text: t(s.primary.key) })));
+    }
+    if (s.end) {
+      parts.push(h("button", { class: "keycap keycap-md keycap-danger sh-ctl sh-ctl-end", type: "button", "aria-label": inCall() ? t("home.endLong") : t(s.end.key), on: { click: () => endCall() } },
+        icon("phoneOff", 24), h("span", { text: t(s.end.key) })));
+    }
+    fill(strip, ...parts);
+    strip.dataset.count = String(parts.length);
   }
 
-  function renderIssues() {
-    const items = [];
-    if (call.status === "error" && call.error && call.error.retry !== false) {
-      items.push(h("button", { class: "btn btn-ghost", type: "button", on: { click: () => startCall(call.mode) } }, icon("refresh", 20), h("span", { text: t("retry") })));
-    }
-    // "No internet" only while the device really is offline (QA: the chip stayed after recovery).
-    const offline = typeof navigator.onLine === "boolean" && !navigator.onLine;
-    if (call.status === "idle" && call.ended && ((call.ended.reason === "offline" && offline) || call.ended.reason === "stuck")) {
-      items.push(h("div", { class: "issue issue-bad issue-line", role: "status" }, icon(call.ended.reason === "offline" ? "wifi" : "phoneOff", 22), h("span", { text: t(`call.${call.ended.reason}`) })));
-    }
-    if ((call.status === "idle" || call.status === "error") && state.voiceServer && state.voiceServer.active) {
-      // Right after this screen lost its own call, the open call is almost always that one.
-      items.push(h("div", { class: "issue issue-info" }, icon("info", 22), h("span", { text: t(call.ended ? "talk.oldCall" : "talk.otherScreen") }),
-        h("button", { class: "btn btn-ghost btn-sm", type: "button", disabled: call.endingOther ? true : undefined, on: { click: endServerCall } },
-          call.endingOther ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("phoneOff", 20), h("span", { text: t("talk.endThat") }))));
-    }
-    if (call.autoplay) items.push(h("button", { class: "btn btn-primary", type: "button", on: { click: resumeAudio } }, icon("speaker", 22), h("span", { text: t("talk.audioBlocked") })));
-    if (inCall()) for (const i of call.issues) items.push(h("div", { class: "issue issue-warn" }, icon("alert", 22), h("span", { text: i.message })));
-    fill(issues, ...items);
+  function renderNotes() {
+    const list = recoveryNotes({
+      status: call.status, error: call.error, ended: call.ended, online: online(), jobsRunning: runningJobs().length,
+      voiceServerActive: Boolean(state.voiceServer && state.voiceServer.active), issues: call.issues, autoplay: call.autoplay,
+    });
+    const key = JSON.stringify([document.documentElement.lang, list.map((n) => [n.kind, n.key, n.sub, n.actions]), call.endingOther]);
+    patch(notes, key, () => list.map((n) => h("article", { class: `card sh-note${n.tone === "bad" ? " card-alert" : ""}`, dataset: { tone: n.tone, kind: n.kind }, role: n.tone === "bad" ? "alert" : "status" },
+      h("span", { class: "sh-note-icon", "aria-hidden": "true" }, icon(n.icon, 22)),
+      h("div", { class: "sh-note-body" },
+        h("p", { class: "sh-note-title", text: t(n.key) }),
+        n.sub ? h("p", { class: "sh-note-text", text: t(n.sub) }) : null),
+      noteActions(n))));
+    notes.hidden = list.length === 0;
   }
 
-  function renderControls() {
-    const live = inCall();
-    const text = textSupported();
-    const mode = call.mode;
-    const seg = h("div", { class: "seg", role: "group", "aria-label": t("talk.modeLabel") },
-      h("button", { class: "seg-btn", type: "button", "aria-pressed": String(mode === "voice"), on: { click: () => { setMode("voice"); if (!live) render(new Set(["call"])); } } },
-        icon("mic", 22), h("span", { text: t("talk.modeCall") })),
-      h("button", { class: "seg-btn", type: "button", "aria-pressed": String(mode === "text"), "aria-disabled": text ? undefined : "true",
-        on: { click: () => { if (!text) return; setMode("text"); requestAnimationFrame(() => input.focus()); } } },
-      icon("keyboard", 22), h("span", { text: t("talk.modeType") }), text ? null : h("span", { class: "seg-soon", text: t("edge.soon") })));
-    const parts = [seg];
-    if (live) {
-      if (mode === "voice") {
-        parts.push(h("button", { class: "icon-btn icon-btn-lg mute-btn", type: "button", "aria-pressed": String(call.muted), "aria-label": call.muted ? t("talk.unmute") : t("talk.mute"), dataset: { tip: call.muted ? t("talk.unmute") : t("talk.mute") }, on: { click: () => setMuted(!call.muted) } },
-          icon(call.muted ? "micOff" : "mic", 24)));
-      }
-      parts.push(h("button", { class: "btn btn-end btn-lg", type: "button", on: { click: () => endCall() } }, icon("phoneOff", 24), h("span", { text: t("talk.end") })));
+  function noteActions(n) {
+    const btns = n.actions.map(noteAction).filter(Boolean);
+    return btns.length ? h("div", { class: "sh-note-actions" }, ...btns) : null;
+  }
+
+  function noteAction(a) {
+    // Retry also sits in the call strip; the note repeats it only where the strip has none.
+    if (a === "retry") return null;
+    if (a === "tray") return h("button", { class: "chip", type: "button", on: { click: () => act("tray") } }, icon("check", 20), h("span", { text: t("home.useButtons") }));
+    if (a === "type") return h("button", { class: "chip", type: "button", on: { click: () => act("type") } }, icon("keyboard", 20), h("span", { text: t("home.typeInstead") }));
+    if (a === "endOther") {
+      return h("button", { class: "chip", type: "button", "aria-busy": call.endingOther ? "true" : undefined, disabled: call.endingOther ? true : undefined, on: { click: () => act("endOther") } },
+        call.endingOther ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("phoneOff", 20), h("span", { text: t("talk.endThat") }));
     }
-    fill(controls, ...parts);
+    return null;
   }
 
   function bubble(role, text, extra = {}) {
-    return h("li", { class: `bubble bubble-${role}${extra.live ? " is-live" : ""}${extra.cut ? " is-cut" : ""}${extra.pinned ? " is-pinned" : ""}` },
-      h("span", { class: "bubble-who" }, role === "agent" ? h("span", { class: "who-orb", "aria-hidden": "true" }) : icon(extra.typed ? "keyboard" : "user", 18), h("span", { text: role === "agent" ? t("talk.sahay") : t("talk.you") })),
-      scripted("p", text, { class: "bubble-text" }),
-      extra.cut ? h("span", { class: "bubble-flag", text: t("talk.interrupted") }) : null);
+    const who = role === "agent" ? t("home.sahay") : extra.typed ? t("home.youTyped") : t("home.you");
+    return h("li", { class: `sh-bubble is-${role}${extra.live ? " is-live" : ""}${extra.cut ? " is-cut" : ""}${extra.pinned ? " is-pinned" : ""}` },
+      h("span", { class: "sh-bubble-who" },
+        role === "agent" ? h("span", { class: "sh-who-dot", "aria-hidden": "true" }) : icon(extra.typed ? "keyboard" : "mic", 16),
+        h("span", { text: who }),
+        extra.pinned ? h("span", { class: "sh-bubble-notice" }, icon("shield", 16), h("span", { text: t("notice.short") })) : null),
+      scripted("p", text, { class: "sh-bubble-text" }),
+      extra.live && role === "owner" ? h("span", { class: "sh-bubble-flag is-hearing", text: t("home.hearing") }) : null,
+      extra.cut ? h("span", { class: "sh-bubble-flag", text: t("home.cut") }) : null);
   }
-
-  let showEarlier = false;
 
   function renderConvo() {
     const biz = (state.business && state.business.name) || "";
-    const turns = call.transcript.filter((x) => x.role === "owner" || x.role === "agent");
-    // The disclosure always leads: Sahay's first spoken line once a call has one (the server
-    // speaks it first on every call), otherwise the same sentence written here.
-    const first = turns.find((x) => x.role === "agent");
-    const pinned = first ? first.text : t("talk.disclosure", { biz });
-    const rest = turns.filter((x) => x !== first);
-    const older = rest.slice(0, -3);
-    const last = rest.slice(-3);
-    if (!older.length) showEarlier = false;
-    const shown = showEarlier ? rest : last;
-    const key = JSON.stringify([document.documentElement.lang, pinned, showEarlier, older.length, shown.map((x) => [x.key, x.text, x.live, x.interrupted])]);
-    convo.setAttribute("aria-label", t("talk.convo"));
-    patch(convo, key, () => {
-      const items = [bubble("agent", pinned, { pinned: true })];
-      if (older.length) {
-        items.push(h("li", { class: "convo-earlier" },
+    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier });
+    if (!v.older) showEarlier = false;
+    convo.setAttribute("aria-label", t("home.convo"));
+    const key = JSON.stringify([document.documentElement.lang, v.pinned.text, showEarlier, v.older, v.shown.map((x) => [x.key, x.text, x.live, x.interrupted, x.via])]);
+    const changed = patch(convo, key, () => {
+      const items = [bubble("agent", v.pinned.text, { pinned: true })];
+      if (v.older) {
+        items.push(h("li", { class: "sh-earlier" },
           h("button", {
-            class: "btn btn-ghost btn-sm earlier-toggle", type: "button", "aria-expanded": String(showEarlier),
-            on: { click: () => { showEarlier = !showEarlier; renderConvo(); requestAnimationFrame(() => { const b = convo.querySelector(".earlier-toggle"); if (b) b.focus({ preventScroll: true }); }); } },
-          }, icon(showEarlier ? "chevronUp" : "history", 20), h("span", { text: showEarlier ? t("talk.earlierHide") : t("talk.earlier", { n: older.length }) }))));
+            class: "chip sh-earlier-btn", type: "button", "aria-expanded": String(showEarlier),
+            on: { click: () => { showEarlier = !showEarlier; renderConvo(); requestAnimationFrame(() => { const b = convo.querySelector(".sh-earlier-btn"); if (b) b.focus({ preventScroll: true }); }); } },
+          }, icon(showEarlier ? "chevronUp" : "history", 20), h("span", { text: showEarlier ? t("home.earlierHide") : t("home.earlier", { n: v.older }) }))));
       }
-      for (const x of shown) items.push(bubble(x.role, x.text, { live: x.live, cut: x.interrupted, typed: x.via === "text" }));
+      for (const x of v.shown) items.push(bubble(x.role, x.text, { live: x.live, cut: x.interrupted, typed: x.via === "text" }));
       return items;
     });
-    const showHint = !turns.length || hintKey;
-    hint.hidden = !showHint;
-    hint.textContent = t(hintKey || "talk.hint");
+    if (changed && stick) requestAnimationFrame(() => { convo.scrollTop = convo.scrollHeight; });
+    el.dataset.turns = String(v.count);
+    hint.hidden = !hintKey || v.count > 0;
+    hint.textContent = hintKey ? t(hintKey) : "";
   }
 
-  function renderType() {
-    const text = textSupported();
-    typeRow.hidden = !(text && call.mode === "text");
-    typeLabel.textContent = t("talk.typeBox");
-    input.placeholder = "";
-    input.disabled = call.sending;
-    sendBtn.disabled = call.sending;
-    sendBtn.setAttribute("aria-label", t("talk.send"));
-    sendBtn.dataset.tip = t("talk.send");
-    fill(sendBtn, call.sending ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("send", 24));
-    if (call.sendError) typeNote.textContent = t("talk.sendFail");
+  function tile(x) {
+    const value = x.kind === "money" ? inr(x.value) : grouped(x.value);
+    return h("li", null, h("a", { class: "card card-interactive sh-tile", href: x.route, dataset: { id: x.id } },
+      icon(x.icon, 22), h("span", { class: "sh-tile-word", text: t(x.key) }), h("span", { class: "sh-tile-num", text: value })));
+  }
+
+  function renderTop(v) {
+    const idle = call.status === "idle" && !call.transcript.length;
+    if (v.state === "first") {
+      patch(top, `first|${document.documentElement.lang}`, () => {
+        const chips = TRY.map((k) => {
+          const words = t(k);
+          const b = h("button", { class: "chip sh-try", type: "button", dataset: { state: "idle" } },
+            icon("speaker", 20), scripted("span", words));
+          b.setAttribute("aria-label", `${t("home.tryHear")}: ${words}`);
+          b.addEventListener("click", () => {
+            for (const o of top.querySelectorAll(".sh-try")) o.dataset.state = "idle";
+            b.dataset.state = "playing";
+            sayOnDevice(words, () => { b.dataset.state = "idle"; });
+          });
+          return h("li", null, b);
+        });
+        return [h("p", { class: "sh-try-title", text: t("home.trySaying") }), h("ul", { class: "sh-try-list", role: "list" }, ...chips)];
+      });
+      top.hidden = false;
+      top.dataset.kind = "try";
+      return;
+    }
+    if (!idle) { top.hidden = true; top.__key = null; return; }
+    const owed = sell.status === "ready" ? sell.owed.reduce((s, o) => s + (o.amount || 0), 0) : null;
+    const orders = [...state.orders.values()].filter((o) => o.status && !PAID.has(o.status));
+    const toPay = state.boot === "ready" ? orders.reduce((s, o) => s + (o.amount || 0), 0) : null;
+    const low = stock.status === "ready" ? [...stock.items.values()].filter((i) => i.low === true).length : null;
+    const bills = sell.status === "ready" ? pendingInvoices().length : null;
+    const tiles = todayTiles({ toCollect: owed, toPay, low, billsWaiting: bills });
+    // Loading: one skeleton per tile still coming. Error: one line with Try again (never a zero).
+    const waitingFor = (sell.status === "loading" ? 3 : 0) + (stock.status === "loading" ? 1 : 0);
+    const failed = [sell, stock].filter((x) => x.status === "error");
+    patch(top, JSON.stringify(["tiles", document.documentElement.lang, tiles.map((x) => [x.id, x.value]), waitingFor, failed.length]), () => [
+      h("h2", { class: "sh-today-title", text: t("home.today") }),
+      h("ul", { class: "sh-tiles", role: "list", "aria-busy": waitingFor ? "true" : undefined },
+        ...tiles.map(tile),
+        ...Array.from({ length: Math.min(waitingFor, 4 - tiles.length) }, () => h("li", { "aria-hidden": "true" }, h("span", { class: "skel skel-card sh-tile-skel" })))),
+      failed.length ? h("p", { class: "error-line sh-tiles-error", role: "alert" }, icon("alert", 20), h("span", { text: t("home.tilesFail") }),
+        h("button", { class: "chip", type: "button", on: { click: () => { if (sell.status === "error") loadSell(); if (stock.status === "error") loadStock(); } } }, icon("refresh", 20), h("span", { text: t("retry") }))) : null,
+    ]);
+    top.hidden = tiles.length === 0 && !waitingFor && !failed.length;
+    top.dataset.kind = "tiles";
   }
 
   function render(parts) {
     const all = parts.has("all") || parts.has("lang");
-    title.textContent = t("nav.talk");
-    if (all || parts.has("call") || parts.has("work") || parts.has("approvals")) { renderOrb(); renderIssues(); renderControls(); renderType(); }
-    if (all || parts.has("work") || parts.has("approvals") || parts.has("orders")) renderNow();
+    title.textContent = t("home.title");
+    const v = view();
+    if (all || parts.has("call") || parts.has("work") || parts.has("approvals") || parts.has("business") || parts.has("agent")) {
+      renderOrb(v); renderNotes(); renderStrip(); composer.update();
+    }
+    if (all || parts.has("call") || parts.has("work") || parts.has("approvals") || parts.has("orders") || parts.has("sell") || parts.has("stock") || parts.has("transcript")) hud.update();
     if (all || parts.has("transcript") || parts.has("call") || parts.has("business")) renderConvo();
-    el.dataset.mode = call.mode;
+    if (all || parts.has("call") || parts.has("transcript") || parts.has("orders") || parts.has("sell") || parts.has("stock") || parts.has("boot")) renderTop(v);
     el.dataset.live = String(inCall());
+    el.dataset.mode = call.mode;
   }
 
-  return { el, update: (_s, parts) => render(parts) };
+  return {
+    el,
+    update: (_s, parts) => render(parts),
+    enter() {
+      // Today tiles read sell and stock; load them quietly once (a missing route leaves its tile out).
+      if (sell.status === "idle") loadSell({ quiet: true });
+      if (stock.status === "idle") loadStock({ quiet: true });
+      render(new Set(["all"]));
+    },
+    leave() { if (composer.isOpen()) composer.close(false); },
+  };
 }
+
+/** Kept for screens.js until the shell routes #/sahay by its own name. */
+export const createTalk = createSahayHome;

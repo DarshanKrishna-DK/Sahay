@@ -1,6 +1,8 @@
 // The owner's live session with Sahay (voice or typed), wrapping VoiceCall from ../voice.js.
 // Contract (plan, Track V): start({ mode = "voice" }), sendText(text), transcript turns with
 // via: "text" for typed lines. Until Track V lands, text mode reports itself unavailable.
+// D16 (UX v3): typing never mutes; only setMuted() does. `micless` marks a typed session that has
+// not opened the microphone yet.
 
 import { VoiceCall, preloadSdks } from "../voice.js";
 import * as api from "../api.js";
@@ -19,6 +21,7 @@ export const call = {
   issues: [],
   sending: false,
   sendError: null,
+  micless: false, // a typed session that has not opened the microphone (unmuting opens it)
   endingOther: false,
 };
 
@@ -61,11 +64,14 @@ function makeCall() {
       }
       if (status === "idle") {
         call.agentState = null;
+        call.micless = false;
         call.ended = detail.unexpected ? { reason: detail.note || null } : null;
         call.muted = false;
       }
       if (status === "mic" || (status === "connecting" && call.mode === "text")) {
         call.ended = null; call.error = null; call.issues = []; call.transcript = []; call.sendError = null;
+        call.micless = call.mode === "text";
+        call.muted = false;
       }
       touch("call");
     },
@@ -122,6 +128,7 @@ function dropCall(reason) {
   call.status = "idle";
   call.agentState = null;
   call.muted = false;
+  call.micless = false;
   call.error = null;
   call.autoplay = false;
   call.ended = { reason };
@@ -142,7 +149,7 @@ export async function startCall(mode = "voice") {
   // A tap while the old call is stuck ending, or after the network went, starts clean.
   if (call.status === "ending" || (vc.active && !navigator.onLine)) dropCall(navigator.onLine ? "stuck" : "offline");
   if (vc.active) {
-    if (mode === "voice" && call.muted) await setMuted(false);
+    if (mode === "voice" && (call.muted || call.micless)) await setMuted(false);
     return;
   }
   if (serverStopOwed) {
@@ -168,14 +175,19 @@ export async function endCall() {
 
 export async function setMuted(m) {
   call.muted = await vc.setMuted(m);
+  if (!call.muted) call.micless = false; // a typed session opened its microphone
   touch("call");
 }
 
+/**
+ * D16: typing during a voice call never mutes the microphone (only the mute button mutes), so the
+ * owner can still say the yes. Asking for "voice" during a typed session opens the microphone.
+ */
 export function setMode(mode) {
   if (mode === "text" && !textSupported()) return;
-  call.mode = mode;
+  if (mode === "voice" && inCall() && (call.micless || call.muted)) setMuted(false);
+  if (!inCall()) call.mode = mode;
   touch("call");
-  if (inCall()) setMuted(mode === "text");
 }
 
 export async function sendText(text) {
