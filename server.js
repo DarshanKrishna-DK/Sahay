@@ -154,6 +154,7 @@ function createApp({ publicDir = PUBLIC_DIR } = {}) {
   app.use(createPayRouter());
   app.use(require("./src/routes/stock").createStockRouter()); // STK: /api/stock, delivered, reorder decision
   app.use(require("./src/routes/khata").createKhataRouter()); // KHATA: POST /api/receipts, /api/customers/:id/remind
+  app.use(require("./src/routes/suppliers").createSupplierRouter()); // SUPPLIERS: the owner's own suppliers, reached on Telegram
   app.use(createApiRouter());
   app.use("/api", (_req, res) => res.status(404).json({ code: "NOT_FOUND", message: "No such API route." }));
   const sendApp = (_req, res, next) => res.sendFile(path.join(publicDir, "app.html"), { maxAge: "5m" }, (err) => err && next(err.status === 404 ? undefined : err));
@@ -195,9 +196,11 @@ function boot() {
   const events = require("./src/events");
 
   const stopNarrator = narrator.start();
+  require("./src/agora/answer-watch").start(); // an owner turn left unanswered gets a spoken line from the server
   const stopFollowups = followups.start();
   const stopLearning = require("./src/agent").start(); // learned rule suggestions and memories
   require("./src/stock/reorder").start(); // STK: low-stock watcher (asks the owner; never buys)
+  const stopSuppliers = require("./src/suppliers").start(); // SUPPLIERS: order confirmation and no-show notice on Telegram
   const telegramAbort = new AbortController();
   if (telegram.isConfigured()) telegram.startPolling({ signal: telegramAbort.signal });
 
@@ -216,6 +219,7 @@ function boot() {
     telegramAbort.abort();
     stopFollowups();
     stopLearning();
+    stopSuppliers();
     await Promise.allSettled([stopAllVoice(), negotiation.stopAll()]);
     stopNarrator();
     events.closeStreams();

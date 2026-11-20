@@ -155,6 +155,24 @@ test("a refused tool call is an MCP tool error carrying the spoken line, not a t
   });
 });
 
+test("every failed tool call tells the model to speak its say now (never silence); a refused argument says how to fix it", async () => {
+  const { token } = seed("owner", { language: "en-IN" });
+  await withServer(async (url) => {
+    const failed = await (await rpc(url, token, { jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "create_order", arguments: { approvalId: "apr_missing", reply_language: "en-IN" } } })).json();
+    const payload = JSON.parse(failed.result.content[0].text);
+    assert.ok(payload.say);
+    assert.match(payload.hint, /Say `say` to the owner now/);
+    assert.match(payload.hint, /never stay silent/);
+
+    const refused = await (await rpc(url, token, { jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "get_business_facts", arguments: { topic: "weather", reply_language: "en-IN" } } })).json();
+    const why = JSON.parse(refused.result.content[0].text);
+    assert.equal(why.error, "INVALID_ARGUMENTS");
+    assert.ok(why.fix);
+    assert.match(why.hint, /correct it as `fix` says/);
+    assert.ok(why.say);
+  });
+});
+
 test("GET is 405 for a verified caller (stateless server, no stream)", async () => {
   const { token } = seed();
   await withServer(async (url) => {
