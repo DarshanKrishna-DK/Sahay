@@ -14,7 +14,7 @@ import { sell, loadSell, decideInvoice, pendingInvoices, invoiceCustomer, itemOf
 import { st } from "./sell-i18n.js";
 import { shopNeedCard, shopMissing, shopButton, shopSummary } from "./shop-settings.js";
 import { SHOP_CODES } from "./shop-facts.js";
-import { billStatus, gstRows, lineAmount, dueOf, filterBills, BILL_FILTERS } from "./sell-facts.js";
+import { billStatus, gstRows, lineAmount, dueOf, filterBills, BILL_FILTERS, shortBillNo } from "./sell-facts.js";
 import { openAddPhone, remindOnWhatsApp } from "./money-pad.js";
 import {
   ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, buttonError, ask,
@@ -22,6 +22,8 @@ import {
 } from "./sell-kit.js";
 
 addStrings({
+  "sl.noShort": ["No. {n}", "नं. {n}", "ಸಂ. {n}"],
+  "sl.billLabel": ["Bill {no}, {name}", "बिल {no}, {name}", "ಬಿಲ್ {no}, {name}"],
   "sl.sub": ["Bills, WhatsApp and your customers", "बिल, WhatsApp और आपके ग्राहक", "ಬಿಲ್, WhatsApp ಮತ್ತು ನಿಮ್ಮ ಗ್ರಾಹಕರು"],
   "sl.makeBill": ["Make bill", "बिल बनाएँ", "ಬಿಲ್ ಮಾಡಿ"],
   "sl.recent": ["Recent bills", "हाल के बिल", "ಇತ್ತೀಚಿನ ಬಿಲ್‌ಗಳು"],
@@ -218,10 +220,13 @@ function billCard(inv, onOpen) {
     main = linkKey({ href: pdfHref(inv), icon: "download", word: st("sell.pdf"), label: st("sell.pdfLong"), tone: "ghost", size: "sm" });
   }
   const totalWord = g.kind === "none" ? st("sl.totalNoGst") : g.tax ? st("sl.totalGst", { amt: money(g.tax) }) : st("sell.total");
-  const card = paper({ class: `sl-bill sl-bill-${status}`, tone: status === "paid" ? "paid" : unpaid ? "due" : null, dataset: { id: inv.id }, "aria-labelledby": titleId },
+  // The badge shows the running number ("No. 0002"); the full number is in its tooltip, the slip's
+  // label and the bill sheet.
+  const label = inv.number ? st("sl.billLabel", { no: inv.number, name }) : undefined;
+  const card = paper({ class: `sl-bill sl-bill-${status}`, tone: status === "paid" ? "paid" : unpaid ? "due" : null, dataset: { id: inv.id }, "aria-label": label, "aria-labelledby": label ? undefined : titleId },
     h("div", { class: "sl-bill-top" },
       h("p", { class: `t-label sl-bill-state sl-state-${status}` }, ic(STATUS_ICON[status] || "doc", 16), h("span", { text: st(`sell.status.${status}`) })),
-      inv.number ? h("span", { class: "sl-bill-no", text: `#${inv.number}` }) : null,
+      inv.number ? h("span", { class: "sl-bill-no", title: inv.number, text: st("sl.noShort", { n: shortBillNo(inv.number) }) }) : null,
       h("span", { class: "card-speak" }, readButton(`invoice:${inv.id}`))),
     scriptedText("h3", name, { class: "t-h3 sl-bill-name", id: titleId }),
     h("p", { class: "sl-bill-meta" },

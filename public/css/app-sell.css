@@ -104,19 +104,19 @@
 }
 .sl-bill:hover { border-color: var(--edge); }
 .sl-bill:focus-within { border-color: var(--edge-strong); }
-.sl-bill-top { display: flex; align-items: center; gap: 10px; min-height: var(--touch-min); }
-.sl-bill-state { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; margin: 0; }
+/* The top row wraps (status word, badge, speaker) rather than letting them overlap. */
+.sl-bill-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: var(--touch-min); }
+.sl-bill-state { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 120px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .sl-bill-state svg { flex: none; }
 .sl-state-issued, .sl-state-part_paid { color: var(--amber-text); }
 .sl-state-paid { color: var(--ok-text); }
 .sl-state-pending, .sl-state-cancelled { color: var(--coral-text); }
 .sl-bill-no {
-  flex: 0 1 auto; min-width: 0; max-width: 16ch; padding: 4px 10px; border-radius: var(--r-xs);
+  flex: none; padding: 4px 10px; border-radius: var(--r-xs);
   border: 1px solid var(--edge-accent); color: var(--accent-text);
-  font-family: var(--font-num); font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-num); font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.sl-bill-top .card-speak { margin: 0; }
+.sl-bill-top .card-speak { margin: 0 0 0 auto; }
 .sl-bill-name { margin: -4px 0 0; overflow-wrap: anywhere; }
 .sl-bill-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; color: var(--text-lo); font-size: var(--fs-sm); }
 .sl-bill-when { display: inline-flex; align-items: center; gap: 6px; }

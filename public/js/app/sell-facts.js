@@ -177,3 +177,11 @@ export function receivedToday(receipts, now = new Date()) {
   const rows = (receipts || []).filter(today);
   return { amount: sumOf(rows), count: rows.length };
 }
+
+/** The running part of a bill number for a small badge: "INV/2026-27/0002" -> "0002". */
+export function shortBillNo(number) {
+  const s = String(number ?? "").trim();
+  if (!s) return "";
+  const parts = s.split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : s;
+}

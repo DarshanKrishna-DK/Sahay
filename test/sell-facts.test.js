@@ -164,3 +164,12 @@ test("money received today: only today's receipts, local time", async () => {
   ], now), { amount: 750.5, count: 2 });
   assert.deepEqual(receivedToday([], now), { amount: 0, count: 0 });
 });
+
+test("a bill number's badge shows its running part; the full number stays elsewhere", async () => {
+  const { shortBillNo } = await facts();
+  assert.equal(shortBillNo("INV/2026-27/0002"), "0002");
+  assert.equal(shortBillNo("KB-8942"), "KB-8942");
+  assert.equal(shortBillNo("INV/2026-27/"), "2026-27");
+  assert.equal(shortBillNo(""), "");
+  assert.equal(shortBillNo(null), "");
+});
