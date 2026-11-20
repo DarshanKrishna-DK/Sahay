@@ -114,7 +114,7 @@ function row(r) {
   ].filter(Boolean);
   const kids = [
     r.icon ? h("span", { class: "row-ico", "aria-hidden": "true" }, icon(r.icon, 24)) : null,
-    h("span", { class: "row-main" }, scripted("span", r.title || "", { class: "row-title" }), r.sub ? scripted("span", r.sub, { class: "row-sub" }) : null),
+    h("span", { class: "row-main" }, scripted("span", r.title || "", { class: "row-title" }), r.sub ? scripted("span", r.sub, { class: `row-sub${r.subCls ? ` ${r.subCls}` : ""}` }) : null),
     end.length ? h("span", { class: "row-end" }, ...end) : null,
   ];
   if (r.href) return h("a", { class: "row", href: r.href, "aria-label": r.label }, ...kids);

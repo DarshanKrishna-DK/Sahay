@@ -184,9 +184,9 @@ export function orderFacts(st, o) {
   return {
     vendor: (o && o.vendorName) || (q && q.vendorName) || (vendorRec && vendorRec.name) || null,
     simulated: Boolean((o && o.simulated) || (q && q.simulated) || (vendorRec && vendorRec.simulated)),
-    item: req ? req.item || null : null,
-    quantity: q && isNum(q.quantity) ? q.quantity : req && isNum(req.quantity) ? req.quantity : null,
-    unit: (q && q.unit) || (req && req.unit) || null,
+    item: (req && req.item) || (o && o.item) || null,
+    quantity: q && isNum(q.quantity) ? q.quantity : req && isNum(req.quantity) ? req.quantity : o && isNum(o.quantity) ? o.quantity : null,
+    unit: (q && q.unit) || (req && req.unit) || (o && o.unit) || null,
     unitPrice: q && isNum(q.unitPrice) ? q.unitPrice : null,
   };
 }

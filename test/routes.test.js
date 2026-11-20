@@ -216,6 +216,12 @@ test("state is scoped to the cookie's business; a button decision on another bus
     assert.equal(stateA.json.deals[0].quoteId, quote.id);
     assert.ok(stateA.json.audit.some((row) => row.type === "approval.decided"));
     assert.ok(stateA.json.audit.some((row) => row.type === "order.created"));
+    // Every order names what it bought, even after a newer need replaces this one's quotes in the state.
+    repo.createRequirement(a.business.id, { item: "dal", quantity: 5, unit: "kg" });
+    const later = await call(base, "GET", "/api/state", { cookie: a.cookie });
+    assert.equal(later.json.quotes.length, 0);
+    const o = later.json.orders.find((x) => x.id === order.id);
+    assert.deepEqual([o.item, o.quantity, o.unit, o.vendor, o.simulated], ["rice", 10, "kg", "V", false]);
 
     const pdf = await call(base, "GET", "/api/orders/ord_nope/po.pdf", { cookie: a.cookie });
     assert.equal(pdf.status, 404);

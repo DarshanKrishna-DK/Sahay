@@ -26,17 +26,9 @@
 .b5-status.is-needs { color: var(--needs); }
 .b5-status.is-good { color: var(--good); }
 .b5-status.is-muted { color: var(--text-muted); }
-.b5-check {
-  display: inline-flex;
-  align-items: center;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: var(--r-pill);
-  background: var(--pink);
-  color: var(--on-pink);
-  font-weight: 700;
-  font-size: var(--fs-small);
-}
+/* Check: the same outline button as Home's Needs-you row; the whole row is the click target */
+.b5-check { pointer-events: none; }
+.b5-needs .row-sub.is-sim { color: var(--warn); }
 
 /* phones: the amount and status go under the item instead of squeezing it */
 @media (max-width: 559px) {

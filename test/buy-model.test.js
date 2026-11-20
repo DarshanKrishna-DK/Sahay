@@ -156,6 +156,13 @@ test("order facts come from the order, its quote and the need; simulated is carr
   assert.deepEqual(orderFacts(s, { id: "o2", vendorName: "Paras", simulated: false }), { vendor: "Paras", simulated: false, item: null, quantity: null, unit: null, unitPrice: null });
 });
 
+test("an order of an earlier need (its quote not in the state) still names its item from the order's own fields", async () => {
+  const { orderFacts } = await load();
+  const s = store({ requirements: [REQ], quotes: new Map(), vendors: new Map() });
+  const o = { id: "o3", quoteId: "q-old", poNumber: "SAHAY/2026/0001", item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "kg", vendorName: "Srinidhi Foods", simulated: true };
+  assert.deepEqual(orderFacts(s, o), { vendor: "Srinidhi Foods", simulated: true, item: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", quantity: 200, unit: "kg", unitPrice: null });
+});
+
 test("reminders and the clock arc", async () => {
   const { remindersOf, clockFraction } = await load();
   const s = store({ followups: mapOf([

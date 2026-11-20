@@ -68,8 +68,9 @@ export function createBuy() {
         body: list(rows.map((r) => ({
           icon: r.icon || "cart",
           title: r.line,
-          sub: [r.meta, r.simulated ? t("simulated") : null].filter(Boolean).join(" · ") || undefined,
-          end: [r.amountText ? h("span", { class: "amount num", text: r.amountText }) : null, h("span", { class: "b5-check", text: t("b5.check") })].filter(Boolean),
+          sub: [r.meta, r.simulated ? t("simulated") : null].filter(Boolean).join(", ") || undefined,
+          subCls: r.simulated ? "is-sim" : undefined,
+          end: [r.amountText ? h("span", { class: "amount num", text: r.amountText }) : null, h("span", { class: "btn btn-secondary btn-sm b5-check", "aria-hidden": "true" }, h("span", { text: t("b5.check") }))].filter(Boolean),
           label: `${t("b5.check")}: ${r.line}`,
           onClick: () => r.open(),
         })), { limit: 3, label: t("b5.needsYou") }) })

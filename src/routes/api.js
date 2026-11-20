@@ -242,7 +242,7 @@ function snapshot(businessId) {
     quotes: forRequirement ? repo.listQuotes(businessId, forRequirement) : [],
     deals: requirement ? registry.rankedDeals(businessId, requirement.id) : [],
     approvals: repo.listApprovals(businessId),
-    orders: repo.listOrders(businessId).map((o) => ({ ...o, pdfUrl: `/api/orders/${encodeURIComponent(o.id)}/po.pdf` })),
+    orders: repo.listOrders(businessId).map((o) => ({ ...o, ...orderSubject(businessId, o), pdfUrl: `/api/orders/${encodeURIComponent(o.id)}/po.pdf` })),
     followups: repo.listFollowups(businessId),
     audit: repo
       .listAudit(businessId, { newest_first: true, limit: 200 })
@@ -250,6 +250,24 @@ function snapshot(businessId) {
       .map((row) => ({ id: row.id, ts: row.ts, type: row.type, actor: row.actor, sessionId: row.session_id, data: row.detail })),
     voice: v ? { channel: v.channel, agentId: v.agentId ?? null, active: Boolean(v.agentId) } : null,
     telegramLinked: Boolean(repo.getTelegramLink(businessId)),
+  };
+}
+
+/**
+ * What an order bought and from whom (item, quantity, unit, vendor, simulated), read through its quote,
+ * so every order row can name its item: the state carries quotes only for the latest need.
+ */
+function orderSubject(businessId, order) {
+  const quote = repo.getQuote(businessId, order.quote_id);
+  if (!quote) return {};
+  const need = repo.getRequirement(businessId, quote.requirement_id);
+  const vendor = repo.getVendor(businessId, quote.vendor_id);
+  return {
+    item: need ? need.item ?? null : null,
+    quantity: need ? need.quantity ?? null : null,
+    unit: quote.unit ?? (need ? need.unit ?? null : null),
+    vendor: vendor ? vendor.name ?? null : null,
+    simulated: Boolean(quote.simulated),
   };
 }
 
