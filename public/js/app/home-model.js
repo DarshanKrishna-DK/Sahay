@@ -1,8 +1,8 @@
-// Sahay home, the logic without the DOM: which orb state, which controls, which recovery notes,
-// which conversation turns and which "now doing" trackers the screen shows, all from plain
-// inputs (the call object, store counts). No imports and no DOM, so node:test loads it as is
-// (test/home-model.test.js). Every function returns i18n keys + vars; talk.js turns them into words.
-// Rule: nothing here invents a number. A tracker exists only when its value came from the server.
+// Sahay home (UI v5), the logic without the DOM: the call state, the figure's state, the controls,
+// the recovery notes, the conversation turns, the "Needs you" rows and today's numbers, all from
+// plain inputs (the call object, store rows). No imports and no DOM, so node:test loads it as is
+// (test/home-model.test.js). Functions return i18n keys + vars; home.js turns them into words.
+// Rule: nothing here invents a number. A value exists only when it came from the server.
 
 /** Owner states the orb can show (visual = the orb's look; state = the words under it). */
 export const ORB_VISUALS = ["idle", "connecting", "listening", "thinking", "speaking", "working", "error"];
@@ -168,69 +168,6 @@ export function conversationView(transcript, { disclosure = "", showEarlier = fa
 const YES = /^\s*(yes|yeah|yep|ok|okay|haan|haa|han|ha|ji|ji haan|theek hai|hau|houdu|sari|हाँ|हां|हा|जी|जी हाँ|जी हां|ठीक है|ಹೌದು|ಹೂಂ|ಸರಿ|ಆಯ್ತು)\s*[.!।]*\s*$/i;
 export function isTypedYes(text) { return YES.test(String(text || "").normalize("NFC")); }
 
-/** First visit: no conversation yet and nothing ever asked, bought or billed. */
-export function isFirstVisit({ turns = 0, requirements = 0, orders = 0, hasRequirement = false } = {}) {
-  return turns === 0 && requirements === 0 && orders === 0 && !hasRequirement;
-}
-
-/**
- * HUD trackers for the "now doing" line (Gather-style corner-bracket chips), from store data only.
- * input: { requirement: { item, quantity, unit, maxPrice } | null, sellers: number|null,
- *   bargain: { vendor, simulated, round, offer, unit } | null, best: { price, unit, vendor, simulated } | null,
- *   waitingYes: number, route: "proxy"|null, live: bool }
- * -> [{ id, icon, key, vars, tone, sim? }] at most 4, in reading order.
- */
-export function hudTrackers(d) {
-  const out = [];
-  const r = d.requirement;
-  if (r && Number.isFinite(r.quantity) && r.quantity > 0) {
-    out.push({ id: "need", icon: "box", key: "hud.need", vars: { qty: r.quantity, unit: r.unit || "" }, tone: "calm" });
-  }
-  if (r && Number.isFinite(r.maxPrice) && r.maxPrice > 0) {
-    out.push({ id: "cap", icon: "tag", key: "hud.cap", vars: { price: r.maxPrice, unit: r.unit || "" }, tone: "calm" });
-  }
-  if (Number.isFinite(d.sellers) && d.sellers > 0) {
-    out.push({ id: "sellers", icon: "store", key: "hud.sellers", vars: { n: d.sellers }, tone: "calm" });
-  }
-  const b = d.bargain;
-  if (b && Number.isFinite(b.offer) && b.offer > 0) {
-    out.push({ id: "bargain", icon: "handshake", key: Number.isFinite(b.round) && b.round > 0 ? "hud.round" : "hud.offer", vars: { n: b.round, price: b.offer, unit: b.unit || "" }, tone: "live", sim: Boolean(b.simulated) });
-  } else if (d.best && Number.isFinite(d.best.price) && d.best.price > 0) {
-    out.push({ id: "best", icon: "check", key: "hud.best", vars: { price: d.best.price, unit: d.best.unit || "" }, tone: "done", sim: Boolean(d.best.simulated) });
-  }
-  if (d.waitingYes > 0) out.push({ id: "yes", icon: "bell", key: d.waitingYes > 1 ? "hud.yesMany" : "hud.yes", vars: { n: d.waitingYes }, tone: "needs" });
-  // The need is the least news: drop it first when there are more than four.
-  while (out.length > 4) out.splice(out.findIndex((x) => x.id === "need" || x.id === "cap"), 1);
-  return out;
-}
-
-/**
- * The current bargain from negotiation rows: the open one (no endedAt), its last round with an offer.
- * negotiations: [{ endedAt, vendorId, turns: [{ offer, unit, round, speaker }] }]
- */
-export function liveBargain(negotiations) {
-  const open = (Array.isArray(negotiations) ? negotiations : []).filter((n) => n && !n.endedAt);
-  for (const n of open.reverse()) {
-    const turns = Array.isArray(n.turns) ? n.turns : [];
-    const withOffer = turns.filter((t) => t && Number.isFinite(t.offer) && t.offer > 0);
-    const last = withOffer[withOffer.length - 1];
-    if (last) return { vendorId: n.vendorId ?? null, round: Number.isFinite(last.round) ? last.round : null, offer: last.offer, unit: last.unit || null };
-  }
-  return null;
-}
-
-/** Lowest landed / unit price among quotes for the requirement: { price, unit, vendorId, simulated } or null. */
-export function bestQuote(quotes, requirementId) {
-  let best = null;
-  for (const q of Array.isArray(quotes) ? quotes : []) {
-    if (!q || (requirementId && q.requirementId && String(q.requirementId) !== String(requirementId))) continue;
-    const p = Number.isFinite(q.unitPrice) ? q.unitPrice : null;
-    if (p === null || p <= 0) continue;
-    if (!best || p < best.price) best = { price: p, unit: q.unit || null, vendorId: q.vendorId ?? null, simulated: q.simulated === true };
-  }
-  return best;
-}
-
 /** "₹20,200" / "₹55.5" in Indian grouping. */
 export function inr(v) {
   if (v === null || v === undefined || v === "") return "";
@@ -244,32 +181,6 @@ export function inr(v) {
 export function grouped(v) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n) : "";
-}
-
-/* ------------------------------------------------------------------ v4 home -- */
-
-/** One short state word for the pill under the orb (Stitch 03: READY / LISTENING / THINKING / SPEAKING). */
-const PILL = {
-  idle: "ready", first: "ready", mic: "allowMic", connecting: "connecting", safer: "safer", waiting: "joining",
-  listening: "listening", yourTurn: "yourTurn", thinking: "thinking", speaking: "speaking", muted: "micOff",
-  working: "working", reconnecting: "reconnecting", ending: "ending", error: "failed", blocked: "blocked",
-  micBlocked: "micBlocked", dropped: "dropped", ended: "ended", offline: "offline",
-};
-export function pillKey(state) { return `home.pill.${PILL[state] || "ready"}`; }
-
-/**
- * The one-line status under the greeting: what Sahay is doing (activity.js nowLine) when there is
- * work to tell, else a sentence for the call state. `talk: true` marks the sentence that names the
- * Talk button (the word is drawn in lime).
- * input: { orbState, nowKey, live } -> { key, now: bool, talk: bool }
- */
-export function statusLine({ orbState, nowKey, live }) {
-  if (nowKey && nowKey !== "now.idle") return { key: nowKey, now: true, talk: false };
-  if (live) return { key: "home.status.live", now: false, talk: false };
-  if (orbState === "offline") return { key: "home.status.offline", now: false, talk: false };
-  if (["blocked", "error", "micBlocked", "dropped"].includes(orbState)) return { key: "home.status.trouble", now: false, talk: false };
-  if (["mic", "connecting", "safer", "waiting", "reconnecting", "ending"].includes(orbState)) return { key: "home.status.connecting", now: false, talk: false };
-  return { key: "home.status.ready", now: false, talk: true };
 }
 
 /** A transcript timestamp (ms, s, ISO, or SQLite "YYYY-MM-DD HH:MM:SS" in UTC) -> Date | null. */
@@ -286,21 +197,21 @@ const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.get
 
 const ISSUED = new Set(["issued", "part_paid", "paid"]);
 /**
- * Today's four stat cards (Stitch 03), real numbers only. A source that has not loaded gives null
- * (the card shows a skeleton), never a made-up zero.
+ * Today's four tiles (Orders, Bills, Money in, Low stock), real numbers only. A source that has not
+ * loaded gives null (the tile shows a skeleton), never a made-up zero.
  * input: { now, orders: [{createdAt}], ordersReady, invoices: [{status, issuedAt, createdAt}] | null,
  *   receipts: [{amount, createdAt}] | null, items: [{low}] | null }
  */
 export function todayStats({ now = new Date(), orders = [], ordersReady = true, invoices = null, receipts = null, items = null }) {
   const today = (ts) => sameDay(parseTime(ts), now);
   return [
-    { id: "orders", key: "home.stat.orders", kind: "count", tone: "plain", icon: "cart", route: "#/buy",
+    { id: "orders", key: "home.stat.orders", kind: "count", tone: "plain", icon: "receipt", route: "#/buy",
       value: ordersReady ? orders.filter((o) => today(o.createdAt)).length : null },
-    { id: "bills", key: "home.stat.bills", kind: "count", tone: "plain", icon: "receipt", route: "#/sell",
+    { id: "bills", key: "home.stat.bills", kind: "count", tone: "plain", icon: "doc", route: "#/sell",
       value: invoices ? invoices.filter((i) => ISSUED.has(i.status) && today(i.issuedAt || i.createdAt)).length : null },
-    { id: "received", key: "home.stat.received", kind: "money", tone: "lime", icon: "moneyIn", route: "#/money",
+    { id: "received", key: "home.stat.received", kind: "money", tone: "good", icon: "moneyIn", route: "#/money",
       value: receipts ? receipts.filter((r) => today(r.createdAt)).reduce((s, r) => s + (Number(r.amount) || 0), 0) : null },
-    { id: "low", key: "home.stat.low", kind: "count", tone: "amber", icon: "jar", route: "#/stock",
+    { id: "low", key: "home.stat.low", kind: "count", tone: "warn", icon: "alert", route: "#/stock",
       value: items ? items.filter((i) => i && i.low === true).length : null },
   ];
 }
@@ -315,10 +226,55 @@ export function turnLang(turn) {
   return "en";
 }
 
-/** "04:05" / "1:02:09" for the call timer. */
-export function clock(ms) {
-  const s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
-  const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
-  const p = (n) => String(n).padStart(2, "0");
-  return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${p(mm)}:${p(ss)}`;
+/* ------------------------------------------------------------------- v5 home -- */
+
+/**
+ * The agent figure's state (voicebox.js: idle | listening | thinking | speaking | waiting | trouble)
+ * from orbView(). `waitingYes` > 0 shows "waiting for your yes" while nobody is talking.
+ */
+export function boxState(view, waitingYes = 0) {
+  if (!view) return "idle";
+  if (view.visual === "error") return "trouble";
+  if (view.visual === "speaking") return "speaking";
+  if (view.visual === "thinking") return "thinking";
+  if (view.visual === "listening") return view.state === "muted" ? (waitingYes > 0 ? "waiting" : "idle") : "listening";
+  if (view.visual === "connecting" || view.visual === "working") return waitingYes > 0 && view.visual === "working" ? "waiting" : "thinking";
+  return waitingYes > 0 ? "waiting" : "idle";
+}
+
+/**
+ * The short state word shown next to the figure. A call state wins (it answers the owner now);
+ * then a decision waiting; then real work (activity.js nowLine, shown as its own sentence).
+ * input: { view: orbView(), nowKey, waitingYes } -> { key, now: bool, tone: "calm"|"live"|"warn"|"bad" }
+ */
+const STATE_WORD = {
+  listening: "home.state.listening", yourTurn: "home.state.yourTurn", thinking: "home.state.thinking", speaking: "home.state.speaking",
+  muted: "home.state.muted", waiting: "home.state.joining", mic: "home.state.mic", connecting: "home.state.connecting",
+  safer: "home.state.safer", reconnecting: "home.state.reconnecting", ending: "home.state.ending",
+  offline: "home.state.offline", blocked: "home.state.trouble", micBlocked: "home.state.micBlocked", error: "home.state.trouble",
+  dropped: "home.state.dropped", ended: "home.state.ended",
+};
+export function stateWord({ view, nowKey, waitingYes = 0 }) {
+  const st = view && view.state;
+  if (STATE_WORD[st]) return { key: STATE_WORD[st], now: false, tone: view.tone || "calm" };
+  if (waitingYes > 0) return { key: "home.state.waitingYes", now: false, tone: "warn" };
+  if (nowKey && nowKey !== "now.idle") return { key: nowKey, now: true, tone: "live" };
+  return { key: "home.state.ready", now: false, tone: "calm" };
+}
+
+/** "Good morning" before noon, "Good afternoon" before 5 pm, else "Good evening" (local time). */
+export function greetingKey(date = new Date()) {
+  const hr = date.getHours();
+  return hr < 12 ? "home.greet.morning" : hr < 17 ? "home.greet.afternoon" : "home.greet.evening";
+}
+
+/**
+ * The conversation panel shows only during a call, or just after one (for `keepMs`), or when the
+ * owner typed in this session; otherwise Home has no conversation at all.
+ */
+export function showConversation({ live, turns = 0, endedAt = null, typed = false, now = Date.now(), keepMs = 10 * 60 * 1000 }) {
+  if (live) return true;
+  if (!turns) return false;
+  if (typed) return true;
+  return Boolean(endedAt) && now - endedAt < keepMs;
 }

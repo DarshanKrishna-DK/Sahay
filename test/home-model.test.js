@@ -153,28 +153,6 @@ test("typed yes is recognised in three languages (and never approves)", async ()
   for (const n of ["yes buy 200 kg", "नहीं", "no", "", "हाँ लेकिन कम दाम"]) assert.ok(!isTypedYes(n), n);
 });
 
-test("trackers come only from real values; at most four; need drops first", async () => {
-  const { hudTrackers, liveBargain, bestQuote } = await load();
-  assert.deepEqual(hudTrackers({ requirement: null, sellers: null, bargain: null, best: null, waitingYes: 0 }), []);
-  assert.deepEqual(hudTrackers({ requirement: { item: "rice", quantity: null, maxPrice: null }, sellers: 0, waitingYes: 0 }), [], "no invented zeros");
-  const all = hudTrackers({
-    requirement: { quantity: 200, unit: "kg", maxPrice: 100 }, sellers: 10,
-    bargain: { offer: 96, round: 2, unit: "kg", simulated: true }, waitingYes: 1,
-  });
-  assert.equal(all.length, 4);
-  assert.deepEqual(all.map((x) => x.id), ["cap", "sellers", "bargain", "yes"]);
-  assert.equal(all.find((x) => x.id === "bargain").sim, true, "simulated vendor flagged on the tracker");
-
-  const negs = [
-    { endedAt: "x", vendorId: 1, turns: [{ offer: 90, round: 3 }] },
-    { endedAt: null, vendorId: 2, turns: [{ offer: 110, round: 1, unit: "kg" }, { offer: null }, { offer: 101, round: 2, unit: "kg" }] },
-  ];
-  assert.deepEqual(liveBargain(negs), { vendorId: 2, round: 2, offer: 101, unit: "kg" });
-  assert.equal(liveBargain([{ endedAt: null, turns: [] }]), null);
-  assert.deepEqual(bestQuote([{ requirementId: 1, unitPrice: 101, unit: "kg", vendorId: 2 }, { requirementId: 1, unitPrice: 96, vendorId: 3, simulated: true }, { requirementId: 9, unitPrice: 5 }], 1),
-    { price: 96, unit: null, vendorId: 3, simulated: true });
-});
-
 test("today stats: real counts for today only; a source not loaded is null, never zero", async () => {
   const { todayStats, inr } = await load();
   const now = new Date(2026, 10, 20, 15, 0, 0);
@@ -189,7 +167,7 @@ test("today stats: real counts for today only; a source not loaded is null, neve
     items: [{ low: true }, { low: false }, { low: true }],
   });
   assert.deepEqual(s.map((x) => [x.id, x.value]), [["orders", 2], ["bills", 1], ["received", 1250.5], ["low", 2]]);
-  assert.deepEqual(s.map((x) => x.tone), ["plain", "plain", "lime", "amber"]);
+  assert.deepEqual(s.map((x) => x.tone), ["plain", "plain", "good", "warn"]);
   const empty = todayStats({ now, orders: [], invoices: null, receipts: null, items: null });
   assert.deepEqual(empty.map((x) => x.value), [0, null, null, null], "orders known (0), the rest not loaded");
   assert.equal(todayStats({ now, ordersReady: false }).find((x) => x.id === "orders").value, null);
@@ -198,17 +176,44 @@ test("today stats: real counts for today only; a source not loaded is null, neve
   assert.equal(inr(null), "");
 });
 
-test("status line, state pill, turn language, time parsing and the call clock", async () => {
-  const { statusLine, pillKey, turnLang, parseTime, clock, orbView } = await load();
-  assert.deepEqual(statusLine({ orbState: "idle", nowKey: "now.idle", live: false }), { key: "home.status.ready", now: false, talk: true });
-  assert.equal(statusLine({ orbState: "listening", nowKey: "now.searching", live: true }).key, "now.searching", "real work wins");
-  assert.equal(statusLine({ orbState: "listening", nowKey: "now.idle", live: true }).key, "home.status.live");
-  assert.equal(statusLine({ orbState: "blocked", nowKey: "now.idle", live: false }).key, "home.status.trouble");
-  assert.equal(statusLine({ orbState: "offline", nowKey: "now.idle", live: false }).key, "home.status.offline");
-  assert.equal(statusLine({ orbState: "safer", nowKey: "now.idle", live: false }).key, "home.status.connecting");
-  assert.equal(pillKey("listening"), "home.pill.listening");
-  assert.equal(pillKey("first"), "home.pill.ready");
-  assert.equal(pillKey("nonsense"), "home.pill.ready");
+test("figure state, state word and greeting follow the call and the waiting decisions", async () => {
+  const { boxState, stateWord, greetingKey, orbView } = await load();
+  const v = (c) => orbView({ ...idle, ...c });
+  assert.equal(boxState(v({})), "idle");
+  assert.equal(boxState(v({}), 2), "waiting", "a decision waits and nobody talks");
+  assert.equal(boxState(v({ status: "live", agentState: "listening" })), "listening");
+  assert.equal(boxState(v({ status: "live", agentState: "thinking" })), "thinking");
+  assert.equal(boxState(v({ status: "live", agentState: "speaking" }), 1), "speaking", "speaking wins over waiting");
+  assert.equal(boxState(v({ status: "connecting" })), "thinking");
+  assert.equal(boxState(v({ status: "error", error: { code: "network_blocked" } })), "trouble");
+  assert.equal(boxState(v({ ended: { reason: "dropped" } })), "trouble");
+  assert.equal(boxState(v({ online: false })), "trouble");
+
+  assert.deepEqual(stateWord({ view: v({}), nowKey: "now.idle" }), { key: "home.state.ready", now: false, tone: "calm" });
+  assert.equal(stateWord({ view: v({}), nowKey: "now.idle", waitingYes: 1 }).key, "home.state.waitingYes");
+  assert.deepEqual(stateWord({ view: v({}), nowKey: "now.searching" }), { key: "now.searching", now: true, tone: "live" });
+  assert.equal(stateWord({ view: v({ status: "live", agentState: "listening" }), nowKey: "now.searching" }).key, "home.state.listening", "the call answers first");
+  assert.equal(stateWord({ view: v({ status: "connecting", route: "proxy" }) }).key, "home.state.safer");
+  assert.equal(stateWord({ view: v({ status: "error", error: { code: "network_blocked" } }) }).tone, "bad");
+
+  assert.equal(greetingKey(new Date(2026, 10, 20, 9)), "home.greet.morning");
+  assert.equal(greetingKey(new Date(2026, 10, 20, 13)), "home.greet.afternoon");
+  assert.equal(greetingKey(new Date(2026, 10, 20, 19)), "home.greet.evening");
+});
+
+test("the conversation shows only during a call, just after one, or after typing", async () => {
+  const { showConversation } = await load();
+  const now = 1_000_000;
+  assert.equal(showConversation({ live: true, turns: 0 }), true);
+  assert.equal(showConversation({ live: false, turns: 0, typed: true }), false, "nothing said: nothing shown");
+  assert.equal(showConversation({ live: false, turns: 3, typed: true }), true);
+  assert.equal(showConversation({ live: false, turns: 3, endedAt: now - 60_000, now }), true);
+  assert.equal(showConversation({ live: false, turns: 3, endedAt: now - 11 * 60_000, now }), false);
+  assert.equal(showConversation({ live: false, turns: 3 }), false, "an old transcript with no recent call stays hidden");
+});
+
+test("turn language and time parsing", async () => {
+  const { turnLang, parseTime } = await load();
   assert.equal(turnLang({ language: "hi-IN", text: "x" }), "hi");
   assert.equal(turnLang({ text: "ನನಗೆ ಅಕ್ಕಿ ಬೇಕು" }), "kn");
   assert.equal(turnLang({ text: "मुझे चावल चाहिए" }), "hi");
@@ -217,14 +222,6 @@ test("status line, state pill, turn language, time parsing and the call clock", 
   assert.equal(parseTime(1763632800).getTime(), 1763632800000, "seconds");
   assert.equal(parseTime(""), null);
   assert.equal(parseTime("nope"), null);
-  assert.equal(clock(65000), "01:05");
-  assert.equal(clock(3723000), "1:02:03");
-  // Every orb state has a pill word (checked against the strings file below).
-  const strings = read("public/js/app/home-strings.js");
-  const states = ["idle", "first", "mic", "connecting", "safer", "waiting", "listening", "yourTurn", "thinking", "speaking", "muted", "working", "reconnecting", "ending", "error", "blocked", "micBlocked", "dropped", "ended", "offline"];
-  for (const st of states) assert.ok(strings.includes(`"${pillKey(st)}": [`), `${st} -> ${pillKey(st)}`);
-  for (const L of ["en", "hi", "kn"]) assert.ok(strings.includes(`"home.lang.${L}": [`));
-  assert.ok(orbView({ status: "idle", online: true }).key);
 });
 
 test("D16: switching to typing never mutes the microphone (call.js)", () => {
@@ -233,4 +230,21 @@ test("D16: switching to typing never mutes the microphone (call.js)", () => {
   assert.ok(body.length > 0);
   assert.doesNotMatch(body, /setMuted\(\s*mode === "text"\s*\)/, "typing mode does not mute");
   assert.doesNotMatch(body, /setMuted\(true\)/);
+});
+
+test("every home word used exists in English, Hindi (Devanagari) and Kannada (Kannada script)", () => {
+  const src = read("public/js/app/home-strings.js");
+  const used = new Set();
+  for (const f of ["public/js/app/home-model.js", "public/js/app/home.js", "public/js/app/home-strings.js"]) {
+    for (const m of read(f).matchAll(/"(home\.[A-Za-z0-9.]+)"/g)) used.add(m[1]);
+  }
+  assert.ok(used.size > 40);
+  for (const k of used) {
+    if (k.endsWith(".")) continue;
+    const row = new RegExp(`"${k.replace(/\./g, "\\.")}": \\[\\s*"[^"]+",\\s*"([^"]+)",\\s*"([^"]+)"`);
+    const m = row.exec(src);
+    assert.ok(m, `${k} is defined with three languages`);
+    assert.match(m[1], /[ऀ-ॿ]/u, `${k} Hindi in Devanagari`);
+    assert.match(m[2], /[ಀ-೿]/u, `${k} Kannada in Kannada script`);
+  }
 });
