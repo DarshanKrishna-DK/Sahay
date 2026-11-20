@@ -1,0 +1,107 @@
+/* Discovery board (UI v7, W4A): what Sahay found for the current need. Square navy cards with
+   pixel borders and hard shadows (W1's .card), Jersey 10 numbers, HUD labels, lime primary.
+   Tokens only; no radius, no glow, no blur; motion stops under reduced motion. */
+
+.dsc { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dsc > * { min-width: 0; }
+
+.dsc-hud, .dsc-title, .dsc-count, .dsc-round-n, .dsc-sim {
+  font: 600 var(--fs-label)/var(--lh-label) var(--font-hud);
+  letter-spacing: var(--hud-track);
+  text-transform: var(--hud-case);
+}
+.dsc-hud { margin: 0; color: var(--muted); }
+.dsc-title { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text); }
+.dsc-count { display: inline-grid; place-items: center; min-width: 28px; height: 24px; padding: 0 6px; background: var(--deep); border: 2px solid var(--line); color: var(--text); }
+.dsc-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dsc-quiet { margin: 0; color: var(--muted); }
+.dsc-num { font: var(--fw-display) var(--fs-amount)/var(--lh-amount) var(--font-display); letter-spacing: var(--display-track); font-variant-numeric: tabular-nums; color: var(--text); }
+.dsc-num.is-best { color: var(--accent); }
+.dsc-big { font: var(--fw-display) var(--fs-title)/var(--lh-title) var(--font-display); letter-spacing: var(--display-track); font-variant-numeric: tabular-nums; color: var(--accent); }
+.dsc-unit { color: var(--muted); font: var(--t-meta); }
+.dsc-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.dsc-who > svg { flex: none; color: var(--muted); }
+.dsc-sim { color: var(--warn); }
+
+/* 1. the need */
+.dsc-need-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0; }
+.dsc-need-line .dsc-num { font-size: var(--fs-title); line-height: var(--lh-title); }
+.dsc-item { font-weight: 600; font-size: var(--fs-body); overflow-wrap: anywhere; }
+.dsc-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; color: var(--muted); }
+.dsc-fact { display: inline-flex; align-items: center; gap: 6px; }
+
+/* 2. sellers */
+.dsc-block { display: flex; flex-direction: column; gap: 12px; }
+.dsc-sellers { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.dsc-seller {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.dsc-seller.is-live { border-color: var(--accent); }
+.dsc-seller-top { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.dsc-rank {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background: var(--deep);
+  border: 2px solid var(--line);
+  font: var(--fw-display) 1.25rem/1 var(--font-display);
+  color: var(--text);
+}
+.dsc-seller-main { flex: 1 1 auto; min-width: 0; }
+.dsc-seller-name { margin: 0; font: 600 var(--fs-body)/var(--lh-body) var(--font); overflow-wrap: anywhere; }
+.dsc-seller-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 2px 0 0; color: var(--muted); font: var(--t-meta); }
+.dsc-rating { display: inline-flex; align-items: center; gap: 4px; }
+.dsc-rating > svg { color: var(--gold); }
+.dsc-seller-top > .chip { flex: none; }
+.dsc-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; }
+.dsc-price-text { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.dsc-seller-acts { display: flex; flex-wrap: wrap; gap: 10px; }
+.dsc-seller-acts > .btn { flex: 1 1 auto; min-height: var(--tap); }
+.dsc-sent { display: inline-flex; align-items: center; gap: 6px; min-height: var(--tap); margin: 0; color: var(--good); font-weight: 600; }
+.dsc-live { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--accent); font: 600 var(--fs-label)/var(--lh-label) var(--font-hud); letter-spacing: var(--hud-track); text-transform: var(--hud-case); }
+.dsc-live-dot { width: 8px; height: 8px; background: var(--accent); animation: dsc-blink 1.2s steps(2, jump-none) infinite; }
+@keyframes dsc-blink { 50% { opacity: .25; } }
+
+/* 3. bargaining, round by round */
+.dsc-rounds { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 2px solid var(--line); background: var(--deep); }
+.dsc-round {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  min-height: 56px;
+}
+.dsc-round + .dsc-round { border-top: 2px solid var(--line); }
+.dsc-round.is-agreed { background: var(--surface); box-shadow: inset 4px 0 0 0 var(--accent); }
+.dsc-round-n { display: flex; flex-direction: column; gap: 2px; color: var(--muted); min-width: 0; }
+.dsc-round-ask, .dsc-round-counter { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.dsc-round-ask .dsc-hud, .dsc-round-counter .dsc-hud { font-size: .6875rem; }
+.dsc-round-arrow { color: var(--muted); }
+.dsc-agreed { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--good); font-weight: 600; }
+.dsc-lowest { margin: 0; color: var(--accent); font-weight: 600; }
+
+/* 4. best deal */
+.dsc-deal .dsc-price { margin-top: 2px; }
+.dsc-total { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.dsc-waiting { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--needs); font-weight: 600; }
+
+/* phones: rounds stack the number under the round */
+@media (max-width: 380px) {
+  .dsc-round { grid-template-columns: minmax(0, 1fr) auto; }
+  .dsc-round-n { grid-column: 1 / -1; flex-direction: row; gap: 10px; }
+  .dsc-round-arrow { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsc-live-dot { animation: none; }
+}
