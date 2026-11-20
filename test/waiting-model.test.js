@@ -258,6 +258,11 @@ test("placement per size (spec 6.3)", async () => {
   assert.equal(placeFor({ width: 1024, height: 768 }), "drawer");
   assert.equal(placeFor({ width: 1280, height: 720 }), "column");
   assert.equal(placeFor({ width: 1920, height: 1080 }), "column");
+  // The shell's layout wins: its size class, and whether the agent column is shown at all.
+  assert.equal(placeFor({ width: 1440, height: 900, size: "laptop", columnShown: false }), "drawer");
+  assert.equal(placeFor({ width: 1440, height: 900, size: "laptop", columnShown: true }), "column");
+  assert.equal(placeFor({ width: 844, height: 390, size: "phoneLand" }), "landDrawer");
+  assert.equal(placeFor({ width: 390, height: 844, size: "phone" }), "sheet");
 });
 
 test("keys and read-aloud keys match the server's speak keys (reorder reads its item)", async () => {

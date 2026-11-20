@@ -1,0 +1,259 @@
+/* Waiting for your yes (W3): the tray, the one Yes card for buy / bill / reorder / rule, the
+   waiting pill and the typed-yes note. Built on README-v3.md: tokens-v3.css values only, W1's
+   component classes for the primitives (.card, .card-head, .card-speak, .card-now, .card-alert,
+   .pill-sim, .bignum*, .yes-actions, .keycap*, .icon-btn, .row-button, .error-line, .note-line,
+   .badge, .skel, .spinner, .state). This file lays them out inside the card and styles only the
+   yc- / wt- parts. Owner text never below 16px; Indic body 19px with a taller line. */
+
+/* ------------------------------------------------------------- the card -- */
+
+.yc {
+  --yc-body: var(--fs-body);
+  --yc-lh: var(--lh-body);
+  container-type: inline-size;
+  display: grid;
+  gap: var(--s-4);
+  min-width: 0;
+  color: var(--text-hi);
+}
+.yc:lang(hi), .yc:lang(kn) { --yc-body: var(--fs-body-indic); --yc-lh: var(--lh-indic); }
+
+.yc-head { display: flex; align-items: flex-start; gap: var(--s-3); margin: 0; }
+.yc-head-main { flex: 1; min-width: 0; }
+.yc-kind {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 0 var(--s-1);
+  font-size: var(--fs-sm); font-weight: var(--fw-strong); color: var(--text-lo);
+}
+.yc-of {
+  margin-left: var(--s-2); padding: 0 var(--s-2); border-radius: var(--r-pill);
+  background: var(--piano-3); color: var(--text-md); font-family: var(--font-num);
+}
+.yc-title {
+  margin: 0; font-family: var(--font-display); font-size: var(--fs-h2); font-weight: var(--fw-display);
+  line-height: var(--lh-tight); overflow-wrap: anywhere;
+}
+.yc-title:lang(hi), :lang(hi) > .yc-title { font-family: var(--font-deva); }
+.yc-title:lang(kn), :lang(kn) > .yc-title { font-family: var(--font-kn); }
+.yc-title:focus { outline: none; }
+.yc-title:focus-visible { border-radius: var(--r-xs); box-shadow: var(--focus-ring); }
+
+/* Being spoken now (D7): a lime dot and one line; the card rim comes from .card-now. */
+.yc-now {
+  display: flex; align-items: center; gap: var(--s-2); margin: calc(var(--s-2) * -1) 0 0;
+  font-size: var(--fs-sm); font-weight: var(--fw-strong); color: var(--accent-text);
+}
+.yc-now-dot {
+  width: 12px; height: 12px; flex: none; border-radius: 50%; background: var(--lime);
+  box-shadow: var(--glow-lime); animation: yc-now 1.6s var(--ease-soft) infinite;
+}
+@keyframes yc-now { 0%, 100% { transform: scale(1); } 50% { transform: scale(.6); } }
+
+.yc-body { display: grid; gap: var(--s-4); min-width: 0; }
+.yc-label { margin: 0; font-size: var(--fs-sm); color: var(--text-lo); }
+
+/* Who: the seller (vendor side, cyan), the customer, the item. */
+.yc-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); min-width: 0; }
+.yc-who-ico {
+  display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%;
+  background: color-mix(in srgb, var(--cyan) 16%, transparent); color: var(--cyan-text);
+}
+.yc-bill .yc-who-ico, .yc-reorder .yc-who-ico { background: var(--piano-3); color: var(--text-md); }
+.yc-who-main { display: flex; flex-direction: column; flex: 1 1 140px; min-width: 0; }
+.yc-who-label { font-size: var(--fs-sm); color: var(--text-lo); }
+.yc-who-name { font-size: var(--fs-lead); font-weight: var(--fw-strong); line-height: var(--lh-tight); overflow-wrap: anywhere; }
+
+/* Price per unit x quantity, then the total in a well. */
+.yc-figs { padding-top: var(--s-3); border-top: 1px solid var(--hairline); }
+.yc-eq { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); margin: var(--s-1) 0 0; }
+.yc-eq .bignum { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.yc-times { color: var(--text-lo); font-size: var(--fs-lead); }
+.yc-total {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s-1) var(--s-4);
+  padding: var(--s-3) var(--s-4); border-radius: var(--r-md);
+  background: var(--piano-0); border: 1px solid var(--hairline); box-shadow: var(--press);
+}
+.yc-total .yc-label { font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-md); }
+.yc-total-num {
+  margin: 0; color: var(--accent-text); font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-size: min(var(--fs-total), 15cqi); line-height: 1.05;
+}
+
+.yc-meta { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-size: var(--yc-body); color: var(--text-md); }
+.yc-meta svg { flex: none; color: var(--text-lo); }
+
+/* What Sahay read out (the server's read-back), quieter than the figures. */
+.yc-heard { padding-left: var(--s-3); border-left: 3px solid var(--hairline); }
+.yc-heard-text { margin: var(--s-1) 0 0; font-size: var(--fs-sm); line-height: var(--yc-lh); color: var(--text-md); overflow-wrap: anywhere; }
+
+/* Bill lines and GST. */
+.yc-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.yc-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); font-size: var(--yc-body); }
+.yc-line-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.yc-line-fig { display: inline-flex; gap: 6px; font-family: var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-md); }
+.yc-line-more { color: var(--text-lo); font-size: var(--fs-sm); }
+.yc-gst { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); margin: 0; font-size: var(--fs-sm); color: var(--text-md); }
+.yc-gst-word { font-weight: var(--fw-strong); }
+.yc-gst-num { font-family: var(--font-num); font-size: var(--fs-body); color: var(--text-hi); }
+.yc-gst-split { color: var(--text-lo); }
+
+/* Reorder: what is left (coral + alert), the question, the "search only" promise. */
+.yc-left { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-weight: var(--fw-strong); color: var(--coral-text); font-size: var(--yc-body); }
+.yc-left svg { flex: none; }
+.yc-ask { margin: 0; font-size: var(--fs-lead); font-weight: var(--fw-strong); line-height: var(--lh-tight); }
+.yc-note { margin: 0; }
+
+/* Rule: the sentence is the figure. */
+.yc-rule { margin: 0; font-size: var(--fs-lead); font-weight: var(--fw-strong); line-height: var(--yc-lh); overflow-wrap: anywhere; }
+.yc-why { margin: 0; font-size: var(--yc-body); line-height: var(--yc-lh); color: var(--text-md); }
+.yc-why-word { font-weight: var(--fw-strong); color: var(--text-hi); margin-right: var(--s-2); }
+
+/* ------------------------------------------------------------ the footer -- */
+
+.yc-foot { display: grid; gap: var(--s-4); padding-top: var(--s-2); }
+.yc-foot .yes-actions { justify-content: center; padding-top: var(--s-1); }
+
+.yc-fix {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3);
+  padding: var(--s-4); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--coral) 10%, var(--piano-1)); border: 1px solid color-mix(in srgb, var(--coral) 55%, transparent);
+}
+.yc-fix-ico { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; background: var(--piano-3); color: var(--coral-text); }
+.yc-fix-main { flex: 1 1 180px; min-width: 0; }
+.yc-fix-title { margin: 0; font-weight: var(--fw-strong); font-size: var(--yc-body); }
+.yc-fix-text { margin: var(--s-1) 0 0; font-size: var(--fs-sm); line-height: var(--yc-lh); color: var(--text-md); }
+
+.yc-error, .yc-voice { margin: 0; }
+
+.yc-status { display: flex; align-items: center; justify-content: center; gap: var(--s-3); margin: 0; font-size: var(--yc-body); font-weight: var(--fw-strong); color: var(--text-md); }
+
+/* Outcome blocks: done (lime + check), no (coral + cross), not done yet (amber + clock), gone (neutral + info). */
+.yc-result {
+  --yc-tone: var(--ok); --yc-tone-text: var(--ok-text);
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--yc-tone) 12%, var(--piano-1));
+  border: 1px solid color-mix(in srgb, var(--yc-tone) 50%, transparent);
+}
+.yc-result-no { --yc-tone: var(--coral); --yc-tone-text: var(--coral-text); }
+.yc-result-wait { --yc-tone: var(--amber); --yc-tone-text: var(--amber-text); }
+.yc-result-gone { --yc-tone: var(--text-lo); --yc-tone-text: var(--text-md); }
+.yc-result-ico { flex: none; display: grid; place-items: center; color: var(--yc-tone-text); }
+.yc-result-main { flex: 1; min-width: 0; }
+.yc-result-word { margin: 0; font-size: var(--fs-lead); font-weight: var(--fw-display); line-height: var(--lh-tight); color: var(--text-hi); }
+.yc-result-num { margin: var(--s-1) 0 0; font-family: var(--font-num); font-size: var(--fs-body); color: var(--text-md); overflow-wrap: anywhere; }
+.yc-result-say { margin: var(--s-1) 0 0; font-size: var(--fs-sm); line-height: var(--yc-lh); color: var(--text-md); }
+.yc-close { flex: none; align-self: flex-start; }
+
+.yc-links { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.yc-links:empty { display: none; }
+.yc-link { flex: 1 1 140px; justify-content: center; text-decoration: none; }
+
+/* ---------------------------------------------------------------- the tray -- */
+
+.wt { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; min-height: 0; }
+.wt-head { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-1); }
+.wt-title {
+  display: flex; align-items: center; gap: var(--s-2); flex: 1; min-width: 0; margin: 0;
+  font-family: var(--font-display); font-size: var(--fs-h3); font-weight: var(--fw-display); line-height: var(--lh-tight);
+}
+.wt-title svg { flex: none; color: var(--accent-text); }
+.wt-title:lang(hi), :lang(hi) > .wt-title { font-family: var(--font-deva); }
+.wt-title:lang(kn), :lang(kn) > .wt-title { font-family: var(--font-kn); }
+
+.wt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); min-width: 0; }
+.wt-item { min-width: 0; }
+.wt-item.row { list-style: none; }
+
+/* Collapsed rows (the second card onwards). */
+.yc-row { width: 100%; min-height: var(--touch); text-align: start; }
+.yc-row .row-title { font-weight: var(--fw-strong); }
+.yc-row-fig { font-family: var(--font-num); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-row .row-end { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-lo); }
+.yc-row-done { color: var(--ok-text); }
+.yc-row-declined, .yc-row-error { color: var(--coral-text); }
+.yc-row-notDone { color: var(--amber-text); }
+
+.wt-skel { display: grid; gap: var(--s-3); }
+.wt-skel-card { display: block; height: 240px; border-radius: var(--r-card); }
+.wt-skel-word { margin: 0; text-align: center; font-size: var(--fs-sm); color: var(--text-lo); }
+
+/* The agent column at 1280+: the tray lives here, no scrim, content never covered (pain 2). */
+.wt-column { flex: 1 1 auto; }
+.wt-column .wt-list {
+  overflow-y: auto; overscroll-behavior: contain; min-height: 0;
+  padding: var(--s-1) var(--s-1) var(--s-4); scrollbar-gutter: stable;
+}
+
+/* Inside a sheet / drawer: W1's sheet scrolls; cards keep their own padding. */
+.wt-sheet .wt-list { padding-bottom: var(--s-2); }
+
+.yc-host[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- the pill -- */
+/* Coral droplet with the count: phone under the top capsule, tablet / 1024-1279 top-right
+   (the shell places slots.waitingPill); hidden at 0. */
+
+.wt-pill {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  min-height: var(--touch-min); padding: 0 var(--s-4) 0 var(--s-1);
+  border: 0; border-radius: var(--r-pill);
+  background: var(--coral); color: var(--on-coral);
+  font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-strong);
+  box-shadow: var(--depth-soft); cursor: pointer;
+  transition: transform var(--t-micro) var(--ease-out);
+}
+.wt-pill[hidden] { display: none; }
+.wt-pill:hover { transform: translateY(-1px); }
+.wt-pill:active { transform: translateY(1px); box-shadow: var(--press); }
+.wt-pill:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.wt-pill-drop {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 50%;
+  background: color-mix(in srgb, var(--on-coral) 16%, transparent);
+}
+.wt-pill-num { font-family: var(--font-num); font-size: var(--fs-lead); font-variant-numeric: tabular-nums; line-height: 1; }
+.wt-pill-word { white-space: nowrap; }
+.wt-pill.is-new { animation: wt-pop 1.2s var(--ease-spring) 2; }
+@keyframes wt-pop { 0%, 100% { transform: scale(1); } 30% { transform: scale(1.08); } }
+
+/* Without the v3 shell (old main.js): the pill floats top-right on its own. */
+.wt-layer.wt-has-pill .wt-pill {
+  position: fixed; z-index: var(--z-pill);
+  top: calc(var(--safe-t) + var(--s-3)); right: calc(var(--safe-r) + var(--s-4));
+}
+
+/* --------------------------------------------------------- typed-yes note -- */
+
+.wt-typed {
+  display: grid; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--amber) 10%, var(--piano-1)); border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+}
+.wt-typed-line { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-strong); color: var(--amber-text); }
+.wt-typed-line svg { flex: none; margin-top: 2px; }
+.wt-typed-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.wt-typed-what { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); min-width: 0; font-size: var(--fs-sm); color: var(--text-md); }
+.wt-typed-what b { font-family: var(--font-num); color: var(--text-hi); }
+
+.wt-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ------------------------------------------------------------- per size -- */
+
+/* Phone: the card sits in a bottom sheet over the dock; Yes / No at its bottom edge (thumb zone). */
+@media (max-width: 599px) {
+  .yc { gap: var(--s-3); }
+  .yc-body { gap: var(--s-3); }
+  .yc-title { font-size: var(--fs-h3); }
+  .yc-link { flex-basis: 120px; }
+}
+
+/* Short screens (360x640, landscape phones): keep the figures and the buttons, quiet the read-back. */
+@media (max-height: 700px) {
+  .yc-heard-text { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+/* ---------------------------------------------------------- reduced motion -- */
+
+@media (prefers-reduced-motion: reduce) {
+  .yc-now-dot { animation: none; }
+  .wt-pill, .wt-pill:hover, .wt-pill:active { transition: none; transform: none; }
+  .wt-pill.is-new { animation: none; box-shadow: var(--depth-soft), 0 0 0 3px var(--piano-0), 0 0 0 5px var(--coral); }
+}

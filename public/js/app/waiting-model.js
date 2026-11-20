@@ -83,14 +83,16 @@ export function orderItems(items, speakingKey = null) {
  *   drawer       1024-1279: right drawer 400, light scrim
  *   column       1280+: inside the agent column, no scrim
  */
-export function placeFor({ width, height }) {
+export function placeFor({ width, height, size, columnShown } = {}) {
   const w = Number(width) || 0;
   const h = Number(height) || 0;
-  if (h > 0 && h <= 500 && w >= 568 && w < 1024) return "landDrawer";
-  if (w < 600) return "sheet";
-  if (w < 1024) return "tabletSheet";
-  if (w < 1280) return "drawer";
-  return "column";
+  // The shell's size class (shell-geometry.js sizeClass) wins when given; the same rules otherwise.
+  const cls = size || (h > 0 && h <= 500 && w >= 568 && w > h ? "phoneLand" : w < 600 ? "phone" : w < 1024 ? "tablet" : w < 1600 ? "laptop" : "wide");
+  if (cls === "phoneLand") return "landDrawer";
+  if (cls === "phone") return "sheet";
+  if (cls === "tablet") return "tabletSheet";
+  const column = typeof columnShown === "boolean" ? columnShown : w >= 1280;
+  return column ? "column" : "drawer";
 }
 
 const YES_WORDS = new Set([
