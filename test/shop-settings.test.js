@@ -214,7 +214,8 @@ test("My Sahay shows the shop details; Sell shows the needs card and opens the s
   const kit = read("public/js/app/shop-settings.js");
   assert.match(kit, /export function shopNeedCard\(code, say = null\)/);
   assert.match(kit, /say \|\| st\(`shop\.need\.\$\{code\}`\)/);
-  const css = read("public/css/app.css");
-  assert.match(css, /"head stars" "profile stars" "shop stars" "actions stars"/);
-  assert.match(css, /"head" "stars" "profile" "shop" "actions"/);
+  // UI v3: My Sahay is four sections (tabs on phone, a list beside the body from 1024px) in app-me.css.
+  const css = read("public/css/app-me.css");
+  assert.match(css, /\.me-tablist \{/);
+  assert.match(css, /grid-template-columns: 272px minmax\(0, 1fr\)/);
 });
