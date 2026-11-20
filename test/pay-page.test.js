@@ -240,13 +240,18 @@ test("an unknown order link is 'not valid' with the way back to Buy; a network f
   assert.equal(stateOf(limited), "limit");
 });
 
-test("the pay page uses the v3 tokens and its own sheet: no inline style block, no old marigold or saffron", () => {
+test("the pay page uses the v5 tokens and its own sheet: no inline style block, no lime, marigold or saffron", () => {
   assert.doesNotMatch(HTML, /<style/i, "styles live in /css/pay.css (self only under PAY_CSP)");
-  assert.match(HTML, /href="\/css\/tokens-v3\.css"/);
+  assert.match(HTML, /href="\/css\/tokens\.css"/);
+  assert.doesNotMatch(HTML, /tokens-v3/);
   assert.match(HTML, /href="\/css\/pay\.css"/);
-  assert.match(HTML, /https:\/\/fonts\.googleapis\.com\/css2\?family=Jaini\+Purva/, "v4 fonts load from Google Fonts (allowed in PAY_CSP)");
-  assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c/i);
-  assert.match(SCRIPT, /theme: \{ color: "#B6F23C" \}/);
+  assert.match(HTML, /https:\/\/fonts\.googleapis\.com\/css2\?family=Manrope/, "v5 fonts load from Google Fonts (allowed in PAY_CSP)");
+  assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c|#B6F23C|--lime|--piano/i);
+  assert.match(SCRIPT, /theme: \{ color: "#F2CFC6" \}/);
+  assert.match(HTML, /<span class="pay-btn-front">/, "the pink pill Pay button");
+  assert.doesNotMatch(HTML + CSS, /pay-btn-edge|translateY/, "the owner's flat pill: no edge, no press-down");
+  assert.match(CSS, /\.pay-btn-front \{[^}]*white-space: nowrap/, "the Pay word never wraps");
+  for (const s of ["Pay with Razorpay", "Razorpay से भुगतान करें", "Razorpay ಮೂಲಕ ಪಾವತಿಸಿ"]) assert.ok(SCRIPT.includes(`pay: "${s}"`), s);
 });
 
 test("v4: English by default whatever the shop's language; the small switch changes the words and is kept on the device", async () => {

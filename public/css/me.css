@@ -1,0 +1,63 @@
+/* My Sahay (me.js, history.js; screens.md 08). UI v5, owner W5. Page pattern: head, "Needs you"
+   (only when a suggested rule waits), ONE card of setting rows: label + one sentence + one control.
+   Sheets hold the details (voice, bargaining, shop, what Sahay remembers, history). Tokens only. */
+
+.me { display: flex; flex-direction: column; gap: var(--s6); }
+.me-needs:empty { display: none; }
+.me-cards { display: flex; flex-direction: column; gap: var(--s4); }
+
+/* ---------------------------------------------------------- settings card -- */
+.me-card { padding: 0 var(--s5); }
+.me-rows { list-style: none; margin: 0; padding: 0; }
+.me-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3) var(--s5); flex-wrap: wrap;
+  min-height: 72px; padding: var(--s4) 0;
+}
+.me-row + .me-row { border-top: 1px solid var(--hairline); }
+.me-row-text { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.me-row-label { font-size: var(--fs-body); font-weight: 700; line-height: 1.4; }
+.me-row-sentence { color: var(--text-muted); font-size: var(--fs-small); line-height: 1.5; overflow-wrap: anywhere; max-width: 60ch; }
+.me-row-control { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2); }
+.me-row-wide .me-row-control { flex: 1 1 320px; align-items: stretch; }
+.me-row-wide .seg { width: 100%; }
+.me-row-wide .seg-opt { flex: 1 1 0; }
+.me-row .toggle input[disabled] + .toggle-track { opacity: 1; cursor: default; }
+.me-save-line { display: inline-flex; align-items: center; gap: var(--s2); color: var(--text-muted); font-size: var(--fs-label); font-weight: 600; }
+.me-save-line.is-ok { color: var(--good); }
+.me-save-line .spinner { width: 16px; height: 16px; }
+@media (max-width: 599px) {
+  .me-card { padding: 0 var(--s4); }
+  .me-row-control { flex: 1 1 100%; align-items: stretch; }
+  .me-row-control > .btn { align-self: flex-start; }
+}
+
+/* ---------------------------------------------------------- sheets -- */
+.me-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s3); }
+.me-steps li { display: flex; align-items: flex-start; gap: var(--s3); font-size: var(--fs-body); line-height: var(--lh); }
+.me-step-n {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--pink-soft); color: var(--pink); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.me-example { padding: var(--s4); border-radius: var(--r); background: var(--surface); border: 1px solid var(--hairline); }
+.me-example-text { margin-top: var(--s1); font-weight: 600; line-height: var(--lh); }
+.me-choice { width: 100%; }
+.me-choice .seg-opt { flex: 1 1 0; }
+.me-states .list { margin-top: var(--s2); }
+.me-sheet-part { display: flex; flex-direction: column; gap: var(--s3); padding-top: var(--s4); margin-top: var(--s2); border-top: 1px solid var(--hairline); }
+.me-sheet-h { margin: 0; font-size: var(--fs-h3); font-weight: 700; }
+.me-phone { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-amount); font-weight: 700; }
+.me-phone svg { color: var(--text-muted); }
+.me-honest { color: var(--text-muted); font-size: var(--fs-small); line-height: var(--lh); }
+.me-warn-word { display: inline-flex; align-items: center; gap: var(--s1); color: var(--warn); font-weight: 700; }
+.me-code { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s4); border-radius: var(--r); background: var(--surface); border: 1px solid var(--hairline); }
+.me-code-value { font-size: var(--fs-amount); font-weight: 700; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+.me-ok { color: var(--good); }
+
+/* ---------------------------------------------------------- history -- */
+.me-history { display: flex; flex-direction: column; gap: var(--s5); }
+.me-time { color: var(--text-muted); font-size: var(--fs-label); font-weight: 600; white-space: nowrap; }
+.me-history .row-end { flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .me-row, .me-step-n { transition: none; }
+}

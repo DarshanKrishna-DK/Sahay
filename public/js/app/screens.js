@@ -8,6 +8,8 @@ import { createBuy } from "./buy.js";
 import { createStock } from "./stock.js";
 import { createSell } from "./sell.js";
 import { createMoney } from "./money.js";
+import { createMe } from "./me.js";
+import { createAuth } from "./auth.js";
 
 export const SCREENS = {
   home: createHome,
@@ -15,8 +17,8 @@ export const SCREENS = {
   sell: createSell,
   stock: createStock,
   money: createMoney,
-  me: placeholder("nav.me"),
+  me: createMe,
 };
 
 /** The log in / sign up view (W5): a factory ({ mode }) -> { el, update(), show(mode), destroy() }. */
-export const AUTH = null;
+export const AUTH = createAuth;

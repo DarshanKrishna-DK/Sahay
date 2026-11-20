@@ -14,8 +14,6 @@ const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const W5_JS = ["me.js", "star-words.js", "history.js", "auth.js", "welcome.js", "boot-screens.js", "me-strings.js", "me-logic.js", "auth-logic.js", "history-lines.js"].map((f) => `public/js/app/${f}`);
-const W5_CSS = ["public/css/app-me.css", "public/css/app-auth.css", "public/css/pay.css"];
 
 /** Rows of an addStrings({...}) call: key -> [en, hi, kn]. */
 function stringRows(source) {
@@ -51,3 +49,45 @@ test("every History line key has words (old hist.* rows or the new hx.* rows)", 
     "hist.account.signed_in", "hist.account.passkey_added", "hist.account.pin_locked", "hist.rule.decided", "hist.approval.decided"]);
   for (const k of keys) if (!replaced.has(k)) assert.ok(known.has(k), `${k} has words`);
 });
+
+test("v5: every new My Sahay and auth word is in three languages, Hindi in Devanagari and Kannada in Kannada script", () => {
+  for (const f of ["public/js/app/me.js", "public/js/app/auth.js"]) {
+    const rows = stringRows(read(f));
+    assert.ok(rows.size > 5, `${f}: ${rows.size} rows`);
+    for (const [key, [en, hi, kn]] of rows) {
+      assert.ok(en && hi && kn, key);
+      assert.match(hi, /[ऀ-ॿ]|^GST$/, `${key} hi is Devanagari`);
+      assert.match(kn, /[ಀ-೿]|^GST$/, `${key} kn is Kannada script`);
+      assert.doesNotMatch(en, /^[A-Z][A-Z ]{3,}$/, `${key}: sentence case, never all caps`);
+    }
+  }
+});
+
+test("v5 log in (screens.md 09): phone, PIN keypad with autoAdvance and the error slot, Log in, passkey, the footer; the words never follow the shop's language", () => {
+  const auth = read("public/js/app/auth.js");
+  assert.match(auth, /"\/api\/auth\/login"/);
+  assert.match(auth, /"\/api\/auth\/register"/);
+  assert.match(auth, /retry-after/i, "PIN lock minutes from Retry-After");
+  assert.match(auth, /createKeypad\(\{ length, mask: true, label, onDone, autoAdvance: true \}\)/);
+  assert.match(auth, /pad\.setError\(fieldError\)/, "errors sit between the dots and the keys");
+  assert.match(auth, /au5\.passkey/);
+  assert.match(auth, /au5\.footer/, "automated assistant + test mode");
+  assert.match(auth, /au\.notVerified/, "sign-up says the phone is not verified");
+  assert.doesNotMatch(auth, /setLang\(/, "log in never switches the words to the shop's language");
+  assert.doesNotMatch(auth, /Get code|OTP|otp/, "Sahay sends no SMS codes: no invented code step");
+  assert.match(read("public/js/app/screens.js"), /export const AUTH = createAuth;/);
+});
+
+test("v5 My Sahay (screens.md 08): Talk to Sahay opens a sheet first; the ask-before-order toggle is on and locked; no invented spending limit or voice sample", () => {
+  const me = read("public/js/app/me.js");
+  assert.match(me, /pageHead\(\{ title: t\("me\.title"\), sentence: t\("me5\.pageSentence"\), action: \{ word: t\("me5\.talk"\), icon: "mic", onClick: openTalk \} \}\)/);
+  const openTalk = me.slice(me.indexOf("function openTalk"), me.indexOf("function renderHead"));
+  assert.match(openTalk, /openSheet\(/);
+  assert.match(openTalk, /const start = \(\) => \{[\s\S]*sahay:talk/, "the call starts only from Start talking");
+  assert.match(me, /box\.disabled = true/, "Ask me before every order cannot be switched off");
+  assert.doesNotMatch(me.replace(/^\s*\/\/.*$/gm, ""), /spending|Play sample|voice sample/i);
+  assert.match(me, /me5\.rememberLabel/);
+  assert.match(me, /createHistoryPanel/);
+  assert.match(read("public/js/app/screens.js"), /me: createMe,/);
+});
+
