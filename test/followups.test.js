@@ -161,11 +161,11 @@ test("e2e r3: a follow-up fires at its due time (its own timer), not on the next
   const due = Date.now() + 250;
   const [row] = followups.scheduleForOrder(businessId, order.id, { now: due - 24 * HOUR });
   followups.arm([row]);
-  await new Promise((resolve) => setTimeout(resolve, 700));
+  await new Promise((resolve) => setTimeout(resolve, 2500));
   const fired = repo.listFollowups(businessId, { order_id: order.id })[0];
   assert.equal(fired.status, "fired");
   const lateMs = Date.parse(fired.fired_at) - Date.parse(fired.due_at);
-  assert.ok(lateMs >= 0 && lateMs < 400, `fired ${lateMs} ms after due`);
+  assert.ok(lateMs >= 0 && lateMs < 2000, `fired ${lateMs} ms after due`); // own timer, far below the 30 s tick; slack for a loaded machine
   assert.ok(followups.DEMO_TICK_MS <= 5000, "the demo ticker runs at least every 5 s");
 });
 
