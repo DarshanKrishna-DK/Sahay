@@ -190,7 +190,8 @@ main, .site-foot { position: relative; z-index: 1; }
   .glass-nav { background: var(--glass-strong); }
 }
 .brand {
-  display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding-right: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-width: 48px; min-height: 48px; padding-right: 6px;
   color: var(--lime); text-decoration: none; border-radius: 999px;
 }
 .brand-name { color: var(--text-hi); font-size: 1.25rem; font-weight: 650; letter-spacing: -0.01em; }
@@ -218,6 +219,7 @@ main, .site-foot { position: relative; z-index: 1; }
 }
 @media (max-width: 399px) {
   .brand-name { display: none; }
+  .brand { padding-right: 0; } /* the mark alone still gets a 48 x 48 target */
   .ai-chip { font-size: 0.875rem; padding: 0 10px; }
 }
 

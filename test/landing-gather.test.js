@@ -126,3 +126,43 @@ test("story: a rail jump lands in the middle of the chapter's slot", async () =>
   assert.equal(frames[2].current, true);
   assert.equal(frames[2].opacity, 1);
 });
+
+test("gather: relayout before the first resize is a no-op, after it the cloud draws (DOM stubs)", async () => {
+  const G = await load("gather.js");
+  const saved = {};
+  for (const k of ["matchMedia", "ResizeObserver", "IntersectionObserver", "document", "getComputedStyle", "window", "devicePixelRatio", "requestAnimationFrame", "cancelAnimationFrame"]) saved[k] = globalThis[k];
+  const mq = (matches) => ({ matches, addEventListener() {} });
+  const observers = [];
+  globalThis.matchMedia = (q) => mq(/reduce/.test(q));
+  globalThis.ResizeObserver = class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} };
+  globalThis.IntersectionObserver = class { constructor() {} observe() {} };
+  globalThis.document = { visibilityState: "visible", addEventListener() {} };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: (name) => (name === "--gather-mode" ? "wide" : name === "--safe-top" ? "88" : "") });
+  globalThis.devicePixelRatio = 1;
+  globalThis.window = globalThis;
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => {};
+  let calls = 0;
+  const ctx = new Proxy({}, { get: (target, key) => (key in target ? target[key] : () => { calls++; }), set: (target, key, v) => { target[key] = v; return true; } });
+  const canvas = { getContext: () => ctx, width: 0, height: 0 };
+  const host = {
+    dataset: {},
+    querySelector: () => canvas,
+    querySelectorAll: () => [],
+    closest: () => null,
+    getBoundingClientRect: () => ({ width: 1440, height: 900, left: 0, top: 0 }),
+    addEventListener() {},
+  };
+  try {
+    const handle = G.initGather(host, { reducedQuery: mq(true) });
+    assert.doesNotThrow(() => handle.relayout(), "no layout yet: nothing to do");
+    assert.equal(calls, 0, "nothing drawn before the canvas is measured");
+    observers[0].cb([]); // the first resize measures the canvas
+    assert.equal(host.dataset.state, "ready");
+    assert.equal(host.dataset.mode, "wide");
+    assert.ok(calls > 0, "drawn after the first resize");
+    assert.doesNotThrow(() => handle.relayout());
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
+  }
+});

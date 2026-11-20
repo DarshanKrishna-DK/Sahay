@@ -365,6 +365,7 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
   }
 
   function draw() {
+    if (!lay || !n) return; // nothing to draw until the first resize has measured the canvas
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     drawHud();
@@ -461,6 +462,11 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
 
   return {
     /** Labels changed size (language switch): place them again and redraw. */
-    relayout() { placeTags(); if (reducedQuery.matches) stillFrame(); draw(); },
+    relayout() {
+      if (!lay || !n) return; // the first resize will place everything
+      placeTags();
+      if (reducedQuery.matches) stillFrame();
+      draw();
+    },
   };
 }
