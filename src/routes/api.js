@@ -42,6 +42,7 @@ const speakIt = require("../agent/speak");
 const { rateCheck } = require("../client-address");
 const suppliers = require("../suppliers");
 const supplierStore = require("../db/suppliers");
+const discovery = require("../procurement/board");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -65,6 +66,7 @@ const RATE = Object.freeze({
   payVerify: Object.freeze({ perToken: { max: 30, windowMs: 10 * MINUTE } }),
   badPayToken: Object.freeze({ perIp: { max: 60, windowMs: 10 * MINUTE }, untrusted: { max: 600, windowMs: 10 * MINUTE } }),
   speak: Object.freeze({ perBusiness: { max: 30, windowMs: 10 * MINUTE } }),
+  negotiate: Object.freeze({ perBusiness: { max: 10, windowMs: 10 * MINUTE } }),
 });
 /** How often a live owner call's agent is checked with Agora (it may have left on idle_timeout). */
 const AGENT_WATCH_MS = 30 * 1000;
@@ -243,7 +245,8 @@ function snapshot(businessId) {
     negotiations: forRequirement ? repo.listNegotiations(businessId, forRequirement) : [],
     quotes: forRequirement ? repo.listQuotes(businessId, forRequirement) : [],
     deals: requirement ? registry.rankedDeals(businessId, requirement.id) : [],
-    approvals: repo.listApprovals(businessId),
+    // closedBy "system": withdrawn by the server (another deal replaced it, or it expired), not the owner's no.
+    approvals: repo.listApprovals(businessId).map((a) => (a.status === "rejected" && !a.decided_via ? { ...a, closedBy: "system" } : a)),
     orders: repo.listOrders(businessId).map((o) => ({ ...o, ...orderSubject(businessId, o), pdfUrl: `/api/orders/${encodeURIComponent(o.id)}/po.pdf` })),
     followups: repo.listFollowups(businessId),
     audit: repo
@@ -602,6 +605,50 @@ function createApiRouter() {
     wrap(async (req, res) => {
       if (!telegram.isConfigured()) throw new HttpError(503, "TELEGRAM_NOT_CONFIGURED", "Telegram notifications are not set up on this server.");
       res.json(telegram.createLinkCode(req.auth.businessId));
+    }),
+  );
+
+  // The discovery board: the latest need (or ?requirementId=) with its search, sellers, live
+  // offers, deals and waiting approval. Read only; the business comes from the session.
+  router.get("/api/discovery", (req, res) => {
+    const requirementId = typeof req.query.requirementId === "string" && req.query.requirementId ? req.query.requirementId : null;
+    if (requirementId && requirementId.length > 64) throw new HttpError(400, "INVALID", "requirementId is too long.");
+    const out = discovery.board(req.auth.businessId, { requirementId });
+    if (!out) throw new HttpError(404, "NOT_FOUND", "No such need.");
+    res.set("Cache-Control", "no-store").json(out);
+  });
+
+  // The owner picks a seller on the screen: the same start_negotiation tool the voice agent calls
+  // (same guards: the owner's rules, no listed price, one negotiation at a time, own supplier on
+  // Telegram). It only starts bargaining; a deal still needs the owner's yes before any order.
+  router.post(
+    "/api/negotiations",
+    json,
+    wrap(async (req, res) => {
+      const { businessId } = req.auth;
+      const vendorId = req.body?.vendorId;
+      const counterpart = req.body?.counterpart;
+      if (typeof vendorId !== "string" || !vendorId || vendorId.length > 64) throw new HttpError(400, "INVALID", "vendorId names a seller from GET /api/discovery.");
+      if (counterpart !== undefined && counterpart !== "simulated" && counterpart !== "human") throw new HttpError(400, "INVALID", 'counterpart is "simulated" or "human".');
+      rateLimit([{ key: `negotiate:biz:${businessId}`, ...RATE.negotiate.perBusiness }]);
+      const ctx = { businessId, sessionId: voice.get(businessId)?.sessionId ?? null, agentId: null, actor: "owner", toolScope: registry.SCOPES.owner };
+      const started = await registry.callTool(ctx, "start_negotiation", { vendorId, ...(counterpart ? { counterpart } : {}) });
+      // In a live call the agent did not start it, so the owner hears it from the server.
+      const call = narrator.liveCall(businessId);
+      const spoken = call?.agentId && started.say ? await require("../agora/outcome").announce({ businessId, agentId: call.agentId }, started.say) : false;
+      res.status(202).json({
+        jobId: started.jobId,
+        negotiationId: started.negotiationId ?? null,
+        vendorId: started.vendorId,
+        vendorName: started.vendorName,
+        vendorRank: started.vendorRank || null,
+        counterpart: started.counterpart,
+        ownSupplier: Boolean(started.ownSupplier),
+        simulated: started.counterpart === "simulated",
+        ...(started.joinUrl ? { joinUrl: started.joinUrl } : {}),
+        say: started.say,
+        spoken,
+      });
     }),
   );
 

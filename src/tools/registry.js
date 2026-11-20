@@ -119,6 +119,11 @@ const PHRASES = {
     "kn-IN": (v) => `ಸರಿ, ${v.quantity} ${v.unit} ${v.item}${v.city ? `, ${knDative(v.city)}` : ""}; ಇಂಡಿಯಾಮಾರ್ಟ್‌ನಲ್ಲಿ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕಲು ಶುರು ಮಾಡಿದ್ದೇನೆ, ಸಿಕ್ಕ ತಕ್ಷಣ ಹೇಳುತ್ತೇನೆ.`,
     "en-IN": (v) => `Noted: ${v.quantity} ${v.unit} of ${v.item}${v.city ? ` for ${v.city}` : ""}. I have started looking for vendors on IndiaMART and will tell you as soon as I find them.`,
   },
+  one_item_at_a_time: {
+    "hi-IN": (v) => `अभी ${v.item} की खोज कर रही हूँ; एक बार में एक ही सामान। ${v.other ? `${v.other} भी चाहिए तो` : "दूसरा सामान"} इसके बाद बताइए।`,
+    "kn-IN": (v) => `ಈಗ ${v.item} ಹುಡುಕುತ್ತಿದ್ದೇನೆ; ಒಂದು ಸಲಕ್ಕೆ ಒಂದೇ ವಸ್ತು. ${v.other ? `${v.other} ಕೂಡ ಬೇಕಿದ್ದರೆ` : "ಬೇರೆ ವಸ್ತು"} ಇದರ ನಂತರ ಹೇಳಿ.`,
+    "en-IN": (v) => `I am on ${v.item} right now; one item at a time. ${v.other ? `If you also need ${v.other}, tell me` : "Tell me the next item"} after this one.`,
+  },
   requirement_not_heard: {
     "hi-IN": (v) => `माफ़ कीजिए, पूरी बात सुनाई नहीं दी; बताइए, ${v.missing}?`,
     "kn-IN": (v) => `ಕ್ಷಮಿಸಿ, ಪೂರ್ತಿ ಕೇಳಿಸಲಿಲ್ಲ; ದಯವಿಟ್ಟು ಮತ್ತೆ ಹೇಳಿ, ${v.missing}?`,
@@ -560,6 +565,175 @@ function recentTwin(businessId, fields, now = Date.now()) {
   if (!same) return null;
   const ordered = repo.listQuotes(businessId, { requirement_id: latest.id }).some((q) => repo.listOrders(businessId, { quote_id: q.id }).length > 0);
   return ordered ? null : latest;
+}
+
+/**
+ * Live call 2026-11-20 18:54: the model called save_requirement twice at once, for "rice" and for
+ * "tomatoes" (the owner had asked for one item), and both were saved and searched. Within this
+ * window after a need was saved, a new save for an overlapping item ("rice", "basmati rice") is the
+ * same need and updates it; a different item is refused (one new item at a time).
+ */
+const OVERLAP_WINDOW_MS = 20 * 1000;
+const itemWords = (text) => foldText(text).replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+/** Same item, or one name inside the other word by word ("rice" / "basmati rice"). */
+function itemsOverlap(a, b) {
+  const x = itemWords(a).join(" ");
+  const y = itemWords(b).join(" ");
+  if (!x || !y) return false;
+  return x === y || ` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `);
+}
+
+const hasOrder = (businessId, requirement) => repo.listQuotes(businessId, { requirement_id: requirement.id }).some((q) => repo.listOrders(businessId, { quote_id: q.id }).length > 0);
+
+/** The newest need this call (session) saved within OVERLAP_WINDOW_MS, or null. */
+function justSaved(ctx, now = Date.now()) {
+  return (
+    repo
+      .listRequirements(ctx.businessId)
+      .filter((r) => now - Date.parse(r.created_at) <= OVERLAP_WINDOW_MS && (!ctx.sessionId || r.session_id === ctx.sessionId))
+      .at(-1) ?? null
+  );
+}
+
+/** businessId -> the tail of its save_requirement calls: two calls in one turn run one after the other, never interleaved. */
+const saveChains = new Map();
+function oneAtATime(businessId, fn) {
+  const before = saveChains.get(businessId) ?? Promise.resolve();
+  const run = before.then(fn, fn);
+  const tail = run.then(() => {}, () => {});
+  saveChains.set(businessId, tail);
+  tail.then(() => {
+    if (saveChains.get(businessId) === tail) saveChains.delete(businessId);
+  });
+  return run;
+}
+
+/** save_requirement's work, one call at a time per business (oneAtATime). */
+async function saveRequirement(ctx, args, language) {
+  const fields = {};
+  for (const [arg, column] of [["item", "item"], ["quantity", "quantity"], ["unit", "unit"], ["city", "city"], ["max_price_per_unit", "max_price"], ["target_price", "target_price"], ["delivery_by", "delivery_by"], ["notes", "notes"]]) {
+    if (args[arg] !== undefined && args[arg] !== null && args[arg] !== "") fields[column] = typeof args[arg] === "string" ? args[arg].trim() : args[arg];
+  }
+  // Canonical at the boundary: "किलो", "kilos", "ಕಿಲೋ" are all stored as "kg"; an unknown unit is asked about, never guessed.
+  if (fields.unit !== undefined) {
+    const unit = canonicalUnit(fields.unit);
+    if (!unit) throw new ToolError("UNKNOWN_UNIT", phrase("unit_unknown", language, { unit: fields.unit }), { status: 400, message: `Unknown unit "${fields.unit}".` });
+    fields.unit = unit;
+  }
+  if (fields.city !== undefined) fields.city = cityName(fields.city);
+
+  // The usual quantity is filled only on the owner's spoken yes to the server's own offer of it.
+  let usual = null;
+  if (args.use_usual_quantity) {
+    if (fields.item || fields.quantity !== undefined) throw new ToolError("INVALID", sayFor("invalid", language), { message: "use_usual_quantity goes without an item or a quantity." });
+    if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", phrase("quantity_ask", language), { status: 409 });
+    const need = args.requirementId
+      ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
+      : repo.listRequirements(ctx.businessId).filter((r) => ctx.sessionId && r.session_id === ctx.sessionId).at(-1);
+    const rule = need && policy.usualQuantity(ctx.businessId, need.item);
+    if (!rule) throw new ToolError("RULE_NOT_FOUND", phrase("quantity_ask", language), { status: 409 });
+    try {
+      await withHistory(ctx, (history) => agentRules.spokenYes(ctx.businessId, rule.id, { agentId: ctx.agentId, history }));
+    } catch (err) {
+      throw new ToolError(err?.code ?? "NOT_AFFIRMATIVE", phrase("quantity_ask", language), { status: 409, message: err?.message, cause: err });
+    }
+    usual = { quantity: rule.params.quantity, unit: rule.params.unit };
+    Object.assign(fields, usual);
+  }
+
+  const update = Boolean(args.requirementId || !fields.item);
+  let target = null;
+  if (update) {
+    target = args.requirementId
+      ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
+      : ctx.sessionId && repo.listRequirements(ctx.businessId).filter((r) => r.session_id === ctx.sessionId).at(-1);
+    if (!target) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
+    if (!Object.keys(fields).length) throw new ToolError("INVALID", sayFor("invalid", language), { message: "Nothing to update." });
+  } else {
+    target = recentTwin(ctx.businessId, fields);
+    // In a call only (the model's parallel calls); a test or REST caller saves what it is given.
+    const recent = target || !ctx.agentId ? null : justSaved(ctx);
+    if (recent && !hasOrder(ctx.businessId, recent)) {
+      if (!itemsOverlap(recent.item, fields.item)) {
+        // A second, different item within seconds of the first: never two needs (and two searches) from one turn.
+        return {
+          requirementId: recent.id,
+          saved: false,
+          oneAtATime: true,
+          missing: [],
+          sourcingStarted: false,
+          hint: "Nothing was saved: only one new item at a time. Never save an item the owner did not name. Speak `say` and wait; save the next item only when the owner asks for it after this one.",
+          say: phrase("one_item_at_a_time", language, { item: spokenItem(ctx.businessId, recent, language), other: fields.item }),
+        };
+      }
+      // The same need said again ("rice" just after "basmati rice"): update it, keep the fuller name.
+      target = recent;
+      if (itemWords(fields.item).length <= itemWords(recent.item).length) delete fields.item;
+    }
+  }
+
+  // Only what this call changes has to be in the owner's words; a value sent again unchanged does not.
+  const changed = (column) => fields[column] !== undefined && (!target || fields[column] !== target[column]);
+  const notHeard = await unheardFields(ctx, args, {
+    item: changed("item") ? fields.item : undefined,
+    quantity: !usual && changed("quantity") ? fields.quantity : undefined,
+    unit: !usual && changed("unit") ? fields.unit : undefined,
+  });
+  if (notHeard.length) {
+    return {
+      requirementId: target?.id ?? null,
+      saved: false,
+      missing: notHeard,
+      sourcingStarted: false,
+      say: phrase("requirement_not_heard", language, { missing: notHeard.map((m) => MISSING_WORDS[m][language]).join(", ") }),
+    };
+  }
+
+  // A sale is never a purchase: a new need in the same turn as draft_invoice is the sale misread (E2E full run).
+  if (!target && toolCalls.startedSince(ctx.businessId, ["draft_invoice"], Date.now() - SALE_TURN_MS)) {
+    return {
+      requirementId: null,
+      saved: false,
+      sale: true,
+      sourcingStarted: false,
+      hint: "This turn is a sale to a customer (draft_invoice): nothing was saved as a purchase. Say nothing about buying, vendors or a delivery city; speak only the say of draft_invoice.",
+      say: "",
+    };
+  }
+  const requirement = target
+    ? Object.keys(fields).length
+      ? repo.updateRequirement(ctx.businessId, target.id, fields)
+      : target
+    : repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
+  events.emit(ctx.businessId, "requirement.saved", requirement, { sessionId: ctx.sessionId, actor: "agent" });
+  const missing = missingFields(requirement);
+  const item = spokenItem(ctx.businessId, requirement, language);
+  if (missing.length) {
+    const offer = missing.includes("quantity") ? await offerUsualQuantity(ctx, requirement, language) : null;
+    if (offer) {
+      return outcome.waitForOwner({ requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, usualQuantity: offer }, "save_requirement with use_usual_quantity on a yes");
+    }
+    const say = phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") });
+    return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, say };
+  }
+  const vars = {
+    quantity: money(requirement.quantity),
+    unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
+    item,
+    city: cityIn(requirement.city, language),
+  };
+  const result = { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false };
+
+  // In a call, a complete requirement that was never searched starts its search here, so the
+  // model needs no second tool call (E2E r4 bug 3). start_sourcing stays for retries.
+  if (!ctx.agentId || latestJob(ctx.businessId, requirement.id, "sourcing")) return { ...result, say: phrase("requirement_saved", language, vars) };
+  try {
+    const { jobId } = beginSourcing(ctx, requirement, language);
+    return { ...result, sourcingStarted: true, jobId, say: phrase("requirement_saved_searching", language, vars) };
+  } catch (err) {
+    if (err?.code !== "BUSY") throw err;
+    return { ...result, sourcingError: "BUSY", say: `${phrase("requirement_saved", language, vars)} ${err.say}` };
+  }
 }
 
 /**
@@ -1266,112 +1440,11 @@ const TOOLS = [
       },
       [],
     ),
-    async handler(ctx, args, language) {
-      const fields = {};
-      for (const [arg, column] of [["item", "item"], ["quantity", "quantity"], ["unit", "unit"], ["city", "city"], ["max_price_per_unit", "max_price"], ["target_price", "target_price"], ["delivery_by", "delivery_by"], ["notes", "notes"]]) {
-        if (args[arg] !== undefined && args[arg] !== null && args[arg] !== "") fields[column] = typeof args[arg] === "string" ? args[arg].trim() : args[arg];
-      }
-      // Canonical at the boundary: "किलो", "kilos", "ಕಿಲೋ" are all stored as "kg"; an unknown unit is asked about, never guessed.
-      if (fields.unit !== undefined) {
-        const unit = canonicalUnit(fields.unit);
-        if (!unit) throw new ToolError("UNKNOWN_UNIT", phrase("unit_unknown", language, { unit: fields.unit }), { status: 400, message: `Unknown unit "${fields.unit}".` });
-        fields.unit = unit;
-      }
-      if (fields.city !== undefined) fields.city = cityName(fields.city);
-
-      // The usual quantity is filled only on the owner's spoken yes to the server's own offer of it.
-      let usual = null;
-      if (args.use_usual_quantity) {
-        if (fields.item || fields.quantity !== undefined) throw new ToolError("INVALID", sayFor("invalid", language), { message: "use_usual_quantity goes without an item or a quantity." });
-        if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", phrase("quantity_ask", language), { status: 409 });
-        const need = args.requirementId
-          ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
-          : repo.listRequirements(ctx.businessId).filter((r) => ctx.sessionId && r.session_id === ctx.sessionId).at(-1);
-        const rule = need && policy.usualQuantity(ctx.businessId, need.item);
-        if (!rule) throw new ToolError("RULE_NOT_FOUND", phrase("quantity_ask", language), { status: 409 });
-        try {
-          await withHistory(ctx, (history) => agentRules.spokenYes(ctx.businessId, rule.id, { agentId: ctx.agentId, history }));
-        } catch (err) {
-          throw new ToolError(err?.code ?? "NOT_AFFIRMATIVE", phrase("quantity_ask", language), { status: 409, message: err?.message, cause: err });
-        }
-        usual = { quantity: rule.params.quantity, unit: rule.params.unit };
-        Object.assign(fields, usual);
-      }
-
-      const update = Boolean(args.requirementId || !fields.item);
-      let target = null;
-      if (update) {
-        target = args.requirementId
-          ? requireRow(repo.getRequirement(ctx.businessId, args.requirementId), language)
-          : ctx.sessionId && repo.listRequirements(ctx.businessId).filter((r) => r.session_id === ctx.sessionId).at(-1);
-        if (!target) throw new ToolError("INVALID", sayFor("invalid", language), { message: "item is required for a new requirement." });
-        if (!Object.keys(fields).length) throw new ToolError("INVALID", sayFor("invalid", language), { message: "Nothing to update." });
-      } else {
-        target = recentTwin(ctx.businessId, fields);
-      }
-
-      // Only what this call changes has to be in the owner's words; a value sent again unchanged does not.
-      const changed = (column) => fields[column] !== undefined && (!target || fields[column] !== target[column]);
-      const notHeard = await unheardFields(ctx, args, {
-        item: changed("item") ? fields.item : undefined,
-        quantity: !usual && changed("quantity") ? fields.quantity : undefined,
-        unit: !usual && changed("unit") ? fields.unit : undefined,
-      });
-      if (notHeard.length) {
-        return {
-          requirementId: target?.id ?? null,
-          saved: false,
-          missing: notHeard,
-          sourcingStarted: false,
-          say: phrase("requirement_not_heard", language, { missing: notHeard.map((m) => MISSING_WORDS[m][language]).join(", ") }),
-        };
-      }
-
-      // A sale is never a purchase: a new need in the same turn as draft_invoice is the sale misread (E2E full run).
-      if (!target && toolCalls.startedSince(ctx.businessId, ["draft_invoice"], Date.now() - SALE_TURN_MS)) {
-        return {
-          requirementId: null,
-          saved: false,
-          sale: true,
-          sourcingStarted: false,
-          hint: "This turn is a sale to a customer (draft_invoice): nothing was saved as a purchase. Say nothing about buying, vendors or a delivery city; speak only the say of draft_invoice.",
-          say: "",
-        };
-      }
-      const requirement = target
-        ? repo.updateRequirement(ctx.businessId, target.id, fields)
-        : repo.createRequirement(ctx.businessId, { ...fields, session_id: ctx.sessionId ?? undefined });
-      events.emit(ctx.businessId, "requirement.saved", requirement, { sessionId: ctx.sessionId, actor: "agent" });
-      const missing = missingFields(requirement);
-      const item = spokenItem(ctx.businessId, requirement, language);
-      if (missing.length) {
-        const offer = missing.includes("quantity") ? await offerUsualQuantity(ctx, requirement, language) : null;
-        if (offer) {
-          return outcome.waitForOwner({ requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, usualQuantity: offer }, "save_requirement with use_usual_quantity on a yes");
-        }
-        const say = phrase("requirement_missing", language, { item, missing: missing.map((m) => MISSING_WORDS[m][language]).join(", ") });
-        return { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false, say };
-      }
-      const vars = {
-        quantity: money(requirement.quantity),
-        unit: unitWord(requirement.unit, language, requirement.quantity !== 1),
-        item,
-        city: cityIn(requirement.city, language),
-      };
-      const result = { requirementId: requirement.id, requirement, saved: true, missing, sourcingStarted: false };
-
-      // In a call, a complete requirement that was never searched starts its search here, so the
-      // model needs no second tool call (E2E r4 bug 3). start_sourcing stays for retries.
-      if (!ctx.agentId || latestJob(ctx.businessId, requirement.id, "sourcing")) return { ...result, say: phrase("requirement_saved", language, vars) };
-      try {
-        const { jobId } = beginSourcing(ctx, requirement, language);
-        return { ...result, sourcingStarted: true, jobId, say: phrase("requirement_saved_searching", language, vars) };
-      } catch (err) {
-        if (err?.code !== "BUSY") throw err;
-        return { ...result, sourcingError: "BUSY", say: `${phrase("requirement_saved", language, vars)} ${err.say}` };
-      }
+    handler(ctx, args, language) {
+      return oneAtATime(ctx.businessId, () => saveRequirement(ctx, args, language));
     },
   },
+
   {
     name: "start_sourcing",
     scopes: OWNER,
@@ -2017,6 +2090,10 @@ module.exports = {
   toolsFor,
   validateArgs,
   rankedDeals,
+  rankedVendors,
+  vendorSummary,
+  itemsOverlap,
+  OVERLAP_WINDOW_MS,
   runSourcing,
   phrase,
   spokenItem,

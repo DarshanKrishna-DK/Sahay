@@ -273,7 +273,8 @@ test("narrator speaks milestones in the business script, once per batch, spaced,
   assert.ok(spoken.every((s) => s.agentId === "AGN"));
   assert.ok(!texts.includes("विक्रेताओं की खोज शुरू हो गई है।"), "suppressed job.started is not spoken");
   assert.equal(texts.filter((x) => x.startsWith("3 विक्रेता मिल गए")).length, 1, "first batch spoken once with its count");
-  assert.ok(texts.some((x) => x === "खोज पूरी हुई, 4 विक्रेता मिले; सबसे अच्छे Lakshmi Traders, 92 रुपये प्रति किलो।"), "the best comparable vendor, never the per-bag price");
+  // fix-live (b): the result names the sellers by shortlist number and asks whom to bargain with; a per-bag price is never said per kg.
+  assert.ok(texts.some((x) => x === "खोज पूरी हुई, 4 विक्रेता मिले। 1. Bag Co; 2. Lakshmi Traders, 92 रुपये प्रति किलो। इनमें से किससे मोलभाव करूँ, या सबसे अच्छे वाले से?"), "the comparable price only, never the per-bag price");
   assert.ok(texts.some((x) => x.includes("सिम्युलेटेड विक्रेता") && x.includes("88.5 रुपये प्रति किलो")));
   assert.ok(texts.includes("मोल-भाव शुरू हो गया है।"));
   for (const text of texts) assert.ok(!/[a-z]{4,}/.test(text.replace(/Lakshmi Traders|Bag Co/g, "")), `no romanised Hindi in "${text}"`);
@@ -308,7 +309,7 @@ test("narrator holds a fast job's result until the tool's own line has had time,
   await new Promise((r) => setTimeout(r, 80));
   // Timestamps, not a mid-wait check, so a slow machine cannot make this flaky (timers may fire ~1 ms early).
   assert.ok(spoken[0].at - started >= 245, `nothing about the result before the hold ends: spoken ${spoken[0].at - started} ms after the start`);
-  assert.deepEqual(spoken.map((s) => s.text), ["खोज पूरी हुई, 3 विक्रेता मिले; सबसे अच्छे Babu Trading Co., 100 रुपये प्रति किलो।"], "one result line, no separate vendor count");
+  assert.deepEqual(spoken.map((s) => s.text), ["खोज पूरी हुई, 3 विक्रेता मिले। 1. Babu Trading Co., 100 रुपये प्रति किलो। इनसे मोलभाव करूँ?"], "one result line, no separate vendor count");
 });
 
 test("narrator follows the owner's reply language once a tool reports it", async (t) => {
@@ -586,7 +587,7 @@ test("E2E r2 bug 3: a sourcing result the tool already spoke is not narrated aga
     data: { jobId: "job_e", kind: "sourcing", result: { requirementId: "req_e", unit: "kg", count: 3, shortlist: [{ name: "Babu Trading Co.", comparablePrice: 100 }] } },
   });
   await until(() => spoken.length >= 1, 2000);
-  assert.equal(spoken[0], "खोज पूरी हुई, 3 विक्रेता मिले; सबसे अच्छे Babu Trading Co., 100 रुपये प्रति किलो।");
+  assert.equal(spoken[0], "खोज पूरी हुई, 3 विक्रेता मिले। 1. Babu Trading Co., 100 रुपये प्रति किलो। इनसे मोलभाव करूँ?");
 });
 
 test("E2E r2 bug 3: a suppression that arrives while the line is queued removes it from the queue", async (t) => {

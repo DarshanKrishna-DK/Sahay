@@ -51,6 +51,11 @@ const SAY = {
     "kn-IN": "ಈ ಒಪ್ಪಿಗೆಯ ಮೇಲೆ ಈಗಾಗಲೇ ಆರ್ಡರ್ ಆಗಿದೆ.",
     "en-IN": "An order has already been placed on this approval.",
   },
+  approval_expired: {
+    "hi-IN": "यह सौदा पुराना हो गया है; मुझसे फिर से मोलभाव करने को कहिए।",
+    "kn-IN": "ಈ ವ್ಯವಹಾರ ಹಳೆಯದಾಗಿದೆ; ಮತ್ತೆ ಚೌಕಾಸಿ ಮಾಡಲು ನನಗೆ ಹೇಳಿ.",
+    "en-IN": "This deal is old. Ask Sahay to bargain again.",
+  },
   approval_stale: {
     "hi-IN": "सौदा बदल गया है, मुझे फिर से मंज़ूरी लेनी होगी।",
     "kn-IN": "ವ್ಯವಹಾರ ಬದಲಾಗಿದೆ, ಮತ್ತೆ ಒಪ್ಪಿಗೆ ಪಡೆಯಬೇಕು.",
@@ -167,6 +172,7 @@ const CODE_MAP = {
   APPROVAL_CONSUMED: ["approval_used", 409],
   ALREADY_ORDERED: ["approval_used", 409],
   APPROVAL_STALE: ["approval_stale", 409],
+  APPROVAL_EXPIRED: ["approval_expired", 409],
   ALREADY_DECIDED: ["already_decided", 409],
   NOT_AFFIRMATIVE: ["not_affirmative", 409],
   NOT_NEGATIVE: ["not_affirmative", 409],

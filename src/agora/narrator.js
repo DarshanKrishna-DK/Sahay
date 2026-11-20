@@ -56,6 +56,7 @@ const { unitWord } = require("../procurement/units");
 const { scriptProblems } = require("./script");
 const variety = require("./variety");
 const toolCalls = require("../tools/calls");
+const { fitOnePiece } = require("./speech-fit");
 
 const settings = {
   minGapMs: 5000,
@@ -108,6 +109,11 @@ const money = (n) => String(round2(n));
 
 const SIM = { "hi-IN": " (सिम्युलेटेड विक्रेता)", "kn-IN": " (ಸಿಮ್ಯುಲೇಟೆಡ್ ವೆಂಡರ್)", "en-IN": " (simulated vendor)" };
 
+/** The sellers a sourcing_done line names: v.sellers, or one seller from v.name / v.price / v.unit. */
+const sellers = (v) => (Array.isArray(v.sellers) && v.sellers.length ? v.sellers : [{ rank: 1, name: v.name, price: v.price, unit: v.unit }]);
+/** How many sellers the sourcing result names and asks about. */
+const SELLERS_NAMED = 3;
+
 const LINES = {
   sourcing_started: {
     "hi-IN": () => "विक्रेताओं की खोज शुरू हो गई है।",
@@ -124,10 +130,15 @@ const LINES = {
     "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ಪರಿಶೀಲಿಸುತ್ತಿದ್ದೇನೆ.`,
     "en-IN": (v) => `${v.count} vendors found so far; checking them now.`,
   },
+  // Live call 2026-11-20: the search ended and nobody offered the owner a choice. Now the top
+  // three are named (own supplier / simulated labelled) and the owner is asked whom to bargain with.
   sourcing_done: {
-    "hi-IN": (v) => `खोज पूरी हुई, ${v.count} विक्रेता मिले; सबसे अच्छे ${v.name}${v.price ? `, ${v.price} रुपये प्रति ${v.unit}` : ""}।`,
-    "kn-IN": (v) => `ಹುಡುಕಾಟ ಮುಗಿಯಿತು, ${v.count} ಮಾರಾಟಗಾರರು; ಉತ್ತಮರು ${v.name}${v.price ? `, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ` : ""}.`,
-    "en-IN": (v) => `Search done: ${v.count} vendors; the best is ${v.name}${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
+    "hi-IN": (v) =>
+      `खोज पूरी हुई, ${v.count} विक्रेता मिले। ${sellers(v).map((s) => `${s.rank}. ${s.name}${s.own ? " (आपके अपने सप्लायर)" : s.sim ? SIM["hi-IN"] : ""}${s.price ? `, ${s.price} रुपये प्रति ${s.unit}` : ""}`).join("; ")}। ${sellers(v).length > 1 ? "इनमें से किससे मोलभाव करूँ, या सबसे अच्छे वाले से?" : "इनसे मोलभाव करूँ?"}`,
+    "kn-IN": (v) =>
+      `ಹುಡುಕಾಟ ಮುಗಿಯಿತು, ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ. ${sellers(v).map((s) => `${s.rank}. ${s.name}${s.own ? " (ನಿಮ್ಮ ಸ್ವಂತ ಸಪ್ಲೈಯರ್)" : s.sim ? SIM["kn-IN"] : ""}${s.price ? `, ಒಂದು ${s.unit}ಗೆ ${s.price} ರೂಪಾಯಿ` : ""}`).join("; ")}. ${sellers(v).length > 1 ? "ಯಾರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡಲಿ, ಅಥವಾ ಉತ್ತಮರ ಜೊತೆಯೇ?" : "ಇವರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡಲೇ?"}`,
+    "en-IN": (v) =>
+      `Search done: ${v.count} vendors. ${sellers(v).map((s) => `${s.rank}. ${s.name}${s.own ? " (your own supplier)" : s.sim ? SIM["en-IN"] : ""}${s.price ? `, ${s.price} rupees per ${s.unit}` : ""}`).join("; ")}. ${sellers(v).length > 1 ? "Which one shall I bargain with, or shall I take the best one?" : "Shall I bargain with them?"}`,
   },
   job_failed: {
     "hi-IN": (v) => (v.kind === "negotiation" ? "मोल-भाव पूरा नहीं हो पाया, कारण स्क्रीन पर है।" : "विक्रेताओं की खोज पूरी नहीं हो पाई, कारण स्क्रीन पर है।"),
@@ -192,17 +203,6 @@ const VARIANTS = {
     "kn-IN": [(v) => `ಇಲ್ಲಿಯವರೆಗೆ ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ಒಮ್ಮೆ ನೋಡ್ತಿದ್ದೀನಿ.`],
     "en-IN": [(v) => `So far ${v.count} vendors; I'm going through them now.`],
   },
-  sourcing_done: {
-    "hi-IN": [
-      (v) => `लीजिए, खोज हो गई! ${v.count} विक्रेता मिले हैं; सबसे अच्छे ${v.name} हैं${v.price ? `, ${v.price} रुपये प्रति ${v.unit}` : ""}।`,
-      (v) => `अच्छी ख़बर, ${v.count} विक्रेता मिल गए; सबसे बढ़िया ${v.name}${v.price ? `, ${v.price} रुपये प्रति ${v.unit} पर` : ""}।`,
-    ],
-    "kn-IN": [(v) => `ಸರಿ, ಹುಡುಕಾಟ ಆಯ್ತು! ${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ; ಉತ್ತಮರು ${v.name}${v.price ? `, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ` : ""}.`],
-    "en-IN": [
-      (v) => `Good news, I found ${v.count} vendors; the best is ${v.name}${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
-      (v) => `Okay, the search is done: ${v.count} vendors, and ${v.name} looks best${v.price ? `, at ${v.price} rupees per ${v.unit}` : ""}.`,
-    ],
-  },
   job_failed: {
     "hi-IN": [(v) => (v.kind === "negotiation" ? "अरे, मोल-भाव बीच में रुक गया; कारण स्क्रीन पर है।" : "अरे, विक्रेताओं की खोज पूरी नहीं हो पाई; कारण स्क्रीन पर लिखा है।")],
     "kn-IN": [(v) => (v.kind === "negotiation" ? "ಅಯ್ಯೋ, ಚೌಕಾಸಿ ಮಧ್ಯದಲ್ಲೇ ನಿಂತಿತು; ಕಾರಣ ಪರದೆಯ ಮೇಲಿದೆ." : "ಅಯ್ಯೋ, ಹುಡುಕಾಟ ಮುಗಿಸಲು ಆಗಲಿಲ್ಲ; ಕಾರಣ ಪರದೆಯ ಮೇಲಿದೆ.")],
@@ -247,7 +247,7 @@ const VARIANTS = {
 };
 
 /** Variables that hold a name or code as written (vendor brand, PO number): allowed in any script. */
-const VERBATIM_VARS = ["name", "vendor", "po"];
+const VERBATIM_VARS = ["name", "vendor", "po", "name1", "name2", "name3"];
 
 /**
  * One spoken line, in one of its wordings: `scope` (the business) walks them in turn, starting at
@@ -408,7 +408,7 @@ function noteSpoken(businessId) {
 const STATUS = {
   sourcingRunning: () => "A vendor search is running now; its result will be announced to the owner automatically.",
   sourcingDone: (v) =>
-    `The vendor search has finished: ${v.count} vendors found${v.price ? `; the best-ranked vendor with a comparable price lists ${v.price} rupees per ${v.unit} (get_shortlist has the names)` : ""}. No search is running now.`,
+    `The vendor search has finished: ${v.count} vendors found${v.price ? `; the best-ranked vendor with a comparable price lists ${v.price} rupees per ${v.unit} (get_shortlist has the names)` : ""}. No search is running now.${v.named ? ` The server has read ${v.named} vendors to the owner, each with its shortlist number, and asked which one to bargain with. When the owner answers, call start_negotiation with vendorRank set to the number they chose; for "the best one", "any" or "you choose", call it with no vendor. Never start a negotiation before the owner has answered.` : ""}`,
   sourcingFailed: () => "The last vendor search failed. No search is running now; if the owner asks to search again, call start_sourcing.",
   negotiationRunning: () =>
     "A negotiation is running now; its result will be announced to the owner automatically. If the owner asks to negotiate before it ends, call start_negotiation anyway: it will say one is running.",
@@ -541,6 +541,40 @@ function later(state, ms, fn) {
   state.timers.add(timer);
 }
 
+/**
+ * The sourcing result as one /speak piece: three of the shortlist, those Sahay can bargain with
+ * first, each said with its shortlist rank (what vendorRank counts) and its price per the
+ * requirement unit when the listing has one, the owner's
+ * own supplier and a simulated vendor labelled, then the question whom to bargain with. Long names
+ * are shortened word by word to keep it one piece (Murf allows two streams).
+ */
+function sourcingDoneLine(result, language) {
+  // Sellers Sahay can bargain with first (a price per the unit, or the owner's own supplier), keeping their shortlist rank.
+  const list = (result.shortlist ?? []).map((s, i) => ({ ...s, rank: s.rank ?? i + 1 }));
+  const usable = (s) => s.comparablePrice != null || s.ownSupplier;
+  const named = [...list.filter(usable), ...list.filter((s) => !usable(s))]
+    .slice(0, SELLERS_NAMED)
+    .sort((a, b) => a.rank - b.rank);
+  const unit = unitWord(result.unit, language);
+  const names = Object.fromEntries(named.map((s, i) => [`name${i + 1}`, String(s.name ?? "")]));
+  const build = (vals) =>
+    LINES.sourcing_done[langKey(language)]({
+      count: result.count,
+      sellers: named.map((s, i) => ({
+        rank: s.rank,
+        name: vals[`name${i + 1}`],
+        price: s.comparablePrice != null ? money(s.comparablePrice) : null,
+        unit,
+        own: Boolean(s.ownSupplier),
+        sim: Boolean(s.simulated),
+      })),
+    });
+  const text = fitOnePiece(build, names, Object.keys(names));
+  const problems = scriptProblems(text, langKey(language), { allow: Object.values(names) });
+  if (problems.latin.length || problems.foreign) console.warn(`[narrator] sourcing_done (${language}) is not all in its own script: ${problems.latin.join(", ")}`);
+  return text;
+}
+
 function onEvent(event) {
   const state = live.get(event.businessId);
   if (!state) return;
@@ -583,12 +617,12 @@ function onEvent(event) {
       state.vendorBatches.set(requirementId, "spoken");
       state.queue = state.queue.filter((item) => item.key !== `vendors:${requirementId}`);
       const price = top.comparablePrice != null ? money(top.comparablePrice) : null;
-      setStatus(state, "sourcing", STATUS.sourcingDone({ count: result.count, price: top.comparablePrice != null ? price : null, unit: unitWord(result.unit, "en-IN") }));
+      setStatus(state, "sourcing", STATUS.sourcingDone({ count: result.count, price: top.comparablePrice != null ? price : null, unit: unitWord(result.unit, "en-IN"), named: Math.min(SELLERS_NAMED, result.shortlist.length) }));
       const type = `sourcing.done:${requirementId}`;
       later(state, holdLeft(state, d.jobId), () => {
         // get_job_status or get_shortlist already said this result: say it once.
         if (isSuppressed(event.businessId, type)) return;
-        enqueue(state, `sourcing:${requirementId}`, line("sourcing_done", state.language, { count: result.count, name: top.name, price, unit: unitWord(result.unit, state.language) }, event.businessId), type);
+        enqueue(state, `sourcing:${requirementId}`, sourcingDoneLine(result, state.language), type);
       });
       return;
     }
@@ -796,4 +830,4 @@ function configure({ speak, status, rules, owner, minGapMs, vendorDebounceMs, qu
   );
 }
 
-module.exports = { SPEAK_OPTIONS, defaultSpeak, noteSpoken, VARIANTS, start, stop, attach, detach, isLive, liveCall, liveCalls, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };
+module.exports = { SPEAK_OPTIONS, defaultSpeak, noteSpoken, sourcingDoneLine, VARIANTS, start, stop, attach, detach, isLive, liveCall, liveCalls, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };
