@@ -1,8 +1,9 @@
 // Sell (UI v5, screens.md section 05): the page pattern.
 //   1. "Sell" + "Make a GST bill and send it on WhatsApp." + ONE primary "Make a bill" (starts the
 //      call where the owner is, with the bill hint) and a small "Your shop" link (shop / GST sheet);
-//   2. "Needs you", only when a bill waits for the owner's yes (W3's Yes card when it is on this
-//      build, else a plain card whose "Check" opens the Yes host) or the shop details are missing;
+//   2. "Needs you", only when a bill waits for the owner's yes (W3's Yes card, createYesCard with
+//      the item from waitingItems(); Check -> openNeeds(key) when W3 does not hold it yet) or the
+//      shop details are missing;
 //   3. one list card with Bills | Customers. Bill rows: customer, bill no. and date, amount, Paid /
 //      Not paid, and one action (Send on WhatsApp, or Add phone first). Customer rows: name, phone,
 //      what they owe. A row opens a sheet: the bill (lines, GST split, total, PDF, pay page in test
@@ -18,6 +19,7 @@ import { billStatus, gstRows, lineAmount, dueOf, filterBills, shortBillNo } from
 import { shopMissing, shopNeedCard, shopLink } from "./shop-settings.js";
 import { addPhoneButton, openCustomerSheet } from "./money-pad.js";
 import { dataRow, rowsCard, statusWord, warnWord } from "./sell-rows.js";
+import { createYesCard, waitingItems, openNeeds, onCount } from "./yes.js";
 
 addStrings({
   "sl5.sentence": ["Make a GST bill and send it on WhatsApp.", "GST बिल बनाइए और WhatsApp पर भेजिए।", "GST ಬಿಲ್ ಮಾಡಿ, WhatsApp ನಲ್ಲಿ ಕಳುಹಿಸಿ."],
@@ -97,25 +99,25 @@ function billAction(inv, { size = "sm", block = false } = {}) {
 
 /* ------------------------------------------------- the shared Yes card -- */
 
-// W3's yes.js renders the one Yes card (createYesCard(item, { inline })). Loaded lazily: until it
-// is on this build, a waiting bill shows a plain card whose "Check" opens the Yes host.
-let yesMod = null;
-let yesAsked = false;
-function askYes(onReady) {
-  if (yesAsked) return;
-  yesAsked = true;
-  import("./yes.js").then((m) => { if (m && typeof m.createYesCard === "function") { yesMod = m; onReady(); } }).catch(() => { yesMod = null; });
-}
+// W3's yes.js renders the one Yes card. A waiting bill on Sell is the card itself, made from the
+// item W3 holds (waitingItems()); it follows the server until it leaves the page. If W3 does not
+// hold the bill yet (its list catches up on the next event), a plain card says so and "Check"
+// opens the Needs host on that bill (openNeeds(key)).
 const yesEls = new Map();
 function waitingCard(inv) {
   const key = `invoice:${inv.id}`;
-  if (yesMod) {
-    if (yesEls.has(key)) return yesEls.get(key);
-    try {
-      const el = yesMod.createYesCard({ key, kind: "bill", id: String(inv.id) }, { inline: true });
-      if (el) { yesEls.set(key, el); return el; }
-    } catch { /* fall back to the plain card */ }
+  if (yesEls.has(key)) return yesEls.get(key);
+  const item = waitingItems().find((i) => i.key === key);
+  if (item) {
+    const el = createYesCard(item, { inline: true });
+    yesEls.set(key, el);
+    return el;
   }
+  return checkCard(inv);
+}
+
+/** The plain "waits for your yes" card: what, how much, and Check (opens that bill's Yes card). */
+function checkCard(inv) {
   const name = customerName(inv);
   const tot = inv.totals || {};
   return card({
@@ -123,8 +125,7 @@ function waitingCard(inv) {
     title: st("sl5.waits", { name }),
     speakKey: `invoice:${inv.id}`,
     body: h("p", { class: "figure sl5-needs-amt", text: money(tot.total) }),
-    foot: button({ word: st("sl5.check"), icon: "check", kind: "primary", size: "sm", label: st("sl5.checkLong", { name }),
-      onClick: () => document.dispatchEvent(new CustomEvent("sahay:open-needs")) }),
+    foot: button({ word: st("sl5.check"), kind: "secondary", size: "sm", label: st("sl5.checkLong", { name }), onClick: () => openNeeds(`invoice:${inv.id}`) }),
   });
 }
 
@@ -169,7 +170,8 @@ function billBody(inv) {
       h("p", { class: "sl5-sum-total" }, h("span", { text: st("sl5.total") }), h("span", { class: "figure", text: money(tot.total) })),
       status === "part_paid" && inv.paid ? h("p", { class: "note-line sl5-good" }, icon("checkCircle", 18), h("span", { text: st("sl5.gotPart", { amt: money(inv.paid) }) })) : null,
       (status === "part_paid" || status === "issued") && due ? h("p", { class: "note-line sl5-warn" }, icon("clock", 18), h("span", { text: st("sl5.due", { amt: money(due) }) })) : null),
-    status === "pending" ? waitingCard(inv) : null,
+    // The bill's Yes card lives on the page and in the Needs host; here, Check opens it.
+    status === "pending" ? checkCard(inv) : null,
   ];
 }
 
@@ -237,7 +239,10 @@ export function createSell() {
   const body = h("div", { class: "sl5-body" });
   el.append(head, body);
   let detail = null; // { id, api, key }
-  askYes(() => render(true));
+  // W3's list of waiting decisions changes on server events: a bill that just became W3's item
+  // swaps its plain card for the live Yes card.
+  let waitingSeen = -1;
+  onCount((n) => { if (n !== waitingSeen) { waitingSeen = n; if (head.isConnected || body.childNodes.length) render(true); } });
 
   function openBill(id, opener) {
     const inv = sell.invoices.get(String(id)) || null;
@@ -285,7 +290,7 @@ export function createSell() {
     if (force) body.__key = null;
     const invoices = [...sell.invoices.values()];
     const need = shopMissing();
-    const key = JSON.stringify([document.documentElement.lang, sell.status, need, invoices, [...sell.customers.values()], sell.owed, view, yesMod ? 1 : 0]);
+    const key = JSON.stringify([document.documentElement.lang, sell.status, need, invoices, [...sell.customers.values()], sell.owed, view]);
     patch(body, key, () => {
       if (sell.status === "idle" || sell.status === "loading") return skeleton("rows", 4);
       if (sell.status === "missing") return emptyState({ icon: "info", title: st("sbx.missing.title"), text: st("sbx.missing.sell"), action: { word: t("retry"), icon: "refresh", onClick: () => loadSell() } });
