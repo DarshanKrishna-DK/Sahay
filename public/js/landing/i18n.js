@@ -20,14 +20,14 @@ const S = {
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
   heroTitle: {
-    en: "Your shop's buyer. Just speak.",
-    hi: "आपकी दुकान का ख़रीदार। बस बोलिए।",
-    kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಖರೀದಿದಾರ. ಮಾತನಾಡಿ ಸಾಕು.",
+    en: "Your shop's assistant. Just speak.",
+    hi: "आपकी दुकान का सहायक। बस बोलिए।",
+    kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಸಹಾಯಕ. ಮಾತನಾಡಿ ಸಾಕು.",
   },
   heroSub: {
-    en: "Say what you need in Hindi, Kannada or English. Sahay calls real sellers, bargains, and orders only after your yes.",
-    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बताइए क्या चाहिए। सहाय असली विक्रेताओं से बात करता है, मोलभाव करता है, और आपकी हाँ के बाद ही ऑर्डर देता है।",
-    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ. ಸಹಾಯ್ ನಿಜವಾದ ಮಾರಾಟಗಾರರೊಂದಿಗೆ ಮಾತನಾಡುತ್ತದೆ, ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ ಆರ್ಡರ್ ಮಾಡುತ್ತದೆ.",
+    en: "Say it in Hindi, Kannada or English. Sahay buys from real sellers and bargains for you, makes your bills and takes payments, keeps your khata, and reorders when stock runs low. Nothing happens without your yes.",
+    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बोलिए। सहाय असली विक्रेताओं से ख़रीदता है और आपके लिए मोलभाव करता है, बिल बनाता है और भुगतान लेता है, खाता रखता है, और स्टॉक कम होने पर फिर से मँगवाता है। आपकी हाँ के बिना कुछ नहीं होता।",
+    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಹೇಳಿ. ಸಹಾಯ್ ನಿಜವಾದ ಮಾರಾಟಗಾರರಿಂದ ಖರೀದಿಸಿ ನಿಮಗಾಗಿ ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡಿ ಹಣ ಪಡೆಯುತ್ತದೆ, ಖಾತೆ ಇಡುತ್ತದೆ, ದಾಸ್ತಾನು ಕಡಿಮೆಯಾದಾಗ ಮತ್ತೆ ತರಿಸುತ್ತದೆ. ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಏನೂ ಆಗುವುದಿಲ್ಲ.",
   },
   heroMore: { en: "See how it works", hi: "देखिए कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ ನೋಡಿ" },
   heroAlt: {

@@ -242,6 +242,8 @@ main, .site-foot { position: relative; z-index: 1; }
 .hero-sub { max-width: 34em; margin-top: 20px; font-size: clamp(1.0625rem, 0.95rem + 0.4vw, 1.3rem); line-height: 1.55; color: var(--text); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
 .hero-langs { margin-top: 22px; }
+/* One language switch at a time: the nav has it from 760 px; below that the nav collapses and the hero keeps it. */
+@media (min-width: 760px) { .hero-langs { display: none; } }
 
 @media (min-width: 1000px) {
   .hero-visual { position: absolute; inset: 0; height: auto; --gather-mode: wide; --safe-top: 88px; }
@@ -505,8 +507,10 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--lime); opacity: 1; }
   position: sticky; top: 0; display: block; height: 100svh;
   width: min(var(--max), calc(100% - 2 * var(--gutter))); margin-inline: auto;
 }
+.story.is-staged .story-head { margin-bottom: 0; }
 .story.is-staged .chapter {
-  position: absolute; inset: 96px 0 36px 200px;
+  position: absolute; inset: 92px 0 32px 200px;
+  align-items: start; align-content: start; padding-top: clamp(4px, 2.5svh, 28px);
   opacity: var(--o, 0);
 }
 .story.is-staged .chapter:not(.is-shown) { pointer-events: none; }
@@ -534,7 +538,7 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--lime); opacity: 1; }
 .story-rail a.is-current .rail-dot { border-color: var(--lime); box-shadow: 0 0 12px rgba(182, 242, 60, 0.4); }
 .story-rail a.is-current .rail-dot::after { background: var(--lime); }
 @media (max-height: 760px) {
-  .story.is-staged .chapter { inset: 88px 0 24px 200px; }
+  .story.is-staged .chapter { inset: 84px 0 20px 200px; padding-top: 4px; }
   .story.is-staged .speak-card, .story.is-staged .bill-card, .story.is-staged .gauge-card { padding: 22px; }
   .story.is-staged .gauge { height: 200px; }
   .story.is-staged .loop-box { width: min(calc(100% - 96px), 230px); }
