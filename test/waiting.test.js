@@ -81,7 +81,33 @@ test("QA 2026-11-20 fixes stay in: drawer fits the screen, Yes / No in the sheet
 
 test("the docked card in the agent column pins Yes / No: fixed-height flex column, only the body scrolls (QA recheck 1280x800)", () => {
   assert.match(CSS, /\.wt-column \{ flex: 1 1 auto; min-height: 0; overflow: hidden; \}/);
-  assert.match(CSS, /\.wt-column \.yc \{ display: flex; flex-direction: column; overflow: hidden; \}/);
+  assert.match(CSS, /\.wt-column \.yc \{ display: flex; flex-direction: column; overflow: hidden;/);
   assert.match(CSS, /\.wt-column \.yc > \.yc-head, \.wt-column \.yc > \.yc-now, \.wt-column \.yc > \.yc-foot \{ flex: none; \}/);
   assert.match(CSS, /\.wt-column \.yc > \.yc-body \{\s*flex: 1 1 auto; min-height: 96px; overflow-y: auto;/);
+});
+
+test("v4 card: label + subject h3 + place, boxed Total, wide No / Yes keys pinned in the column footer, voice hint only after a read-back", () => {
+  assert.match(WAITING, /h\("p", \{ class: "t-label yc-kind", id: kindId \}/);
+  assert.match(WAITING, /scripted\("h3", subjectOf\(c\), \{ class: "card-title yc-title"/);
+  assert.match(WAITING, /h\("span", \{ class: "t-money yc-total-num", text: amountText \}\)/);
+  assert.match(WAITING, /tone: "secondary", size: "lg"[^\n]*decide\(c\.key, false\)/, "No is a wide piano key");
+  assert.match(WAITING, /tone: "primary", size: "lg"[^\n]*decide\(c\.key, true\)/, "Yes is a wide lime key");
+  assert.match(WAITING, /createTrayView\(\{ place: "column", withHead: true, selfFoot: true \}\)/, "the column pins the keys at its bottom");
+  assert.match(WAITING, /if \(!c\.spokenAt \|\| \(c\.data && c\.data\.voiceOnly\)\) return null;/, "the voice hint only after the server read it out");
+  assert.match(CSS, /\.yc-decide \.keycap \{ min-height: 64px; min-width: var\(--touch-yes\);/);
+  assert.doesNotMatch(WAITING, /yesNo\(|yes-btn/, "the round v3 pair is gone from the card");
+  assert.doesNotMatch(CSS, /font-family: "|Bricolage|Space Grotesk|Instrument Sans/, "families only through tokens");
+});
+
+test("v4 card: label + subject h3 + place, boxed Total, wide No / Yes keys pinned in the column footer, voice hint only after a read-back", () => {
+  assert.match(WAITING, /h\("p", \{ class: "t-label yc-kind", id: kindId \}/);
+  assert.match(WAITING, /scripted\("h3", subjectOf\(c\), \{ class: "card-title yc-title"/);
+  assert.match(WAITING, /h\("span", \{ class: "t-money yc-total-num", text: amountText \}\)/);
+  assert.match(WAITING, /tone: "secondary", size: "lg"[^\n]*decide\(c\.key, false\)/, "No is a wide piano key");
+  assert.match(WAITING, /tone: "primary", size: "lg"[^\n]*decide\(c\.key, true\)/, "Yes is a wide lime key");
+  assert.match(WAITING, /createTrayView\(\{ place: "column", withHead: true, selfFoot: true \}\)/, "the column pins the keys at its bottom");
+  assert.match(WAITING, /if \(!c\.spokenAt \|\| \(c\.data && c\.data\.voiceOnly\)\) return null;/, "the voice hint only after the server read it out");
+  assert.match(CSS, /\.yc-decide \.keycap \{ min-height: 64px; min-width: var\(--touch-yes\);/);
+  assert.doesNotMatch(WAITING, /yesNo\(|yes-btn/, "the round v3 pair is gone from the card");
+  assert.doesNotMatch(CSS, /font-family: "|Bricolage|Space Grotesk|Instrument Sans/, "families only through tokens");
 });

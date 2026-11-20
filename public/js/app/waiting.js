@@ -17,13 +17,13 @@
 // /api/stock/reorders/:id/decision, /api/agent/rules/:id/decision.
 
 import { h, icon, rupees, scripted, safeUrl, fill, reducedMotion } from "./dom.js";
-import { t, unitWord, addStrings, lang } from "./i18n.js";
+import { t, unitWord, cityWord, addStrings, lang } from "./i18n.js";
 import * as api from "../api.js";
 import { state, subscribe, onEvent, pendingApprovals, approvalView, decideRule } from "./store.js";
 import { sell, stock, pendingInvoices, decideInvoice, decideReorder, invoiceCustomer, itemOf, loadSell, loadStock } from "./store-sell.js";
 import { speakButton } from "./speak.js";
 import { openSheet } from "./sheet.js";
-import { yesNo, pill } from "./ui.js";
+import { keycapButton, pill } from "./ui.js";
 import { stateView } from "./empty.js";
 import { openShopSheet, shopMissing } from "./shop-settings.js";
 import { money, qtyText, itemName } from "./sell-kit.js";
@@ -105,8 +105,6 @@ async function decide(key, yes) {
 let seq = 0;
 const domId = (prefix, key) => `${prefix}-${++seq}-${String(key).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
-function label(text) { return h("p", { class: "yc-label", text }); }
-
 function linkKey({ href, ic, word, long, primary = false, external = true }) {
   const url = external ? safeUrl(href) : href;
   if (!url) return null;
@@ -143,27 +141,50 @@ function ruleSentence(r) {
 }
 
 /* ------------------------------------------------------------ card bodies -- */
+// v4 (Stitch 03-home-laptop, right column): label, the subject as h3 + place line, item lines, a
+// boxed Total, one meta row, then the read-back. Only real data: no credit terms or certificates.
+
+/** Who or what the owner decides about: the card's h3. */
+function subjectOf(c) {
+  const d = c.data || {};
+  if (c.kind === "buy") return (d.view && d.view.vendor) || titleOf(c);
+  if (c.kind === "bill") { const inv = sell.invoices.get(String(d.invoiceId || c.id)) || {}; const cust = invoiceCustomer(inv); return (cust && cust.name) || t("wt.walkin"); }
+  if (c.kind === "reorder") return itemName(itemOf(d.itemId)) || titleOf(c);
+  return titleOf(c);
+}
+
+/** The line under the h3: the seller's city (buy), the customer's phone (bill). Never invented. */
+function placeOf(c) {
+  const d = c.data || {};
+  if (c.kind === "buy") {
+    const q = d.view && d.view.quote;
+    const v = q && q.vendorId !== undefined && q.vendorId !== null ? state.vendors.get(String(q.vendorId)) : null;
+    return v && v.city ? cityWord(v.city) : null;
+  }
+  if (c.kind === "bill") { const inv = sell.invoices.get(String(d.invoiceId || c.id)) || {}; const cust = invoiceCustomer(inv); return (cust && cust.phone) || null; }
+  return null;
+}
+
+function totalBox(amountText) {
+  return h("div", { class: "yc-total" },
+    h("span", { class: "yc-total-label", text: t("wt.totalColon") }),
+    h("span", { class: "t-money yc-total-num", text: amountText }));
+}
 
 function buyBody(c) {
   const v = (c.data && c.data.view) || {};
   const unit = v.unit ? unitWord(v.unit) : "";
-  const hasRate = has(v.unitPrice);
-  const hasQty = has(v.quantity);
+  const lineLeft = [has(v.quantity) ? qtyText(v.quantity, v.unit) : null, v.item || null].filter(Boolean).join(" ");
+  const rate = has(v.unitPrice) ? `${rupees(v.unitPrice)}${unit ? ` / ${unit}` : ""}` : null;
   return [
-    v.vendor || v.simulated ? h("div", { class: "yc-who" },
-      h("span", { class: "yc-who-ico", "aria-hidden": "true" }, icon("store", 22)),
-      h("span", { class: "yc-who-main" },
-        h("span", { class: "yc-who-label", text: t("wt.seller") }),
-        v.vendor ? scripted("span", v.vendor, { class: "yc-who-name" }) : null),
-      v.simulated ? pill(t("simulated"), "robot", "sim") : null) : null,
-    hasRate || hasQty ? h("div", { class: "yc-figs" },
-      label(t("wt.rateQty")),
-      h("p", { class: "yc-eq" },
-        hasRate ? h("span", { class: "bignum bignum-amount" }, rupees(v.unitPrice), unit ? h("span", { class: "bignum-unit", text: `/${unit}` }) : null) : null,
-        hasRate && hasQty ? h("span", { class: "yc-times", "aria-hidden": "true", text: "×" }) : null,
-        hasQty ? h("span", { class: "bignum bignum-amount" }, qtyText(v.quantity, null), unit ? h("span", { class: "bignum-unit", text: ` ${unit}` }) : null) : null)) : null,
-    has(v.total) ? h("div", { class: "yc-total" }, label(t("wt.total")), h("p", { class: "bignum bignum-total yc-total-num", text: rupees(v.total) })) : null,
-    has(v.leadTimeDays) ? h("p", { class: "yc-meta" }, icon("truck", 20), h("span", { text: v.leadTimeDays === 1 ? t("wt.deliveryOne") : t("wt.delivery", { n: v.leadTimeDays }) })) : null,
+    v.simulated ? pill(t("simulated"), "robot", "sim") : null,
+    lineLeft || rate ? h("ul", { class: "yc-lines" },
+      h("li", { class: "yc-line" },
+        lineLeft ? scripted("span", lineLeft, { class: "yc-line-name" }) : null,
+        rate ? h("span", { class: "yc-line-fig", text: rate }) : null)) : null,
+    has(v.total) ? totalBox(rupees(v.total)) : null,
+    has(v.leadTimeDays) ? h("div", { class: "yc-meta" },
+      h("span", { class: "yc-meta-item" }, icon("truck", 18), h("span", { text: v.leadTimeDays === 1 ? t("wt.deliveryOne") : t("wt.delivery", { n: v.leadTimeDays }) }))) : null,
     v.approval && v.approval.readback ? heard(v.approval.readback, c.key) : null,
   ];
 }
@@ -176,7 +197,7 @@ function heard(text, key) {
   const open = openHeard.has(key);
   const id = domId("yc-heard", key);
   return h("div", { class: "yc-heard" },
-    label(t("wt.heard")),
+    h("p", { class: "t-label yc-heard-label", text: t("wt.heard") }),
     scripted("p", text, { class: `yc-heard-text${long && !open ? " is-clamped" : ""}`, id }),
     long ? h("button", {
       class: "chip yc-more", type: "button", "aria-expanded": String(open), "aria-controls": id,
@@ -186,42 +207,32 @@ function heard(text, key) {
 
 function billBody(c) {
   const inv = sell.invoices.get(String((c.data && c.data.invoiceId) || c.id)) || {};
-  const cust = invoiceCustomer(inv);
   const lines = inv.lines || [];
   const tot = inv.totals || {};
   const MAX = 4;
   return [
-    h("div", { class: "yc-who" },
-      h("span", { class: "yc-who-ico", "aria-hidden": "true" }, icon("user", 22)),
-      h("span", { class: "yc-who-main" },
-        h("span", { class: "yc-who-label", text: t("wt.customer") }),
-        scripted("span", (cust && cust.name) || t("wt.walkin"), { class: "yc-who-name" }))),
     lines.length ? h("ul", { class: "yc-lines" },
       ...lines.slice(0, MAX).map((l) => {
         const it = itemOf(l.itemId);
         const name = itemName(it || { name: l.name, nameNative: l.nameNative }) || l.name || "";
         return h("li", { class: "yc-line" },
-          scripted("span", name, { class: "yc-line-name" }),
-          h("span", { class: "yc-line-fig" },
-            h("span", { text: qtyText(l.qty, l.unit) }),
-            has(l.unitPrice) ? h("span", { class: "yc-times", "aria-hidden": "true", text: "×" }) : null,
-            has(l.unitPrice) ? h("span", { text: money(l.unitPrice) }) : null));
+          scripted("span", `${qtyText(l.qty, l.unit)} ${name}`.trim(), { class: "yc-line-name" }),
+          has(l.unitPrice) ? h("span", { class: "yc-line-fig", text: `${money(l.unitPrice)}${l.unit ? ` / ${unitWord(l.unit)}` : ""}` }) : null);
       }),
       lines.length > MAX ? h("li", { class: "yc-line yc-line-more", text: t("wt.more", { n: lines.length - MAX }) }) : null) : null,
+    has(tot.total) ? totalBox(money(tot.total)) : null,
     gstLine(tot),
-    has(tot.total) ? h("div", { class: "yc-total" }, label(t("wt.total")), h("p", { class: "bignum bignum-total yc-total-num", text: money(tot.total) })) : null,
     inv.readback ? heard(inv.readback, c.key) : null,
   ];
 }
 
 function gstLine(tot) {
   if (!tot || !has(tot.tax)) return null;
-  if (!tot.tax) return h("p", { class: "yc-meta", text: t("wt.noGst") });
+  if (!tot.tax) return h("div", { class: "yc-meta" }, h("span", { class: "yc-meta-item", text: t("wt.noGst") }));
   const split = tot.igst ? `IGST ${money(tot.igst)}` : (tot.cgst || tot.sgst) ? `CGST ${money(tot.cgst)} + SGST ${money(tot.sgst)}` : null;
-  return h("p", { class: "yc-gst" },
-    h("span", { class: "yc-gst-word", text: t("wt.gst") }),
-    h("span", { class: "yc-gst-num", text: money(tot.tax) }),
-    split ? h("span", { class: "yc-gst-split", text: split }) : null);
+  return h("div", { class: "yc-meta" },
+    h("span", { class: "yc-meta-item" }, h("span", { class: "yc-gst-word", text: t("wt.gst") }), h("span", { class: "yc-gst-num", text: money(tot.tax) })),
+    split ? h("span", { class: "yc-meta-item yc-gst-split", text: split }) : null);
 }
 
 function reorderBody(c) {
@@ -232,9 +243,6 @@ function reorderBody(c) {
   const asked = (reorderQuestion.get(String(p.id)) || {})[LANG_CODE[lang()]] || null;
   const onHand = has(it.onHand) ? it.onHand : null;
   return [
-    h("div", { class: "yc-who" },
-      h("span", { class: "yc-who-ico", "aria-hidden": "true" }, icon("jar", 22)),
-      h("span", { class: "yc-who-main" }, scripted("span", name, { class: "yc-who-name" }))),
     onHand !== null ? h("p", { class: "yc-left" },
       icon("alert", 20),
       h("span", { text: onHand <= 0 ? t("wt.outOf") : t("wt.left", { q: qtyText(onHand, it.unit) }) })) : null,
@@ -265,12 +273,18 @@ function itemWord(c) {
 
 function actions(c) {
   const busy = c.phase === "saving" ? c.busy : null;
-  return yesNo({
-    busy,
-    yesWord: t("wt.yes"), noWord: t("wt.no"),
-    yesLabel: t(`wt.yesLong.${c.kind}`, { item: itemWord(c) }), noLabel: t(`wt.noLong.${c.kind}`),
-    onYes: () => decide(c.key, true), onNo: () => decide(c.key, false),
-  });
+  const no = keycapButton({ icon: "x", word: t("wt.no"), label: t(`wt.noLong.${c.kind}`), tone: "secondary", size: "lg", busy: busy === "no", onClick: () => decide(c.key, false) });
+  const yes = keycapButton({ icon: "check", word: t("wt.yes"), label: t(`wt.yesLong.${c.kind}`, { item: itemWord(c) }), tone: "primary", size: "lg", busy: busy === "yes", onClick: () => decide(c.key, true) });
+  no.classList.add("yc-no");
+  yes.classList.add("yc-yes");
+  if (busy) { no.disabled = true; yes.disabled = true; }
+  return h("div", { class: "yc-decide" }, no, yes);
+}
+
+/** "You can also say हाँ": only once the server has read this card out, so a spoken yes can count. */
+function voiceHint(c) {
+  if (!c.spokenAt || (c.data && c.data.voiceOnly)) return null;
+  return h("p", { class: "yc-hint" }, icon("mic", 18), h("span", { text: t("wt.voiceHint") }));
 }
 
 function doneLinks(c) {
@@ -317,6 +331,7 @@ function foot(c, place, { actionsOut = false } = {}) {
           h("button", { class: "keycap keycap-primary keycap-md", type: "button", on: { click: (e) => openShopSheet({ opener: e.currentTarget }) } },
             icon("plus", 22), h("span", { text: t("wt.fixAdd") }))) : null,
         errText ? h("p", { class: "error-line yc-error", role: "alert" }, icon("alert", 20), scripted("span", errText)) : null,
+        voiceHint(c),
         d.voiceOnly
           ? h("p", { class: "note-line yc-voice" }, icon("mic", 20), h("span", { text: t("wt.voiceOnly") }))
           : actionsOut ? null : actions(c),
@@ -383,19 +398,23 @@ function cardSig(c, extra) {
 /** One Yes card element for a model card. */
 function buildCard(c, { place, index = 0, total = 1, speaking = false, actionsOut = false }) {
   const titleId = domId("yc-t", c.key);
+  const kindId = domId("yc-k", c.key);
   const isLive = c.phase === "waiting" || c.phase === "error";
   const now = speaking && isLive;
   const speakKey = speakKeyOf(c.kind, c.id, c.data && c.data.itemId);
-  const cls = ["card", "card-pad-lg", "yc", `yc-${c.kind}`, `is-${c.phase}`];
+  const where = placeOf(c);
+  const cls = ["card", "yc", `yc-${c.kind}`, `is-${c.phase}`];
   if (now) cls.push("card-now");
   if (c.phase === "error" || c.fix) cls.push("card-alert");
-  return h("article", { class: cls.join(" "), role: "region", "aria-labelledby": titleId, dataset: { key: c.key, phase: c.phase, place } },
+  return h("article", { class: cls.join(" "), role: "region", "aria-labelledby": `${kindId} ${titleId}`, dataset: { key: c.key, phase: c.phase, place } },
     h("header", { class: "card-head yc-head" },
       h("div", { class: "yc-head-main" },
-        h("p", { class: "yc-kind" }, icon(KIND_ICON[c.kind], 18),
-          h("span", { text: t(`wt.kind.${c.kind}`) }),
+        h("p", { class: "t-label yc-kind", id: kindId },
+          h("span", { text: t(`wt.label.${c.kind}`) }),
+          h("span", { class: "wt-sr", text: ` ${titleOf(c)}` }),
           total > 1 ? h("span", { class: "yc-of", text: t("wt.count", { i: index + 1, n: total }) }) : null),
-        h("h3", { class: "card-title yc-title", id: titleId, tabindex: "-1", text: titleOf(c) })),
+        scripted("h3", subjectOf(c), { class: "card-title yc-title", id: titleId, tabindex: "-1" }),
+        where ? scripted("p", where, { class: "yc-place" }) : null),
       speakKey ? h("span", { class: "card-speak" }, speakButton(speakKey)) : null),
     now ? h("p", { class: "yc-now" }, h("span", { class: "yc-now-dot", "aria-hidden": "true" }), h("span", { text: t("wt.speaking") })) : null,
     h("div", { class: "yc-body" }, ...BODY[c.kind](c).filter(Boolean)),
@@ -419,12 +438,13 @@ function buildRow(c, onOpen) {
 /* ------------------------------------------------------------------ tray -- */
 
 /** One tray view (the sheet/drawer body, or the agent column). */
-function createTrayView({ place, withHead, onFoot = null }) {
+function createTrayView({ place, withHead, onFoot = null, selfFoot = false }) {
   const el = h("section", { class: `wt wt-${place}`, "aria-labelledby": undefined });
   const headId = domId("wt-h", place);
-  const count = h("span", { class: "badge wt-badge", "aria-hidden": "true" });
+  const count = h("span", { class: "t-label wt-tag" });
   const head = withHead ? h("header", { class: "wt-head" },
-    h("h2", { class: "wt-title", id: headId }, icon("bell", 22), h("span", { text: t("wt.tray") })), count) : null;
+    h("span", { class: "wt-dot", "aria-hidden": "true" }),
+    h("h2", { class: "wt-title", id: headId }, h("span", { text: t("wt.tray") })), count) : null;
   if (withHead) el.setAttribute("aria-labelledby", headId);
   const list = h("ol", { class: "wt-list" });
   const stateBox = h("div", { class: "wt-state" });
@@ -433,14 +453,17 @@ function createTrayView({ place, withHead, onFoot = null }) {
   let expanded = null;
   let stateKey = "";
   let footSig = null;
+  if (selfFoot && !onFoot) onFoot = (node) => { footEl.hidden = !node; };
   const footEl = onFoot ? h("div", { class: "wt-foot" }) : null;
+  if (selfFoot) { footEl.hidden = true; el.append(footEl); }
 
   function render() {
     if (head) {
       head.querySelector(".wt-title span").textContent = t("wt.tray");
       const n = model.count();
-      count.textContent = n > 9 ? "9+" : String(n);
+      count.textContent = t("wt.actionRequired");
       count.hidden = n === 0;
+      head.classList.toggle("is-waiting", n > 0);
     }
     const cards = model.list();
     // Nothing to list: loading, a source error, or the designed empty view.
@@ -501,7 +524,7 @@ function createTrayView({ place, withHead, onFoot = null }) {
       if (sig !== footSig) {
         footSig = sig;
         const had = footEl.contains(document.activeElement) ? focusPath(document.activeElement) : null;
-        if (needs) { const a = actions(c); a.classList.add("wt-foot-actions"); fill(footEl, a); } else fill(footEl);
+        if (needs) fill(footEl, actions(c)); else fill(footEl);
         onFoot(needs ? footEl : null);
         if (had) restoreFocus(footEl, had);
       }
@@ -526,7 +549,7 @@ function createTrayView({ place, withHead, onFoot = null }) {
 
 /** Keep focus on "the same control" across a rebuild: its role in the card (yes / no / close / speak). */
 function focusPath(el) {
-  for (const sel of [".yes-btn-yes", ".yes-btn-no", ".yc-close", ".card-speak button", ".yc-title", ".yc-row", ".yc-link", ".yc-fix button", ".yc-more"]) {
+  for (const sel of [".yc-yes", ".yc-no", ".yc-close", ".card-speak button", ".yc-title", ".yc-row", ".yc-link", ".yc-fix button", ".yc-more"]) {
     if (el.matches(sel)) return sel;
   }
   return ".yc-title";
@@ -709,7 +732,7 @@ function mountPill() {
 function mountColumn() {
   const col = shellSlot("agentColumn");
   if (!col || columnView) return;
-  columnView = createTrayView({ place: "column", withHead: true });
+  columnView = createTrayView({ place: "column", withHead: true, selfFoot: true });
   col.append(columnView.el);
 }
 

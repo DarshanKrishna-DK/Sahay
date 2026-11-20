@@ -4,6 +4,13 @@
 
 export const WT_STRINGS = {
   "wt.tray": ["Waiting for your yes", "आपकी हाँ का इंतज़ार", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗಾಗಿ ಕಾಯುತ್ತಿದೆ"],
+  "wt.actionRequired": ["Action required", "आपकी हाँ ज़रूरी", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಬೇಕು"],
+  "wt.label.buy": ["Vendor", "विक्रेता", "ಮಾರಾಟಗಾರ"],
+  "wt.label.bill": ["Bill for", "बिल किसका", "ಯಾರ ಬಿಲ್"],
+  "wt.label.reorder": ["Running low", "कम हो रहा है", "ಕಡಿಮೆ ಆಗುತ್ತಿದೆ"],
+  "wt.label.rule": ["New rule", "नया नियम", "ಹೊಸ ನಿಯಮ"],
+  "wt.totalColon": ["Total:", "कुल:", "ಒಟ್ಟು:"],
+  "wt.voiceHint": ["You can also say “हाँ” to confirm.", "आप बोलकर भी “हाँ” कह सकते हैं।", "“ಹೌದು” ಎಂದು ಹೇಳಿಯೂ ಒಪ್ಪಿಸಬಹುದು."],
   "wt.pill": ["{n} · Your yes", "{n} · आपकी हाँ चाहिए", "{n} · ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಬೇಕು"],
   "wt.pillLong": ["{n} waiting for your yes. Open the list.", "{n} आपकी हाँ के इंतज़ार में। सूची खोलें।", "{n} ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗಾಗಿ ಕಾಯುತ್ತಿವೆ. ಪಟ್ಟಿ ತೆರೆಯಿರಿ."],
   "wt.none": ["Nothing waits for you", "आपकी हाँ के लिए कुछ नहीं रुका", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಏನೂ ಕಾಯುತ್ತಿಲ್ಲ"],
