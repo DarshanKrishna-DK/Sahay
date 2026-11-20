@@ -1,28 +1,30 @@
-// Shop details / GST: the sheet where the owner says how the shop bills (three big tiles: no GST,
-// registered, composition), its GST number, its state and, if they like, its address.
-// Save -> POST /api/sell/settings (store-sell.js saveShopSettings); a refusal shows the server's
-// own `say`. Opened from My Sahay and from the Sell screen when a bill needs a missing fact
-// (GSTIN_REQUIRED / STATE_REQUIRED). Also exports the small summary and "needs" card those
-// screens show.
+// Shop details / GST (UI v3). The sheet where the owner says how the shop bills (three choice
+// tiles: no GST, registered, composition), its GST number, its state (a searchable picker inside
+// the sheet, D18: no native select) and, if they like, its address. Save -> POST
+// /api/sell/settings (store-sell.js saveShopSettings); a refusal shows the server's own `say`.
+// Opened from Sell (header, needs card, a bill refused with GSTIN_REQUIRED / STATE_REQUIRED) and
+// from My Sahay. Also exports the shop card those screens show (tiles, GSTIN hidden until the
+// owner presses Show) and the "needs" card.
 
-import { h, icon } from "./dom.js";
+import { h } from "./dom.js";
 import { t, lang, addStrings } from "./i18n.js";
-import { openSheet, closeSheet } from "./sheet.js";
-import { stateView, loadingView } from "./empty.js";
 import { sell, loadSell, saveShopSettings } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
-import { readButton } from "./sell-kit.js";
+import { readButton, ic, panel, screenState, cardHead, resultLine, scriptedText } from "./sell-kit.js";
 import {
-  SCHEMES, statesFor, stateLabel, stateIsNative, cleanGstin, gstinProblem, stateOfGstin,
-  needsGstin, missingFact, formProblems, settingsBody,
+  SCHEMES, stateLabel, stateIsNative, cleanGstin, gstinProblem, stateOfGstin,
+  needsGstin, missingFact, formProblems, settingsBody, findStates,
 } from "./shop-facts.js";
+import { maskGstin } from "./sell-facts.js";
 
 addStrings({
   "shop.title": ["Shop details", "दुकान की जानकारी", "ಅಂಗಡಿ ವಿವರ"],
   "shop.open": ["Shop details", "दुकान की जानकारी", "ಅಂಗಡಿ ವಿವರ"],
+  "shop.yours": ["Your shop", "आपकी दुकान", "ನಿಮ್ಮ ಅಂಗಡಿ"],
   "shop.add": ["Add shop details", "दुकान की जानकारी डालें", "ಅಂಗಡಿ ವಿವರ ಹಾಕಿ"],
   "shop.change": ["Change", "बदलें", "ಬದಲಿಸಿ"],
   "shop.how": ["How do you bill?", "आप बिल कैसे बनाते हैं?", "ನೀವು ಬಿಲ್ ಹೇಗೆ ಮಾಡುತ್ತೀರಿ?"],
+  "shop.intro": ["Sahay prints these on every bill.", "सहाय यह हर बिल पर छापती है।", "ಸಹಾಯ್ ಇದನ್ನು ಪ್ರತಿ ಬಿಲ್‌ನಲ್ಲಿ ಮುದ್ರಿಸುತ್ತದೆ."],
   "shop.scheme.unregistered": ["No GST", "GST नहीं", "GST ಇಲ್ಲ"],
   "shop.scheme.regular": ["Registered", "रजिस्टर्ड", "ನೋಂದಾಯಿತ"],
   "shop.scheme.composition": ["Composition", "कंपोज़िशन", "ಕಾಂಪೋಸಿಷನ್"],
@@ -33,10 +35,17 @@ addStrings({
   "shop.gstinNeed": ["Type your 15-character GST number.", "अपना 15 अक्षर का GST नंबर लिखिए।", "ನಿಮ್ಮ 15 ಅಕ್ಷರದ GST ಸಂಖ್ಯೆ ಬರೆಯಿರಿ."],
   "shop.gstinShort": ["A GST number has 15 characters. Check the missing ones.", "GST नंबर में 15 अक्षर होते हैं। छूटे हुए अक्षर देखिए।", "GST ಸಂಖ್ಯೆಯಲ್ಲಿ 15 ಅಕ್ಷರ ಇರುತ್ತವೆ. ಬಿಟ್ಟುಹೋದವನ್ನು ನೋಡಿ."],
   "shop.gstinShape": ["Check the GST number: it starts with your state's 2 digits, as on your certificate.", "GST नंबर जाँचिए: यह आपके राज्य के 2 अंकों से शुरू होता है, जैसा प्रमाणपत्र पर है।", "GST ಸಂಖ್ಯೆ ಪರಿಶೀಲಿಸಿ: ಪ್ರಮಾಣಪತ್ರದಲ್ಲಿರುವಂತೆ ನಿಮ್ಮ ರಾಜ್ಯದ 2 ಅಂಕೆಗಳಿಂದ ಶುರುವಾಗುತ್ತದೆ."],
+  "shop.gstinShow": ["Show", "दिखाएँ", "ತೋರಿಸಿ"],
+  "shop.gstinHide": ["Hide", "छिपाएँ", "ಮರೆಮಾಡಿ"],
+  "shop.gstinShowLong": ["Show the full GST number", "पूरा GST नंबर दिखाएँ", "ಪೂರ್ತಿ GST ಸಂಖ್ಯೆ ತೋರಿಸಿ"],
   "shop.state": ["State", "राज्य", "ರಾಜ್ಯ"],
   "shop.statePick": ["Choose your state", "अपना राज्य चुनिए", "ನಿಮ್ಮ ರಾಜ್ಯ ಆಯ್ಕೆಮಾಡಿ"],
   "shop.stateNeed": ["Choose the state your shop is in.", "दुकान किस राज्य में है, चुनिए।", "ಅಂಗಡಿ ಯಾವ ರಾಜ್ಯದಲ್ಲಿದೆ ಎಂದು ಆಯ್ಕೆಮಾಡಿ."],
   "shop.stateFromGstin": ["From your GST number", "आपके GST नंबर से", "ನಿಮ್ಮ GST ಸಂಖ್ಯೆಯಿಂದ"],
+  "shop.stateSearch": ["Search a state", "राज्य खोजिए", "ರಾಜ್ಯ ಹುಡುಕಿ"],
+  "shop.stateNone": ["No state matches this. Check the spelling.", "इस नाम का कोई राज्य नहीं मिला। स्पेलिंग देखिए।", "ಈ ಹೆಸರಿನ ರಾಜ್ಯ ಸಿಗಲಿಲ್ಲ. ಕಾಗುಣಿತ ನೋಡಿ."],
+  "shop.stateClear": ["Clear search", "खोज हटाएँ", "ಹುಡುಕಾಟ ಅಳಿಸಿ"],
+  "shop.back": ["Back", "वापस", "ಹಿಂದೆ"],
   "shop.address": ["Shop address", "दुकान का पता", "ಅಂಗಡಿ ವಿಳಾಸ"],
   "shop.optional": ["if you like", "चाहें तो", "ಬೇಕಿದ್ದರೆ"],
   "shop.addressHelp": ["Printed on your bills.", "आपके बिल पर छपेगा।", "ನಿಮ್ಮ ಬಿಲ್‌ನಲ್ಲಿ ಮುದ್ರಿಸಲಾಗುತ್ತದೆ."],
@@ -47,6 +56,7 @@ addStrings({
   "shop.fixFirst": ["Fix the marked box, then press Save.", "निशान वाला खाना ठीक करके सेव दबाइए।", "ಗುರುತಿಸಿದ ಪೆಟ್ಟಿಗೆ ಸರಿಪಡಿಸಿ, ನಂತರ ಉಳಿಸಿ ಒತ್ತಿ."],
   "shop.noState": ["State not added", "राज्य नहीं डाला", "ರಾಜ್ಯ ಹಾಕಿಲ್ಲ"],
   "shop.noGstin": ["GST number not added", "GST नंबर नहीं डाला", "GST ಸಂಖ್ಯೆ ಹಾಕಿಲ್ಲ"],
+  "shop.noAddress": ["No address on bills", "बिल पर पता नहीं", "ಬಿಲ್‌ನಲ್ಲಿ ವಿಳಾಸ ಇಲ್ಲ"],
   "shop.need.title": ["Bills need your shop details", "बिल के लिए दुकान की जानकारी चाहिए", "ಬಿಲ್‌ಗೆ ಅಂಗಡಿ ವಿವರ ಬೇಕು"],
   "shop.need.GSTIN_REQUIRED": [
     "Add your shop's GST number before making a GST bill, or choose No GST.",
@@ -81,28 +91,30 @@ function stateText(tag, code, props = {}) {
 
 /* -------------------------------------------------------------- the sheet -- */
 
+const loadingBody = () => screenState({ kind: "loading", title: st("sbx.loading.sell"), shape: "form" });
+
 /** Open the Shop details sheet; `opener` gets focus back when it closes. */
 export function openShopSheet({ opener = null } = {}) {
-  const api = openSheet({ title: st("shop.title"), body: loadingView(st("sbx.loading.sell")), opener });
+  const api = panel({ title: st("shop.title"), body: loadingBody(), opener });
   show(api);
   return api;
 }
 
 async function show(api) {
   if (sell.status !== "ready" || !sell.settings) {
-    api.setBody(loadingView(st("sbx.loading.sell")));
+    api.setBody(loadingBody());
     await loadSell();
   }
   if (!api.isOpen()) return;
-  if (sell.status === "ready" && sell.settings) { api.setBody(form(sell.settings, api)); return; }
+  if (sell.status === "ready" && sell.settings) { form(sell.settings, api); return; }
   const retry = { label: t("retry"), icon: "refresh", run: () => show(api) };
   if (sell.status === "missing") {
-    api.setBody(stateView({ kind: "empty", icon: "info", title: st("sbx.missing.title"), text: st("sbx.missing.sell"), action: retry, compact: true }));
+    api.setBody(screenState({ kind: "missing", title: st("sbx.missing.title"), text: st("sbx.missing.sell"), action: retry, compact: true }));
     return;
   }
   const err = sell.error;
   const text = (err && (err.say || (err.status === 0 ? t("err.network") : null))) || st("sbx.err.load");
-  api.setBody(stateView({ kind: "error", title: st("sbx.err.loadTitle"), text, action: retry, compact: true }));
+  api.setBody(screenState({ kind: "error", title: st("sbx.err.loadTitle"), text, action: retry, compact: true }));
 }
 
 function form(saved, api) {
@@ -117,16 +129,15 @@ function form(saved, api) {
   };
   const uid = `shop-${Date.now().toString(36)}`;
 
-  /* ---- scheme tiles (a radio group of three big buttons) ---- */
+  /* ---- scheme: three choice tiles, a radio group ---- */
   const tiles = SCHEMES.map((scheme) => h("button", {
-    class: "shop-tile", type: "button", role: "radio", "aria-checked": String(f.scheme === scheme),
+    class: "choice gs-tile", type: "button", role: "radio", "aria-checked": String(f.scheme === scheme),
     tabindex: f.scheme === scheme ? "0" : "-1", dataset: { scheme },
     on: { click: () => pick(scheme), keydown: (e) => roam(e, scheme) },
   },
-  h("span", { class: "shop-tile-ico", "aria-hidden": "true" }, icon(SCHEME_ICON[scheme], 30)),
-  h("span", { class: "shop-tile-word", text: schemeWord(scheme) }),
-  h("span", { class: "shop-tile-paper", text: st(PAPER_KEY[scheme]) }),
-  h("span", { class: "shop-tile-tick", "aria-hidden": "true" }, icon("check", 18))));
+  h("span", { class: "gs-tile-ico", "aria-hidden": "true" }, ic(SCHEME_ICON[scheme], 28)),
+  h("span", { class: "gs-tile-word", text: schemeWord(scheme) }),
+  h("span", { class: "gs-tile-paper", text: st(PAPER_KEY[scheme]) })));
 
   function pick(scheme, focus = false) {
     f.scheme = scheme;
@@ -148,10 +159,10 @@ function form(saved, api) {
 
   /* ---- GST number ---- */
   const gstinId = `${uid}-gstin`;
-  const gstinMsg = h("p", { class: "shop-help", id: `${gstinId}-msg`, text: st("shop.gstinHelp") });
-  const gstinCount = h("span", { class: "shop-count", "aria-hidden": "true" });
+  const gstinMsg = h("p", { class: "field-help", id: `${gstinId}-msg`, text: st("shop.gstinHelp") });
+  const gstinCount = h("span", { class: "gs-count", "aria-hidden": "true" });
   const gstinInput = h("input", {
-    class: "shop-input shop-input-gstin", id: gstinId, name: "gstin", type: "text", inputmode: "text",
+    class: "field-input gs-gstin", id: gstinId, name: "gstin", type: "text", inputmode: "text",
     autocomplete: "off", autocapitalize: "characters", spellcheck: "false", maxlength: "15",
     "aria-describedby": `${gstinId}-msg`,
     on: {
@@ -168,8 +179,8 @@ function form(saved, api) {
     },
   });
   gstinInput.value = f.gstin;
-  const gstinBox = h("div", { class: "shop-field" },
-    h("label", { class: "shop-label", for: gstinId }, icon("shield", 22), h("span", { text: st("shop.gstin") }), gstinCount),
+  const gstinBox = h("div", { class: "field gs-field" },
+    h("label", { class: "field-label", for: gstinId }, ic("shield", 20), h("span", { text: st("shop.gstin") }), gstinCount),
     gstinInput, gstinMsg);
 
   function checkGstin() {
@@ -180,65 +191,66 @@ function form(saved, api) {
     return false;
   }
 
-  /* ---- state ---- */
+  /* ---- state: a button that opens the picker inside this sheet ---- */
   const stateId = `${uid}-state`;
-  const stateMsg = h("p", { class: "shop-help", id: `${stateId}-msg`, hidden: true });
-  const select = h("select", {
-    class: "shop-input shop-select", id: stateId, name: "state", autocomplete: "address-level1",
-    "aria-describedby": `${stateId}-msg`,
-    on: {
-      change: () => { f.state = select.value; f.touched.state = true; clearErr(select, stateMsg, null); },
-      focus: () => clearErr(select, stateMsg, null),
-      blur: () => { f.touched.state = true; checkState(); },
-    },
-  },
-  h("option", { value: "", text: st("shop.statePick") }),
-  ...statesFor(L).map((s) => h("option", { value: s.code, lang: s.native ? L : undefined, text: s.label })));
-  select.value = f.state;
-  const derived = h("p", { class: "shop-derived", role: "status" });
-  const stateBox = h("div", { class: "shop-field" },
-    h("label", { class: "shop-label", for: stateId }, icon("pin", 22), h("span", { text: st("shop.state") })),
-    select, derived, stateMsg);
+  const stateMsg = h("p", { class: "field-help", id: `${stateId}-msg`, hidden: true });
+  const pickWord = h("span", { class: "gs-pick-word" });
+  const pickBtn = h("button", {
+    class: "gs-pick", id: stateId, type: "button", "aria-describedby": `${stateId}-msg`,
+    on: { click: () => openPicker() },
+  }, h("span", { class: "gs-pick-ico", "aria-hidden": "true" }, ic("pin", 22)), pickWord, h("span", { class: "gs-pick-chev", "aria-hidden": "true" }, ic("chevronRight", 22)));
+  const derived = h("p", { class: "gs-derived", role: "status" });
+  const stateBox = h("div", { class: "field gs-field" },
+    h("span", { class: "field-label", id: `${stateId}-label` }, ic("pin", 20), h("span", { text: st("shop.state") })),
+    pickBtn, derived, stateMsg);
+  pickBtn.setAttribute("aria-labelledby", `${stateId}-label ${stateId}`);
+
+  function paintPick() {
+    pickBtn.classList.toggle("is-empty", !f.state);
+    pickWord.replaceChildren(f.state ? stateText("span", f.state) : h("span", { text: st("shop.statePick") }));
+  }
 
   function checkState() {
     if (needsGstin(f.scheme) && stateOfGstin(f.gstin)) return true;
     if (f.state) return true;
-    setErr(select, stateMsg, "shop.stateNeed");
+    setErr(pickBtn, stateMsg, "shop.stateNeed");
     return false;
   }
 
   /* ---- address ---- */
   const addrId = `${uid}-address`;
   const address = h("textarea", {
-    class: "shop-input shop-textarea", id: addrId, name: "address", rows: "2", maxlength: "300",
+    class: "field-input gs-address", id: addrId, name: "address", rows: "2", maxlength: "300",
     autocomplete: "street-address", "aria-describedby": `${addrId}-msg`,
     on: { input: () => { f.address = address.value; } },
   });
   address.value = f.address;
-  const addrBox = h("div", { class: "shop-field" },
-    h("label", { class: "shop-label", for: addrId }, icon("store", 22), h("span", { text: st("shop.address") }),
-      h("span", { class: "shop-optional", text: `(${st("shop.optional")})` })),
+  const addrBox = h("div", { class: "field gs-field" },
+    h("label", { class: "field-label", for: addrId }, ic("store", 20), h("span", { text: st("shop.address") }),
+      h("span", { class: "gs-optional", text: st("shop.optional") })),
     address,
-    h("p", { class: "shop-help", id: `${addrId}-msg`, text: st("shop.addressHelp") }));
+    h("p", { class: "field-help", id: `${addrId}-msg`, text: st("shop.addressHelp") }));
 
-  /* ---- save ---- */
-  const saveLabel = h("span", { text: st("shop.save") });
-  const saveIco = h("span", { class: "shop-save-ico", "aria-hidden": "true" }, icon("check", 26));
-  const save = h("button", { class: "keycap keycap-marigold shop-save", type: "button", on: { click: submit } }, saveIco, saveLabel);
-  const result = h("div", { class: "shop-result", "aria-live": "polite" });
+  /* ---- save (in the sheet's footer, thumb reach) ---- */
+  const saveIco = h("span", { class: "gs-save-ico", "aria-hidden": "true" }, ic("check", 24));
+  const save = h("button", { class: "keycap keycap-primary keycap-md keycap-block gs-save", type: "button", on: { click: submit } }, saveIco, h("span", { text: st("shop.save") }));
+  const result = h("div", { class: "gs-result", "aria-live": "polite" });
+  const footer = h("div", { class: "gs-foot" }, result, save);
 
   function sync() {
     const gst = needsGstin(f.scheme);
     gstinBox.hidden = !gst;
     gstinCount.textContent = st("shop.gstinCount", { n: f.gstin.length });
+    gstinCount.classList.toggle("is-full", f.gstin.length === 15);
     const fromGstin = gst ? stateOfGstin(f.gstin) : null;
     // A GSTIN's first two digits are its state: the picker gives way to that fact.
-    select.hidden = Boolean(fromGstin);
+    pickBtn.hidden = Boolean(fromGstin);
     derived.hidden = !fromGstin;
     if (fromGstin) {
-      derived.replaceChildren(icon("check", 20), stateText("b", fromGstin), h("span", { class: "shop-derived-why", text: st("shop.stateFromGstin") }));
-      clearErr(select, stateMsg, null);
+      derived.replaceChildren(ic("checkCircle", 20), stateText("b", fromGstin), h("span", { class: "gs-derived-why", text: st("shop.stateFromGstin") }));
+      clearErr(pickBtn, stateMsg, null);
     }
+    paintPick();
   }
 
   async function submit() {
@@ -249,10 +261,9 @@ function form(saved, api) {
     const okState = !problems.state || checkState();
     if (!okGstin || !okState) {
       showResult("error", st("shop.fixFirst"));
-      (!okGstin ? gstinInput : select).focus({ preventScroll: false });
       (!okGstin ? gstinBox : stateBox).scrollIntoView({ block: "center", behavior: "smooth" });
-      // Focusing clears the message; put it back so the owner sees what to fix.
-      if (!okGstin) checkGstin(); else checkState();
+      // Focusing the GSTIN box clears its message (forms rule); put it back so the owner sees what to fix.
+      if (!okGstin) { gstinInput.focus({ preventScroll: true }); checkGstin(); } else pickBtn.focus({ preventScroll: true });
       return;
     }
     f.busy = true;
@@ -262,53 +273,95 @@ function form(saved, api) {
     try {
       await saveShopSettings(settingsBody(f));
       showResult("ok", st("shop.saved"));
-      setTimeout(() => { if (api.isOpen()) closeSheet(); }, 900);
+      setTimeout(() => { if (api.isOpen()) api.close(); }, 900);
     } catch (err) {
       const text = err.say || (err.status === 0 ? t("err.network") : err.status === 429 ? t("err.limit") : null) || st("shop.saveFail");
       if (err.code === "GSTIN_INVALID" && needsGstin(f.scheme)) {
         gstinInput.setAttribute("aria-invalid", "true");
         gstinMsg.textContent = text;
-        gstinMsg.classList.add("is-error");
+        gstinMsg.classList.add("field-error");
       }
       showResult("error", text);
     }
     f.busy = false;
     save.removeAttribute("aria-busy");
-    saveIco.replaceChildren(icon("check", 26));
+    saveIco.replaceChildren(ic("check", 24));
   }
 
   function showResult(kind, text) {
-    const ic = kind === "ok" ? "checkCircle" : kind === "error" ? "alert" : null;
-    result.replaceChildren(text ? h("p", { class: `shop-result-line is-${kind}`, role: kind === "error" ? "alert" : "status" },
-      ic ? icon(ic, 22) : h("span", { class: "spinner", "aria-hidden": "true" }), h("span", { text })) : "");
+    result.replaceChildren(resultLine(kind, text) || "");
+  }
+
+  /* ---- the state picker, inside the sheet (search field + big rows; D18) ---- */
+  let formNodes = null;
+  function openPicker() {
+    const search = h("input", {
+      class: "field-input gs-search", type: "search", inputmode: "search", autocomplete: "off", spellcheck: "false",
+      "aria-label": st("shop.stateSearch"), placeholder: st("shop.stateSearch"),
+    });
+    const clear = h("button", { class: "icon-btn gs-search-clear", type: "button", hidden: true, "aria-label": st("shop.stateClear"), dataset: { tip: st("shop.stateClear") } }, ic("x", 20));
+    const list = h("div", { class: "picker-list gs-states", role: "group", "aria-label": st("shop.statePick") });
+    const back = () => { api.setBody(formNodes); api.setFooter(footer); requestAnimationFrame(() => pickBtn.focus()); };
+    const draw = () => {
+      const rows = findStates(search.value, L);
+      clear.hidden = !search.value;
+      if (!rows.length) {
+        list.replaceChildren(h("div", { class: "gs-none" },
+          h("p", { class: "note-line" }, ic("search", 20), h("span", { text: st("shop.stateNone") })),
+          h("button", { class: "keycap keycap-secondary keycap-sm", type: "button", on: { click: () => { search.value = ""; draw(); search.focus(); } } },
+            ic("x", 20), h("span", { text: st("shop.stateClear") }))));
+        return;
+      }
+      list.replaceChildren(...rows.map((r) => h("button", {
+          class: "picker-item gs-state", type: "button", "aria-pressed": String(r.code === f.state),
+          on: { click: () => { f.state = r.code; f.touched.state = true; clearErr(pickBtn, stateMsg, null); sync(); back(); } },
+        },
+        h("span", { class: "gs-state-name", lang: r.native ? L : undefined, text: r.label }),
+        r.code === f.state ? h("span", { class: "pi-sub gs-state-tick", "aria-hidden": "true" }, ic("check", 22)) : null)));
+    };
+    search.addEventListener("input", draw);
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { const first = list.querySelector(".gs-state"); if (first) { e.preventDefault(); first.click(); } }
+      if (e.key === "Escape" && search.value) { e.preventDefault(); e.stopPropagation(); search.value = ""; draw(); }
+    });
+    clear.addEventListener("click", () => { search.value = ""; draw(); search.focus(); });
+    draw();
+    api.setFooter(null);
+    api.setBody(h("div", { class: "picker gs-picker" },
+      h("div", { class: "gs-picker-head" },
+        h("button", { class: "keycap keycap-ghost keycap-sm gs-back", type: "button", on: { click: back } }, ic("chevronLeft", 22), h("span", { text: st("shop.back") })),
+        h("p", { class: "gs-picker-title", text: st("shop.statePick") })),
+      h("div", { class: "picker-search gs-searchbox" }, h("span", { class: "gs-search-ico", "aria-hidden": "true" }, ic("search", 20)), search, clear),
+      list));
+    requestAnimationFrame(() => search.focus());
   }
 
   sync();
   const sentence = () => `${st("shop.sayHelp")} ${st("shop.sayNow", { scheme: schemeWord(f.scheme), state: stateWord((needsGstin(f.scheme) && stateOfGstin(f.gstin)) || f.state) })}`;
-  return [
-    h("div", { class: "shop-intro" }, readButton("shop-details", sentence, { size: "md" })),
-    h("fieldset", { class: "shop-schemes" },
-      h("legend", { class: "shop-label shop-legend" }, icon("receipt", 22), h("span", { text: st("shop.how") })),
-      h("div", { class: "shop-tiles", role: "radiogroup", "aria-label": st("shop.how") }, ...tiles)),
+  formNodes = [
+    h("div", { class: "gs-intro" }, h("p", { class: "gs-intro-text", text: st("shop.intro") }), readButton("shop-details", sentence, { size: "md" })),
+    h("fieldset", { class: "gs-schemes" },
+      h("legend", { class: "field-label" }, ic("receipt", 20), h("span", { text: st("shop.how") })),
+      h("div", { class: "choices gs-tiles", role: "radiogroup", "aria-label": st("shop.how") }, ...tiles)),
     gstinBox,
     stateBox,
     addrBox,
-    result,
-    h("div", { class: "shop-actions" }, save),
   ];
+  api.setBody(formNodes);
+  api.setFooter(footer);
 }
 
 function setErr(input, msg, key) {
   input.setAttribute("aria-invalid", "true");
   msg.hidden = false;
   msg.textContent = st(key);
-  msg.classList.add("is-error");
+  msg.classList.add("field-error");
 }
 
 function clearErr(input, msg, helpKey) {
   if (input.getAttribute("aria-invalid") !== "true") return;
   input.removeAttribute("aria-invalid");
-  msg.classList.remove("is-error");
+  msg.classList.remove("field-error");
   if (helpKey) msg.textContent = st(helpKey);
   else { msg.textContent = ""; msg.hidden = true; }
 }
@@ -316,47 +369,80 @@ function clearErr(input, msg, helpKey) {
 /* ------------------------------------------------- pieces for the screens -- */
 
 /** The button that opens the sheet (icon + words). */
-export function shopButton({ word = st("shop.open"), primary = false } = {}) {
-  const btn = h("button", { class: `keycap ${primary ? "keycap-marigold" : "keycap-ghost"} keycap-md shop-open`, type: "button" },
-    icon("store", 22), h("span", { text: word }));
+export function shopButton({ word = st("shop.open"), primary = false, size = "md" } = {}) {
+  const btn = h("button", { class: `keycap ${primary ? "keycap-primary" : "keycap-secondary"} keycap-${size} gs-open`, type: "button" },
+    ic("store", 22), h("span", { text: word }));
   btn.addEventListener("click", () => openShopSheet({ opener: btn }));
   return btn;
 }
 
 /**
- * The "needs" card for the Sell screen: a bill cannot be made until this fact is added.
- * `code` is GSTIN_REQUIRED or STATE_REQUIRED; `say` is the server's own sentence when it sent one.
+ * The "needs" card (Sell top, and inside a bill refused for it): a bill cannot be made until this
+ * fact is added. `code` is GSTIN_REQUIRED or STATE_REQUIRED; `say` is the server's own sentence.
  */
 export function shopNeedCard(code, say = null) {
-  return h("div", { class: "shop-need", role: "alert" },
-    h("span", { class: "shop-need-ico", "aria-hidden": "true" }, icon("store", 26)),
-    h("div", { class: "shop-need-main" },
-      h("p", { class: "shop-need-title", text: st("shop.need.title") }),
-      h("p", { class: "shop-need-text", text: say || st(`shop.need.${code}`) })),
+  return h("article", { class: "card card-alert gs-need", role: "alert" },
+    h("span", { class: "gs-need-ico", "aria-hidden": "true" }, ic("alert", 26)),
+    h("div", { class: "gs-need-main" },
+      h("p", { class: "gs-need-title", text: st("shop.need.title") }),
+      h("p", { class: "gs-need-text", text: say || st(`shop.need.${code}`) })),
     shopButton({ word: st("shop.add"), primary: true }));
 }
 
 /** The missing fact in the loaded settings (null when a bill can be made, or not loaded yet). */
 export const shopMissing = () => (sell.status === "ready" ? missingFact(sell.settings) : null);
 
-/** My Sahay's row: how the shop bills, its state and GST number, with Change / Add. */
+let gstinShown = false;
+
+function gstinValue(gstin) {
+  const value = h("span", { class: "gs-gstin-value", text: gstinShown ? gstin : maskGstin(gstin) });
+  const word = h("span", { text: st(gstinShown ? "shop.gstinHide" : "shop.gstinShow") });
+  const eye = h("span", { class: "gs-eye", "aria-hidden": "true" }, ic(gstinShown ? "eyeOff" : "eye", 20));
+  const toggle = h("button", {
+    class: "keycap keycap-ghost keycap-sm gs-reveal", type: "button", "aria-pressed": String(gstinShown), "aria-label": st("shop.gstinShowLong"),
+    on: {
+      click: () => {
+        gstinShown = !gstinShown;
+        value.textContent = gstinShown ? gstin : maskGstin(gstin);
+        word.textContent = st(gstinShown ? "shop.gstinHide" : "shop.gstinShow");
+        eye.replaceChildren(ic(gstinShown ? "eyeOff" : "eye", 20));
+        toggle.setAttribute("aria-pressed", String(gstinShown));
+      },
+    },
+  }, eye, word);
+  return [value, toggle];
+}
+
+const missingMark = (key) => h("span", { class: "gs-fact-missing" }, ic("alert", 18), h("span", { text: st(key) }));
+
+/**
+ * The shop card (Sell's side column and My Sahay): how the shop bills, its state and GST number
+ * (hidden until Show), the address on bills, and Change / Add. Null when Sell is not on this server.
+ */
 export function shopSummary() {
   const s = sell.settings;
-  if (sell.status === "loading" || sell.status === "idle") return loadingView(st("sbx.loading.sell"));
+  if (sell.status === "loading" || sell.status === "idle") return loadingBody();
   if (sell.status === "missing") return null;
   if (sell.status === "error" || !s) {
-    return stateView({ kind: "error", title: st("sbx.err.loadTitle"), text: (sell.error && sell.error.say) || st("sbx.err.load"),
+    return screenState({ kind: "error", title: st("sbx.err.loadTitle"), text: (sell.error && sell.error.say) || st("sbx.err.load"),
       action: { label: t("retry"), icon: "refresh", run: () => loadSell() }, compact: true });
   }
   const need = missingFact(s);
-  return [
-    h("ul", { class: "shop-facts" },
-      h("li", {}, icon(SCHEME_ICON[s.gstScheme] || "receipt", 22),
-        h("b", { text: schemeWord(s.gstScheme) }), h("span", { class: "shop-fact-sub", text: st(PAPER_KEY[s.gstScheme]) })),
-      h("li", {}, icon("pin", 22), s.stateCode ? stateText("span", s.stateCode) : h("span", { class: "shop-fact-missing", text: st("shop.noState") })),
-      needsGstin(s.gstScheme) ? h("li", {}, icon("shield", 22),
-        s.gstin ? h("span", { class: "shop-gstin", text: s.gstin }) : h("span", { class: "shop-fact-missing", text: st("shop.noGstin") })) : null),
-    need ? h("p", { class: "shop-need-line", role: "note" }, icon("alert", 22), h("span", { text: st(`shop.need.${need}`) })) : null,
-    shopButton({ word: need || !s.saved ? st("shop.add") : st("shop.change"), primary: Boolean(need) }),
-  ];
+  const sentence = () => [
+    st("shop.sayNow", { scheme: schemeWord(s.gstScheme), state: stateWord(s.stateCode) }),
+    need ? st(`shop.need.${need}`) : "",
+  ].join(" ").trim();
+  const tile = (icn, label, value, cls = "") => h("li", { class: `gs-fact${cls ? ` ${cls}` : ""}` },
+    h("span", { class: "gs-fact-ico", "aria-hidden": "true" }, ic(icn, 22)),
+    h("span", { class: "gs-fact-label", text: label }),
+    h("span", { class: "gs-fact-value" }, value));
+  return h("article", { class: `card gs-summary${need ? " card-alert" : ""}`, "aria-labelledby": "gs-summary-h" },
+    cardHead(st("shop.yours"), readButton("shop-facts", sentence), { id: "gs-summary-h" }),
+    h("ul", { class: "gs-facts" },
+      tile(SCHEME_ICON[s.gstScheme] || "receipt", st("shop.how"), [h("b", { text: schemeWord(s.gstScheme) }), h("span", { class: "gs-fact-sub", text: st(PAPER_KEY[s.gstScheme]) })]),
+      tile("pin", st("shop.state"), s.stateCode ? stateText("b", s.stateCode) : missingMark("shop.noState")),
+      needsGstin(s.gstScheme) ? tile("shield", st("shop.gstin"), s.gstin ? gstinValue(s.gstin) : missingMark("shop.noGstin"), "gs-fact-gstin") : null,
+      tile("store", st("shop.address"), s.address ? scriptedText("span", s.address, { class: "gs-address-text" }) : h("span", { class: "gs-fact-sub", text: st("shop.noAddress") }), "gs-fact-wide")),
+    need ? resultLine("error", st(`shop.need.${need}`)) : null,
+    shopButton({ word: need || !s.saved ? st("shop.add") : st("shop.change"), primary: Boolean(need), size: "sm" }));
 }

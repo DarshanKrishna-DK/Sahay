@@ -170,7 +170,7 @@ test("the sheet's body is what POST /api/sell/settings accepts; a bad check char
 
 test("the sheet: three scheme tiles as a radio group, GSTIN capped at 15, Save never disabled, the server's say shown", () => {
   const src = read("public/js/app/shop-settings.js");
-  assert.match(src, /SCHEMES\.map\(\(scheme\) => h\("button", \{\s*class: "shop-tile", type: "button", role: "radio"/);
+  assert.match(src, /SCHEMES\.map\(\(scheme\) => h\("button", \{\s*class: "choice gs-tile", type: "button", role: "radio"/);
   assert.match(src, /role: "radiogroup"/);
   assert.match(src, /maxlength: "15"/);
   assert.match(src, /autocapitalize: "characters"/);
@@ -210,7 +210,7 @@ test("My Sahay shows the shop details; Sell shows the needs card and opens the s
   const sell = read("public/js/app/sell.js");
   assert.match(sell, /SHOP_CODES\.includes\(err\.code\)/, "a bill refused for shop details is not shown as 'already decided'");
   assert.match(sell, /u\.fix \? shopNeedCard\(u\.fix, u\.error\)/);
-  assert.match(sell, /need \? shopNeedCard\(need\) : null, stateView\(/, "the empty state carries the card");
+  assert.match(sell, /need \? shopNeedCard\(need\) : null, screenState\(\{ kind: "empty"/, "the empty state carries the card");
   const kit = read("public/js/app/shop-settings.js");
   assert.match(kit, /export function shopNeedCard\(code, say = null\)/);
   assert.match(kit, /say \|\| st\(`shop\.need\.\$\{code\}`\)/);
