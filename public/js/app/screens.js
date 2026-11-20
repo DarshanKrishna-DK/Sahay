@@ -4,13 +4,17 @@
 
 import { placeholder } from "./placeholder.js";
 import { createHome } from "./home.js";
+import { createBuy } from "./buy.js";
+import { createStock } from "./stock.js";
+import { createSell } from "./sell.js";
+import { createMoney } from "./money.js";
 
 export const SCREENS = {
   home: createHome,
-  buy: placeholder("nav.buy"),
-  sell: placeholder("nav.sell"),
-  stock: placeholder("nav.stock"),
-  money: placeholder("nav.money"),
+  buy: createBuy,
+  sell: createSell,
+  stock: createStock,
+  money: createMoney,
   me: placeholder("nav.me"),
 };
 
