@@ -541,6 +541,8 @@ svg { flex: none; }
   border-radius: var(--r-xl) 0 0 var(--r-xl); border-bottom: 1px solid var(--edge); border-right: 0;
   transform: translateX(40px); padding-top: var(--safe-t);
 }
+/* Open drawers sit flush: the closed-state offset above must not survive opening (same specificity, later rule). */
+.sheet-root[data-place="drawer"].is-open .sheet { transform: none; }
 .sheet-root[data-place="drawer"] .sheet-grip { display: none; }
 .sheet-root[data-place="drawer"].is-closing .sheet { transform: translateX(48px); }
 .sheet-root[data-place="drawer"] .sheet-scrim { background: rgba(3, 4, 2, .35); }
