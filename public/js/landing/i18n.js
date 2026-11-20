@@ -19,6 +19,7 @@ const S = {
   toDark: { en: "Switch to dark", hi: "गहरा रंग", kn: "ಗಾಢ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   start: { en: "Start talking", hi: "बोलकर शुरू करें", kn: "ಮಾತನಾಡಿ ಶುರು ಮಾಡಿ" },
   openSahay: { en: "Open Sahay", hi: "सहाय खोलें", kn: "ಸಹಾಯ್ ತೆರೆಯಿರಿ" },
+  open: { en: "Open", hi: "खोलें", kn: "ತೆರೆಯಿರಿ" },
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
   // The hero headline in three lines (the first white, the next two lit).

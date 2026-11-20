@@ -121,10 +121,21 @@ function initBottomCta() {
   for (const el of big) io.observe(el);
 }
 
+// ---- Phones: the nav shows the disclosure chip once the hero's disclosure line has scrolled away --
+function initNavDisclosure() {
+  const nav = document.querySelector(".glass-nav");
+  const eyebrow = document.getElementById("hero-eyebrow");
+  if (!nav || !eyebrow) return;
+  new IntersectionObserver((entries) => {
+    for (const e of entries) nav.classList.toggle("is-scrolled", !e.isIntersecting && e.boundingClientRect.top < 72);
+  }, { rootMargin: "-72px 0px 0px 0px" }).observe(eyebrow);
+}
+
 // ---- Boot ----------------------------------------------------------------------------------
 setLanguage(lang, { save: false });
 gather = initGather(document.getElementById("gather-host"), { reducedQuery });
 initSmoothScroll();
 story = initStory(document.getElementById("story"), { reducedQuery, figures, scrollTo: scrollToY });
 initBottomCta();
+initNavDisclosure();
 document.fonts?.ready.then(() => gather?.relayout());
