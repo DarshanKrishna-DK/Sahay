@@ -6,9 +6,9 @@
 // (container query) and as a vertical meander on a phone; the SVG for each shape is drawn here.
 
 import { h, icon, svgEl, scripted, rupees, toDate } from "./dom.js";
-import { t, when, unitWord } from "./i18n.js";
+import { t, unitWord } from "./i18n.js";
 import { reachOf, riverGeometry, shortName } from "./buy-model.js";
-import { simPill } from "./buy-kit.js";
+import { simPill, timeOnly, dateTime } from "./buy-kit.js";
 
 export const STATION_WORD = { heard: "st.heard", search: "st.search", bargain: "st.bargain", yes: "st.yes", ordered: "st.ordered", paid: "st.paid", reminder: "st.reminder" };
 export const STATE_WORD = { done: "st.done", active: "st.active", needs: "st.needsYou", upcoming: "st.upcoming", failed: "st.failed" };
@@ -16,8 +16,8 @@ export const STATION_ICON = { heard: "ear", search: "search", bargain: "handshak
 const STATE_ICON = { done: "check", active: "refresh", needs: "alert", failed: "x" };
 
 const perUnit = (p, unit) => `${rupees(p)}${unit ? `/${unitWord(unit)}` : ""}`;
-const time = (ts) => { const d = toDate(ts); return d ? when(d, { hour: "numeric", minute: "2-digit" }) : null; };
-const day = (ts) => { const d = toDate(ts); return d ? when(d, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : null; };
+const time = (ts) => { const d = toDate(ts); return d ? timeOnly(d) : null; };
+const day = (ts) => { const d = toDate(ts); return d ? dateTime(d) : null; };
 
 /** The HUD lines of one station: [{ text, tone?, mono? }], from hudFor() only. */
 export function hudLines(id, hud) {
@@ -105,7 +105,7 @@ export function renderRiver(model, hud, { onStation, freshVendorIds = new Set() 
       on: { click: (e) => onStation && onStation(s, e.currentTarget) },
     },
     h("span", { class: "b3-dot", "aria-hidden": "true" },
-      s.status === "upcoming" ? h("span", { class: "b3-dot-num", text: String(i + 1) }) : icon(s.status === "done" ? "check" : s.status === "failed" ? "x" : STATION_ICON[s.id], 26)),
+      s.status === "upcoming" ? h("span", { class: "b3-dot-num", text: String(i + 1) }) : icon(s.status === "done" ? "check" : s.status === "failed" ? "x" : s.status === "needs" ? "alert" : STATION_ICON[s.id], 26)),
     h("span", { class: "b3-st-text", "aria-hidden": "true" },
       h("span", { class: "b3-st-word", text: word }),
       s.status !== "upcoming" ? h("span", { class: "b3-st-state" }, icon(STATE_ICON[s.status] || "spark", 16), h("span", { text: stateWord })) : null));
@@ -134,7 +134,7 @@ export function renderRiver(model, hud, { onStation, freshVendorIds = new Set() 
   return h("section", { class: "b3-river glass glass-rim", "aria-label": t("work.stations") },
     h("header", { class: "b3-river-head" },
       h("p", { class: "b3-river-now", dataset: { status: now ? now.status : "upcoming" } },
-        icon(now ? STATION_ICON[now.id] : "river", 20),
+        icon(!now ? "river" : now.status === "needs" || now.status === "failed" ? "alert" : now.status === "done" ? "check" : STATION_ICON[now.id], 20),
         h("span", { class: "b3-river-now-word", text: now ? t(STATION_WORD[now.id]) : "" }),
         now && now.status !== "upcoming" ? h("span", { class: "b3-river-now-state", text: t(STATE_WORD[now.status]) }) : null),
       h("span", { class: "b3-river-count", "aria-hidden": "true", text: `${Math.min(reach + 1, n)} / ${n}` })),

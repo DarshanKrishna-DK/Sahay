@@ -223,3 +223,16 @@ test("Buy and Stock are v3 only: no old markup classes, no marigold or saffron i
   const app = fs.existsSync(path.join(ROOT, "public/css/app.css")) ? read("public/css/app.css") : "";
   for (const old of [".river {", ".ladder {", ".receipt {", ".work {", ".earlier {"]) assert.ok(!app.includes(old), `old Buy rule ${old} removed from app.css`);
 });
+
+test("times on Hindi and Kannada screens use the 24-hour clock (no Latin am / pm); English keeps am / pm", async () => {
+  const { clockOptions } = await load();
+  const at = new Date(Date.UTC(2026, 10, 20, 14, 10));
+  for (const L of ["hi", "kn"]) {
+    const o = clockOptions(L, { hour: "numeric", minute: "2-digit", timeZone: "UTC" });
+    const s = at.toLocaleString(`${L}-IN`, o);
+    assert.doesNotMatch(s, /am|pm/i, `${L}: ${s}`);
+    assert.match(s, /14/, `${L}: ${s}`);
+  }
+  assert.deepEqual(clockOptions("en", { hour: "numeric" }), { hour: "numeric" });
+  assert.deepEqual(clockOptions("hi", { day: "numeric" }), { day: "numeric" }, "a date with no hour is left alone");
+});

@@ -4,7 +4,7 @@
    file is layout and the jar. Container queries follow the width the shell gives the screen.
    Tokens only. Every animation stops under prefers-reduced-motion. */
 
-.s3-stock { container: s3 / inline-size; display: grid; gap: var(--s-5); min-width: 0; padding-bottom: var(--s-6); }
+.s3-stock { container: s3 / inline-size; width: 100%; display: grid; gap: var(--s-5); min-width: 0; padding-bottom: var(--s-6); }
 .s3-stock > * { min-width: 0; }
 
 /* ----------------------------------------------------------------- header -- */
@@ -58,9 +58,10 @@
 .s3-quiet { margin: 0; color: var(--text-lo); }
 .s3-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
 @container s3 (max-width: 339px) { .s3-grid { grid-template-columns: minmax(0, 1fr); } }
-/* From 600 px every jar card gets at least 270 px (3 per row at about 900, 4 from about 1160), so
-   the name, the number and the reorder line never wrap word by word beside the jar. */
-@container s3 (min-width: 600px) { .s3-grid { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: var(--s-4); } }
+/* From 600 px: as many jars per row as fit at 220 px or more (spec 6.2: 3 at 1024-1440 with the
+   agent column, 4 at 1920). Below 250 px a card stacks (jar on top), from 250 px the jar sits beside
+   the name and number, so nothing wraps word by word beside the jar. */
+@container s3 (min-width: 600px) { .s3-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-4); } }
 
 /* --------------------------------------------------------------- jar card -- */
 .s3-item { container: s3card / inline-size; display: grid; min-width: 0; }

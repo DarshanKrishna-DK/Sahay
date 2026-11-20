@@ -3,7 +3,10 @@
 // lines, skeletons. Screen layout lives in app-buy.css and app-stock.css.
 
 import { h, icon } from "./dom.js";
-import { t } from "./i18n.js";
+import { t, when, lang } from "./i18n.js";
+import { clockOptions } from "./buy-model.js";
+import { itemInLang } from "./stock-model.js";
+import { stock } from "./store-sell.js";
 import "./buy-i18n.js";
 import { inCall, sendText } from "./call.js";
 import { stateView as baseState } from "./empty.js";
@@ -102,3 +105,11 @@ export function alignNotches(root) {
     }
   });
 }
+
+const DAY_TIME = { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
+/** A date (and time) for the owner's screen: native month, 24-hour clock on hi / kn screens. */
+export function dateTime(d, opts = DAY_TIME) { return d ? when(d, clockOptions(lang(), opts)) : ""; }
+/** Just the time ("14:10" on hi / kn, "2:10 pm" in English). */
+export const timeOnly = (d) => dateTime(d, { hour: "numeric", minute: "2-digit" });
+/** A said item name in the screen's script when stock knows the same item in it (stock-model itemInLang). */
+export const itemWords = (text) => itemInLang(text, [...stock.items.values()], lang());

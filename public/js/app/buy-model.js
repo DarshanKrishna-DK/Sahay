@@ -233,3 +233,14 @@ export function riverGeometry(n, vertical, W, H) {
   return { pts, d };
 }
 const r1 = (v) => Math.round(v * 10) / 10;
+
+/**
+ * Date options for a time on the owner's screen. Hindi and Kannada screens use the 24-hour clock
+ * ("14:10"): the browsers' hi-IN / kn-IN formats print a Latin "am" / "pm" (QA 2026-11-20 #18).
+ * English keeps "2:10 pm".
+ */
+export function clockOptions(lang, opts) {
+  const o = { ...opts };
+  if (lang === "hi" || lang === "kn") { if ("hour" in o) { o.hourCycle = "h23"; o.hour = "2-digit"; } }
+  return o;
+}

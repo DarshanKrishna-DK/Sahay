@@ -63,3 +63,15 @@ test("incoming orders match a stock item by its name or native name, exactly", a
   assert.deepEqual(m.get("1").map((x) => x.orderId), ["o1", "o2"]);
   assert.deepEqual(stockCounts([{ onHand: 1, reorderLevel: 5 }, { onHand: 9, reorderLevel: 5 }], [{}, {}]), { items: 2, low: 1, coming: 2 });
 });
+
+test("an item said in another script shows in the screen's script when stock knows it in that script", async () => {
+  const { itemInLang, scriptOfName } = await load();
+  const items = [{ id: 1, name: "Basmati rice", nameNative: "बासमती चावल" }, { id: 2, name: "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", nameNative: "बासमती चावल" }];
+  assert.equal(scriptOfName("ಬಾಸ್ಮತಿ ಅಕ್ಕಿ"), "kn");
+  assert.equal(scriptOfName("200"), null);
+  assert.equal(itemInLang("ಬಾಸ್ಮತಿ ಅಕ್ಕಿ", items, "hi"), "बासमती चावल");
+  assert.equal(itemInLang("बासमती चावल", items, "en"), "Basmati rice");
+  assert.equal(itemInLang("बासमती चावल", items, "hi"), "बासमती चावल", "already in the screen's script");
+  assert.equal(itemInLang("ತೊಗರಿ ಬೇಳೆ", items, "hi"), "ತೊಗರಿ ಬೇಳೆ", "unknown to stock: as said");
+  assert.equal(itemInLang("", items, "hi"), "");
+});

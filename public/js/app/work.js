@@ -14,9 +14,9 @@ import { renderLadder } from "./ladder.js";
 import { itemLine } from "./item-line.js";
 import { speakButton } from "./speak.js";
 import * as sheets from "./sheet.js";
-import { btn, talkChip, simPill, testPill, stateView, skel, errLine } from "./buy-kit.js";
+import { btn, talkChip, simPill, testPill, stateView, skel, errLine, dateTime, itemWords } from "./buy-kit.js";
 
-const needLine = (r) => [amount(r.quantity), unitWord(r.unit), r.item].filter((x) => x !== null && x !== undefined && x !== "").join(" ");
+const needLine = (r) => [amount(r.quantity), unitWord(r.unit), itemWords(r.item)].filter((x) => x !== null && x !== undefined && x !== "").join(" ");
 const perUnit = (p, unit) => `${rupees(p)}${unit ? ` / ${unitWord(unit)}` : ""}`;
 const langKey = () => document.documentElement.lang;
 
@@ -97,7 +97,7 @@ export function createWork() {
     } else if (id === "search") {
       if (s.status === "failed" && s.job && s.job.error) out.push(errLine(String(s.job.error)));
       if (!m.vendors.length) {
-        const searching = itemLine("now.searching", { item: req ? req.item : "" }, lang());
+        const searching = itemLine("now.searching", { item: req ? itemWords(req.item) : "" }, lang());
         out.push(h("p", { class: "b3-fact is-quiet", role: s.status === "active" ? "status" : undefined },
           s.status === "active" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("search", 22),
           h("span", { text: s.status === "active" ? t(searching.key, searching.vars) : t("work.noSellers") })));
@@ -131,7 +131,7 @@ export function createWork() {
       const kind = `orders.rem.${f.kind}`;
       out.push(fact("bell", t(kind) !== kind ? t(kind) : f.kind));
       const d = toDate(f.status === "fired" ? f.firedAt : f.dueAt);
-      out.push(fact("history", d ? `${t(f.status === "fired" ? "b3.reminderSent" : "b3.reminderNext")}: ${when(d)}` : null));
+      out.push(fact("history", d ? `${t(f.status === "fired" ? "b3.reminderSent" : "b3.reminderNext")}: ${dateTime(d)}` : null));
       if (f.message) out.push(scripted("p", f.message, { class: "b3-sheet-text" }));
     } else {
       out.push(h("p", { class: "b3-fact is-quiet" }, icon("spark", 22), h("span", { text: t("b3.notYet") })));

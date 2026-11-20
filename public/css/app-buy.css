@@ -7,6 +7,7 @@
 
 .b3-buy {
   container: b3 / inline-size;
+  width: 100%;   /* an inline-size container never shrink-wraps to a narrow column */
   display: grid;
   gap: var(--s-5);
   min-width: 0;
@@ -310,7 +311,8 @@
 .b3-ready-box { order: 3; }
 .b3-col-b > .b3-orders { order: 4; }
 .b3-earlier-box { order: 5; }
-@container b3 (min-width: 860px) {
+/* Laptop (spec 6.2): river full width above; ladder, Listen in and earlier needs left, orders right. */
+@container b3 (min-width: 700px) {
   .b3-cols { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
   .b3-col-a, .b3-col-b { display: grid; gap: var(--s-5); align-content: start; }
 }

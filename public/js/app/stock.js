@@ -18,6 +18,7 @@ import { notify } from "./toast.js";
 import { jarLevels, shelves, incomingByItem, stockCounts, isLow } from "./stock-model.js";
 import { orderFacts } from "./buy-model.js";
 import { yesNo } from "./ui.js";
+import { itemWords } from "./buy-kit.js";
 import { ensureCss, btn, talkChip, talkHere, simPill, stateView, skel, errorWords, errLine } from "./buy-kit.js";
 
 const qty = (q, unit) => { const n = amount(q); if (n === null) return ""; const u = unitWord(unit); return u ? `${n} ${u}` : n; };
@@ -151,7 +152,7 @@ function poRow(o, ui, onArrived) {
     h("span", { class: "s3-po-ico", "aria-hidden": "true" }, icon("truck", 22)),
     h("div", { class: "s3-po-main" },
       h("p", { class: "s3-po-what" },
-        f.item ? scripted("span", f.item, { class: "s3-po-item" }) : h("span", { class: "s3-po-item", text: t("s3.order") }),
+        f.item ? scripted("span", itemWords(f.item), { class: "s3-po-item" }) : h("span", { class: "s3-po-item", text: t("s3.order") }),
         f.quantity !== null ? h("span", { class: "s3-po-qty", text: qty(f.quantity, f.unit) }) : null),
       h("p", { class: "s3-po-sub" },
         o.poNumber ? h("span", { class: "s3-po-no", text: o.poNumber }) : null,

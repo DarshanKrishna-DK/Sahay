@@ -6,13 +6,13 @@
 // Also exports the Telegram link control for My Sahay (D4 moved it out of Buy).
 
 import { h, icon, patch, scripted, rupees, amount, svgEl, safeUrl, toDate } from "./dom.js";
-import { t, when, unitWord } from "./i18n.js";
+import { t, unitWord } from "./i18n.js";
 import * as api from "../api.js";
 import { state } from "./store.js";
 import { markDelivered } from "./store-sell.js";
 import { speakButton } from "./speak.js";
 import { orderShelves, orderFacts, remindersOf, clockFraction, isPaid } from "./buy-model.js";
-import { btn, simPill, testPill, stateView, skel, errorWords, errLine, alignNotches } from "./buy-kit.js";
+import { btn, simPill, testPill, stateView, skel, errorWords, errLine, alignNotches, dateTime, itemWords } from "./buy-kit.js";
 
 function clockArc(from, to) {
   const frac = clockFraction(from, to);
@@ -55,10 +55,10 @@ function receipt(o, shelf, ui, onArrived) {
         h("span", { class: "b3-rcpt-ico", "aria-hidden": "true" }, icon("receipt", 22)),
         h("h4", { class: "card-title b3-rcpt-id" },
           h("span", { class: "b3-po", text: o.poNumber || t("b3.orders") }),
-          created ? h("span", { class: "b3-rcpt-date", text: when(created, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) }) : null),
+          created ? h("span", { class: "b3-rcpt-date", text: dateTime(created) }) : null),
         h("span", { class: "card-speak" }, speakButton(`order:${id}`))),
       h("span", { class: "perforation", "aria-hidden": "true" }),
-      f.item ? h("p", { class: "b3-rcpt-what" }, scripted("span", f.item, { class: "b3-rcpt-item" }), qty ? h("span", { class: "b3-rcpt-qty", text: qty }) : null) : null,
+      f.item ? h("p", { class: "b3-rcpt-what" }, scripted("span", itemWords(f.item), { class: "b3-rcpt-item" }), qty ? h("span", { class: "b3-rcpt-qty", text: qty }) : null) : null,
       f.vendor ? h("p", { class: "b3-rcpt-from" }, icon("store", 18), scripted("span", f.vendor, { class: "b3-rcpt-vendor" }), f.simulated ? simPill() : null) : null,
       h("div", { class: "b3-rcpt-money" },
         h("p", { class: "b3-rcpt-amt", text: rupees(o.amount) || "" }),
@@ -68,7 +68,7 @@ function receipt(o, shelf, ui, onArrived) {
         next ? clockArc(o.createdAt, next.dueAt) : h("span", { class: "b3-rcpt-bell", "aria-hidden": "true" }, icon("bell", 22)),
         h("p", {},
           h("span", { class: "b3-rem-what", text: t(next ? "b3.reminderNext" : "b3.reminderSent") }),
-          h("span", { class: "b3-rem-when", text: when(toDate(next ? next.dueAt : sent.firedAt)) }))) : null,
+          h("span", { class: "b3-rem-when", text: dateTime(toDate(next ? next.dueAt : sent.firedAt)) }))) : null,
       shelf === "toPay" && !pay ? h("p", { class: "b3-rcpt-note" }, icon("info", 18), h("span", { text: t("b3.noLink") })) : null,
       u.error ? errLine(u.error) : null,
       u.done ? h("p", { class: "b3-rcpt-ok", role: "status" }, icon("checkCircle", 20), h("span", { text: t("b3.arrivedDone") })) : null,

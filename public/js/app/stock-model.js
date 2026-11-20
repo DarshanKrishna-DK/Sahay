@@ -60,3 +60,30 @@ export function stockCounts(items, open) {
   const list = Array.isArray(items) ? items : [];
   return { items: list.length, low: list.filter(isLow).length, coming: Array.isArray(open) ? open.length : 0 };
 }
+
+/* ------------------------------------------------------- names per script -- */
+
+const SCRIPTS = { hi: /[ऀ-ॿ]/u, kn: /[ಀ-೿]/u, en: /[A-Za-z]/ };
+
+/** The script a name is written in ("hi" | "kn" | "en"), or null for digits and signs only / mixed. */
+export function scriptOfName(text) {
+  const s = String(text || "");
+  const found = Object.keys(SCRIPTS).filter((k) => SCRIPTS[k].test(s));
+  return found.length === 1 ? found[0] : null;
+}
+
+/**
+ * An item name as the owner's screen should show it: the same item's name in the screen's script
+ * when a stock item carries one (name or native name), else the words as they were said.
+ * A Kannada "ಬಾಸ್ಮತಿ ಅಕ್ಕಿ" need on a Hindi screen reads "बासमती चावल" when stock knows both.
+ */
+export function itemInLang(text, items, lang) {
+  if (!text) return text || "";
+  const sc = scriptOfName(text);
+  if (!sc || sc === lang) return text;
+  const n = norm(text);
+  const it = (Array.isArray(items) ? items : []).find((i) => i && [i.name, i.nameNative].some((x) => x && norm(x) === n));
+  if (!it) return text;
+  for (const cand of [it.nameNative, it.name]) if (cand && scriptOfName(cand) === lang) return cand;
+  return text;
+}
