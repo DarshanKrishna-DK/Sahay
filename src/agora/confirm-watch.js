@@ -287,7 +287,12 @@ async function look(businessId, state, call, now) {
   if (!state.seen.has(key)) state.seen.set(key, now());
   const firstSeen = state.seen.get(key);
   // The model called this kind's confirm tool around or after the answer arrived: its result stands.
-  if (toolCalls.startedSince(businessId, [spec.tool], firstSeen - settings.seenSlackMs, { answer: true })) {
+  // A call that started before the read-back was spoken cannot answer it: the confirm_approval that
+  // a yes to get_ranked_deals' offer reached, which itself had the deal read out (registry
+  // offerAccepted), is not the model answering this read-back.
+  const spokenAt = Date.parse(subject.spokenAt);
+  const answeredSince = Math.max(firstSeen - settings.seenSlackMs, Number.isFinite(spokenAt) ? spokenAt : -Infinity);
+  if (toolCalls.startedSince(businessId, [spec.tool], answeredSince, { answer: true })) {
     state.acted.add(key);
     return "model";
   }

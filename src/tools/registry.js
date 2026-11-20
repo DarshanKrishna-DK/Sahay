@@ -34,6 +34,7 @@ const { isNativeScript } = require("../agora/script");
 const evidence = require("./evidence");
 const toolCalls = require("./calls");
 const outcome = require("../agora/outcome");
+const dealOffer = require("../agora/deal-offer");
 /** One /history read inside a tool is bounded, so the tool answers within the MCP timeout_ms. */
 const { TOOL_HISTORY_TIMEOUT_MS } = require("../agora/agent");
 const { scoreVendor, rankDeals, comparableListedPrice } = require("../procurement/scoring");
@@ -874,6 +875,65 @@ async function awaitingAnswer(ctx, approval, result, language) {
   };
 }
 
+/**
+ * request_approval: put one deal up (the best-ranked one without quoteId). In a call the server reads
+ * it out itself and records the read-back; the model only asks the short question.
+ */
+async function askApproval(ctx, args, language) {
+  const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
+  const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
+  const readback = spokenReadback(ctx, quoteId, deal, language);
+  const result = { approvalId: approval.id, quoteId, status: approval.status, totalAmount: approval.total_amount };
+  // No call (or the deal is already approved): nothing can be answered by voice, so the model may read it out.
+  if (!ctx.agentId || approval.status !== "pending") return { ...result, readback, say: readback };
+
+  // Already read out in this call (in any language): asking again is not a reason to read it
+  // again; the owner's answer belongs to confirm_approval (E2E r4: three read-backs for one yes).
+  const readBefore = repo.listApprovalReadbacks(ctx.businessId, { approval_id: approval.id, agent_id: ctx.agentId }).length > 0;
+  if (readBefore && !args.repeat) return awaitingAnswer(ctx, approval, result, language);
+
+  await readOut(ctx, approval, readback, language);
+  return { ...result, readbackSpoken: true, say: phrase("approval_question", language) };
+}
+
+/** The offer question get_ranked_deals ends with, in every language it is said in. */
+const offerQuestions = () => Object.values(PHRASES.deal_offer_approval).map((line) => line());
+
+/**
+ * confirm_approval found nothing waiting: when this call's get_ranked_deals offered to read its best
+ * deal out (src/agora/deal-offer.js, within the window), the owner's latest spoken words are the
+ * first answer to that offer line and a clear yes, and that deal is still the one request_approval
+ * would put up, the server puts it up through askApproval, the same path (read-back spoken and
+ * recorded). Nothing is decided: the owner's next yes, to the read-back, goes through the gate.
+ * Returns null otherwise, and the caller refuses NO_PENDING_APPROVAL as before.
+ */
+async function offerAccepted(ctx, language) {
+  const offer = ctx.agentId ? dealOffer.current(ctx.businessId, ctx.agentId) : null;
+  if (!offer) return null;
+  let answer;
+  try {
+    answer = await withHistory(ctx, (history) => dealOffer.answerToOffer(history, offerQuestions()));
+  } catch {
+    return null; // no answer to the offer in /history, something else came after it, or /history is unavailable
+  }
+  if (approvals.classifyUtterance(answer.text) !== "affirmative") return null;
+  try {
+    if (defaultDeal(ctx, { requirementId: offer.requirementId }, language).quoteId !== offer.quoteId) return null;
+  } catch {
+    return null; // the deals changed since the offer (a tie, or no rankable deal): nothing to read out
+  }
+  if (repo.listOrders(ctx.businessId, { quote_id: offer.quoteId }).length) return null;
+  dealOffer.clear(ctx.businessId, ctx.agentId);
+  const asked = await askApproval(ctx, { quoteId: offer.quoteId }, language);
+  return {
+    ...asked,
+    offerAccepted: true,
+    readbackStarted: Boolean(asked.readbackSpoken),
+    next: "confirm_approval on the owner's answer",
+    hint: "The owner said yes to hearing the deal, so the server has read it out now and asked. Nothing is approved yet. Say only `say` and wait; the owner's next yes or no goes to confirm_approval.",
+  };
+}
+
 /** Gate refusals after which a later clear yes gets the deal read out again (confirm_approval). */
 const REREAD_ON = new Set(["NOT_AFFIRMATIVE", "READBACK_SUPERSEDED", "ANSWER_DURING_READBACK"]);
 
@@ -1420,7 +1480,7 @@ const TOOLS = [
     name: "get_ranked_deals",
     scopes: OWNER,
     description:
-      "All quotes for the current requirement ranked by landed cost (price x quantity + freight), best first, with reasons. When approvalCanFollow is true, `say` ends by asking whether to read the deal out for approval; if the owner says yes, call request_approval with no arguments (the server then reads the deal out itself).",
+      "All quotes for the current requirement ranked by landed cost (price x quantity + freight), best first, with reasons. When approvalCanFollow is true, `say` ends by asking whether to read the deal out for approval; if the owner says yes, call request_approval with no arguments (the server then reads the deal out itself; that yes approves nothing).",
     inputSchema: ownerObj({ requirementId: idArg("requirement", "the latest requirement") }),
     async handler(ctx, args, language) {
       const requirement = currentRequirement(ctx, args.requirementId, language);
@@ -1442,6 +1502,9 @@ const TOOLS = [
       const tied = eligible.filter((d) => d.status === best.status && dealCost(d) === dealCost(best)).length > 1;
       const ordered = repo.listOrders(ctx.businessId, { quote_id: best.quoteId }).length > 0;
       const approvalCanFollow = eligible[0] === best && !tied && !ordered;
+      // A yes to that question may reach confirm_approval: the server remembers the deal it offered (offerAccepted).
+      if (approvalCanFollow) dealOffer.record(ctx.businessId, ctx.agentId, { quoteId: best.quoteId, requirementId: requirement.id });
+      else if (ctx.agentId) dealOffer.clear(ctx.businessId, ctx.agentId);
       return {
         requirementId: requirement.id,
         deals,
@@ -1460,28 +1523,13 @@ const TOOLS = [
       requirementId: idArg("requirement", "the latest requirement"),
       repeat: { type: "boolean", description: "Only when the owner asks to hear the deal again: the server reads it out once more." },
     }),
-    async handler(ctx, args, language) {
-      const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
-      const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
-      const readback = spokenReadback(ctx, quoteId, deal, language);
-      const result = { approvalId: approval.id, quoteId, status: approval.status, totalAmount: approval.total_amount };
-      // No call (or the deal is already approved): nothing can be answered by voice, so the model may read it out.
-      if (!ctx.agentId || approval.status !== "pending") return { ...result, readback, say: readback };
-
-      // Already read out in this call (in any language): asking again is not a reason to read it
-      // again; the owner's answer belongs to confirm_approval (E2E r4: three read-backs for one yes).
-      const readBefore = repo.listApprovalReadbacks(ctx.businessId, { approval_id: approval.id, agent_id: ctx.agentId }).length > 0;
-      if (readBefore && !args.repeat) return awaitingAnswer(ctx, approval, result, language);
-
-      await readOut(ctx, approval, readback, language);
-      return { ...result, readbackSpoken: true, say: phrase("approval_question", language) };
-    },
+    handler: (ctx, args, language) => askApproval(ctx, args, language),
   },
   {
     name: "confirm_approval",
     scopes: OWNER,
     description:
-      "Records the owner's spoken yes or no to the deal request_approval put up: call it, with no id, as soon as the owner answers that question (decision approve on a clear yes, reject on a no). Only one deal waits at a time. The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out. On approve the server places the order and issues the purchase order itself and says the result aloud: do not call create_order after it; say only `say`.",
+      "Records the owner's spoken yes or no to the deal request_approval put up: call it, with no id, as soon as the owner answers that question (decision approve on a clear yes, reject on a no). A yes to get_ranked_deals' \"read this deal out?\" goes to request_approval instead. Only one deal waits at a time. The server reads the owner's own words from the call and approves only on a clear yes to the deal it read out. On approve the server places the order and issues the purchase order itself and says the result aloud: do not call create_order after it; say only `say`.",
     inputSchema: ownerObj({ approvalId: idArg("approval", "the one approval waiting"), decision: { type: "string", enum: ["approve", "reject"] } }, ["decision"]),
     async handler(ctx, args, language) {
       let approval;
@@ -1489,7 +1537,13 @@ const TOOLS = [
       else {
         // At most one pending approval per business (approvals.requestApproval + DB trigger).
         approval = repo.listApprovals(ctx.businessId, { status: "pending" })[0];
-        if (!approval) throw new ToolError("NO_PENDING_APPROVAL", phrase("no_pending_approval", language), { status: 409 });
+        if (!approval) {
+          // A yes to get_ranked_deals' "shall I read this deal out?" sent here (live check after
+          // hardening): the server reads that deal out now. That yes approves nothing.
+          const asked = args.decision === "approve" ? await offerAccepted(ctx, language) : null;
+          if (asked) return asked;
+          throw new ToolError("NO_PENDING_APPROVAL", phrase("no_pending_approval", language), { status: 409 });
+        }
       }
       if (approval.status !== "pending") throw new ToolError("ALREADY_DECIDED", sayFor("already_decided", language), { details: { status: approval.status } });
       if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", sayFor("no_voice_evidence", language), { status: 409 });

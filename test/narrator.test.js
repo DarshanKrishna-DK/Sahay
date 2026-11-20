@@ -155,6 +155,14 @@ test("approval hold ends by itself after approvalHoldMs, and at once when reques
   assert.equal(spoken.length, 1);
   narrator.onEvent({ businessId, type: "error", data: { code: "READBACK_NOT_SPOKEN", tool: "request_approval" } });
   await until(() => spoken.length >= 2);
+  // confirm_approval also speaks a read-back (the offer's yes, or a later yes): its failure to do so ends the hold too.
+  narrator.onEvent({ businessId, type: "approval.requested", data: { approvalId: "apr_v" } });
+  narrator.onEvent({ businessId, type: "job.failed", data: { jobId: "j4", kind: "sourcing" } });
+  narrator.onEvent({ businessId, type: "error", data: { code: "AGORA_UNREACHABLE", tool: "confirm_approval" } });
+  await sleep(30);
+  assert.equal(spoken.length, 2, "any other confirm_approval failure leaves the hold in place");
+  narrator.onEvent({ businessId, type: "error", data: { code: "READBACK_NOT_SPOKEN", tool: "confirm_approval" } });
+  await until(() => spoken.length >= 3);
 });
 
 test("approval hold follows the real event bus (approval.* events from any emitter)", async (t) => {

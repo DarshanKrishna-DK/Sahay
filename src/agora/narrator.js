@@ -685,7 +685,9 @@ function onEvent(event) {
       endHoldFor(state, null);
       return;
     case "error":
-      if (d.tool === "request_approval") endHold(state);
+      // A read-back that could not be spoken waits on nothing. confirm_approval speaks one too (the
+      // yes to get_ranked_deals' offer, or a later yes); its other failures leave the hold in place.
+      if (d.tool === "request_approval" || (d.tool === "confirm_approval" && d.code === "READBACK_NOT_SPOKEN")) endHold(state);
       return;
     default:
   }
