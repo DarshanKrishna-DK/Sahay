@@ -7,25 +7,28 @@
 
 /* ================================================================ layout -- */
 
+/* Phone portrait (and tablet): the home is exactly the height between the top zone and the dock
+   (#main padding in app-shell.css), so the orb and its controls always sit just above the dock in
+   thumb reach, never below the fold. Top to bottom: Today row (idle, no conversation) or try
+   chips, the conversation (newest at the bottom, scrolls inside, shrinks first), the now line +
+   trackers, the orb, its label, notes, the call strip. */
 .sh-home {
-  --orb: 136px;
-  --convo-max: clamp(132px, 30dvh, 340px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "top" "talk" "stage" "composer";
-  align-content: end;
-  gap: var(--s-4);
+  --orb: clamp(100px, 16dvh, 136px);
+  --home-h: max(320px, calc(100dvh - var(--top-zone-h, 64px) - 24px - var(--safe-t) - var(--dock-h) - var(--dock-lift) - 44px - var(--safe-b)));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--s-3);
   width: 100%;
   max-width: 640px;
+  height: var(--home-h);
   margin-inline: auto;
-  padding-block: var(--s-3) var(--s-4);
-  /* The orb sits in the bottom half on a phone: fill the space between capsule and dock. */
-  min-height: calc(100dvh - var(--capsule-h) - var(--dock-h) - var(--dock-lift) - var(--dock-gap) * 2 - var(--safe-t) - var(--safe-b) - 56px);
 }
-.sh-top { grid-area: top; min-width: 0; }
-.sh-talk { grid-area: talk; min-width: 0; }
-.sh-stage { grid-area: stage; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--s-3); }
-.sh-composer { grid-area: composer; }
+.sh-top { grid-area: top; flex: none; min-width: 0; }
+.sh-talk { grid-area: talk; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; }
+.sh-talk .sh-convo { flex: 0 1 auto; min-height: 0; max-height: none; }
+.sh-stage { grid-area: stage; flex: none; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--s-2); }
+.sh-composer { grid-area: composer; flex: none; }
 
 /* Phone and tablet portrait order: now line, orb, label, notes, controls (thumb zone). */
 .sh-hud { order: 1; }
@@ -35,8 +38,35 @@
 .sh-notes { order: 5; }
 .sh-strip { order: 6; }
 
+@media (max-width: 599px) {
+  .sh-orb-wrap { padding: 8px; }
+  /* Trackers: one row that scrolls sideways inside itself, never three stacked rows. */
+  .sh-trackers { flex-wrap: nowrap; justify-content: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding-inline: 2px; }
+  .sh-trackers::-webkit-scrollbar { display: none; }
+  .sh-tracker { flex: none; white-space: nowrap; }
+  /* Today: a compact row of icon + word + number chips. */
+  .sh-today-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sh-tiles { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; padding: 2px; }
+  .sh-tiles::-webkit-scrollbar { display: none; }
+  .sh-tiles > li { flex: none; }
+  .sh-tile { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: var(--touch-min); padding: 6px 14px; border-radius: var(--r-pill); }
+  .sh-tile-num { font-size: 1.25rem; }
+  .sh-tile-skel { display: block; width: 132px; min-height: var(--touch-min); border-radius: var(--r-pill); }
+  /* Try chips: one sideways row too. */
+  .sh-try-list { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+  .sh-try-list::-webkit-scrollbar { display: none; }
+  .sh-try-list > li { flex: none; }
+  .sh-try span { white-space: nowrap; }
+}
+/* Short phones (360x640): drop the secondary rows so the primary ones fit. */
+@media (max-width: 599px) and (max-height: 700px) {
+  .sh-trackers, .sh-try-title { display: none; }
+  .sh-home { gap: var(--s-2); }
+}
+
 @media (min-width: 600px) {
-  .sh-home { --orb: 180px; --convo-max: clamp(160px, 34dvh, 420px); min-height: calc(100dvh - 120px); }
+  .sh-home { --orb: clamp(140px, 20dvh, 180px); --home-h: max(460px, calc(100dvh - 190px - var(--safe-t) - var(--safe-b))); }
+  .sh-stage { gap: var(--s-3); }
 }
 
 /* Laptop: the shell's chrome around #main is about 172 px tall (sticky top capsule ~84, #main
@@ -47,6 +77,7 @@
   .sh-home {
     --orb: clamp(150px, 30dvh, 240px);
     --home-h: max(460px, calc(100dvh - 190px - var(--safe-t) - var(--safe-b)));
+    display: grid;
     max-width: var(--content-max);
     height: var(--home-h);
     min-height: 0;
@@ -73,7 +104,7 @@
     background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
     box-shadow: var(--shadow-2);
   }
-  .sh-convo { flex: 1 1 auto; min-height: 0; max-height: none; padding-right: var(--s-2); }
+  .sh-talk .sh-convo { flex: 1 1 auto; padding-right: var(--s-2); }
   .sh-top { min-width: 0; }
   .sh-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sh-tile { min-height: 84px; }
@@ -92,15 +123,20 @@
 /* Phone landscape: orb + controls left (40 %), conversation right. */
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
   .sh-home {
-    --orb: 112px;
-    --convo-max: calc(100dvh - 120px);
+    --orb: 96px;
+    --home-h: max(240px, calc(100dvh - 130px - var(--safe-t) - var(--safe-b)));
+    display: grid;
     max-width: none;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    grid-template-areas: "stage talk" "stage composer" "top top";
-    align-content: start;
+    grid-template-areas: "stage talk" "stage top" "stage composer";
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    align-content: stretch;
     min-height: 0;
   }
-  .sh-stage { gap: var(--s-2); }
+  .sh-stage { justify-content: center; min-height: 0; overflow-y: auto; scrollbar-width: none; gap: var(--s-2); }
+  .sh-orb-wrap { padding: 8px; }
+  .sh-trackers { display: none; }
+  .sh-talk .sh-convo { flex: 1 1 auto; }
   .sh-orb-wrap { order: 1; }
   .sh-orb-label { order: 2; }
   .sh-hud { order: 3; }
@@ -338,7 +374,6 @@
   margin: 0;
   padding: var(--s-2) 2px var(--s-2);
   list-style: none;
-  max-height: var(--convo-max);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;

@@ -86,6 +86,8 @@ export function createSahayHome() {
   el.append(title, top, convoWrap, stage, composer.el);
   el.dataset.composer = "closed";
 
+  const phoneQuery = matchMedia("(max-width: 599px)");
+  phoneQuery.addEventListener("change", () => { convo.__key = null; renderConvo(); });
   let hintKey = null;
   let showEarlier = false;
   let stick = true; // keep the newest turn in view unless the owner scrolled up to read
@@ -218,7 +220,8 @@ export function createSahayHome() {
 
   function renderConvo() {
     const biz = (state.business && state.business.name) || "";
-    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier });
+    // Phones keep the last two turns in view (the orb and its controls must stay above the dock).
+    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier, keep: phoneQuery.matches ? 2 : 3 });
     if (!v.older) showEarlier = false;
     convo.setAttribute("aria-label", t("home.convo"));
     const key = JSON.stringify([document.documentElement.lang, v.pinned.text, showEarlier, v.older, v.shown.map((x) => [x.key, x.text, x.live, x.interrupted, x.via])]);

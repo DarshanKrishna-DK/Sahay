@@ -140,6 +140,8 @@ test("conversation: disclosure pinned first, last three shown, earlier folded", 
   assert.equal(v.older, 1);
   assert.deepEqual(v.shown.map((x) => x.text), ["b", "c", "d"]);
   assert.deepEqual(conversationView(turns, { showEarlier: true }).shown.map((x) => x.text), ["a", "b", "c", "d"]);
+  assert.deepEqual(conversationView(turns, { keep: 2 }).shown.map((x) => x.text), ["c", "d"], "phones keep two turns");
+  assert.equal(conversationView(turns, { keep: 2 }).older, 2);
   const empty = conversationView([], { disclosure: "written" });
   assert.deepEqual(empty.pinned, { text: "written", spoken: false });
   assert.equal(empty.count, 0);
