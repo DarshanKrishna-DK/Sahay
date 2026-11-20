@@ -13,6 +13,8 @@ const S = {
   navBuilt: { en: "Built on", hi: "किस पर बना", kn: "ಯಾವುದರ ಮೇಲೆ" },
   langLabel: { en: "Language", hi: "भाषा", kn: "ಭಾಷೆ" },
   langChoose: { en: "Choose your language", hi: "अपनी भाषा चुनें", kn: "ನಿಮ್ಮ ಭಾಷೆ ಆರಿಸಿ" },
+  // "Language: <name>" on the switcher (the name is always in its own script).
+  langCurrent: { en: "Language: {name}", hi: "भाषा: {name}", kn: "ಭಾಷೆ: {name}" },
   // Kept for the shared theme contract (the landing itself is dark only).
   toLight: { en: "Switch to light", hi: "हल्का रंग", kn: "ತಿಳಿ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   toDark: { en: "Switch to dark", hi: "गहरा रंग", kn: "ಗಾಢ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
@@ -20,14 +22,14 @@ const S = {
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
   heroTitle: {
-    en: "Your shop's assistant. Just speak.",
-    hi: "आपकी दुकान का सहायक। बस बोलिए।",
-    kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಸಹಾಯಕ. ಮಾತನಾಡಿ ಸಾಕು.",
+    en: "Buy, sell and keep accounts by talking.",
+    hi: "बोलकर ख़रीदिए, बेचिए, हिसाब रखिए।",
+    kn: "ಮಾತನಾಡಿ ಖರೀದಿಸಿ, ಮಾರಿ, ಲೆಕ್ಕ ಇಡಿ.",
   },
   heroSub: {
-    en: "Say it in Hindi, Kannada or English. Sahay buys from real sellers and bargains for you, makes your bills and takes payments, keeps your khata, and reorders when stock runs low. Nothing happens without your yes.",
-    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बोलिए। सहाय असली विक्रेताओं से ख़रीदता है और आपके लिए मोलभाव करता है, बिल बनाता है और भुगतान लेता है, खाता रखता है, और स्टॉक कम होने पर फिर से मँगवाता है। आपकी हाँ के बिना कुछ नहीं होता।",
-    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಹೇಳಿ. ಸಹಾಯ್ ನಿಜವಾದ ಮಾರಾಟಗಾರರಿಂದ ಖರೀದಿಸಿ ನಿಮಗಾಗಿ ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡಿ ಹಣ ಪಡೆಯುತ್ತದೆ, ಖಾತೆ ಇಡುತ್ತದೆ, ದಾಸ್ತಾನು ಕಡಿಮೆಯಾದಾಗ ಮತ್ತೆ ತರಿಸುತ್ತದೆ. ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಏನೂ ಆಗುವುದಿಲ್ಲ.",
+    en: "Sahay calls real sellers, bargains, makes your bills and watches your stock, and waits for your yes before anything goes ahead.",
+    hi: "सहाय असली विक्रेताओं से बात करता है, मोलभाव करता है, बिल बनाता है, स्टॉक पर नज़र रखता है, और कुछ भी आगे बढ़ाने से पहले आपकी हाँ का इंतज़ार करता है।",
+    kn: "ಸಹಾಯ್ ನಿಜವಾದ ಮಾರಾಟಗಾರರೊಂದಿಗೆ ಮಾತನಾಡುತ್ತದೆ, ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡುತ್ತದೆ, ದಾಸ್ತಾನು ಗಮನಿಸುತ್ತದೆ, ಮತ್ತು ಏನನ್ನೂ ಮುಂದುವರಿಸುವ ಮೊದಲು ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
   },
   heroMore: { en: "See how it works", hi: "देखिए कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ ನೋಡಿ" },
   heroAlt: {
@@ -231,6 +233,9 @@ const S = {
   },
 };
 
+/** Each language's own name, written in its own script (never translated). */
+export const LANG_NAMES = Object.freeze({ en: "English", hi: "हिन्दी", kn: "ಕನ್ನಡ" });
+
 export function t(key, lang) {
   const entry = S[key];
   return entry ? entry[lang] ?? entry.en : "";
@@ -253,6 +258,8 @@ export function applyLanguage(lang) {
     }
   }
   for (const btn of document.querySelectorAll("button[data-lang]")) {
-    btn.setAttribute("aria-pressed", String(btn.dataset.lang === lang));
+    const on = String(btn.dataset.lang === lang);
+    if (btn.getAttribute("role") === "menuitemradio") btn.setAttribute("aria-checked", on);
+    else btn.setAttribute("aria-pressed", on);
   }
 }

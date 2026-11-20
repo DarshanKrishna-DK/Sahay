@@ -2,7 +2,7 @@
 // smooth scroll on a mouse (Lenis, if its pinned file loaded) and the phone's floating start button.
 // Every element is visible in its final state without script; script only adds motion.
 
-import { LANGS, applyLanguage } from "./i18n.js";
+import { LANGS, LANG_NAMES, applyLanguage, t } from "./i18n.js";
 import { initGather } from "./gather.js";
 import { initStory } from "./story.js";
 import { mountFigures } from "/figures/loader.js";
@@ -24,7 +24,10 @@ const figures = mountFigures(document, { lang, reducedQuery });
 function setLanguage(next, { save = true } = {}) {
   lang = next;
   applyLanguage(lang);
-  if (save) store("sahay-landing-lang", lang);
+  langName.textContent = LANG_NAMES[lang];
+  langName.lang = lang;
+  langBtn.setAttribute("aria-label", t("langCurrent", lang).replace("{name}", LANG_NAMES[lang]));
+  if (save) store("sahay-lang", lang); // shared with the app: the choice carries into /app
   figures.setLanguage(lang);
   // Labels change width with the script: place the hero trackers again once fonts settle.
   requestAnimationFrame(() => gather?.relayout());
@@ -32,8 +35,44 @@ function setLanguage(next, { save = true } = {}) {
   document.dispatchEvent(new CustomEvent("landing:language", { detail: { lang } }));
 }
 for (const btn of document.querySelectorAll("button[data-lang]")) {
-  btn.addEventListener("click", () => setLanguage(btn.dataset.lang));
+  btn.addEventListener("click", () => {
+    setLanguage(btn.dataset.lang);
+    if (btn.closest("#lang-menu")) closeMenu({ focus: true });
+  });
 }
+
+// ---- Language menu in the nav: globe + current name; English / हिन्दी / ಕನ್ನಡ ------------------
+const langBtn = document.getElementById("lang-btn");
+const langName = document.getElementById("lang-name");
+const langMenu = document.getElementById("lang-menu");
+const menuItems = [...langMenu.querySelectorAll('[role="menuitemradio"]')];
+function openMenu() {
+  langMenu.hidden = false;
+  langBtn.setAttribute("aria-expanded", "true");
+  (menuItems.find((b) => b.dataset.lang === lang) || menuItems[0]).focus();
+}
+function closeMenu({ focus = false } = {}) {
+  if (langMenu.hidden) return;
+  langMenu.hidden = true;
+  langBtn.setAttribute("aria-expanded", "false");
+  if (focus) langBtn.focus();
+}
+langBtn.addEventListener("click", () => (langMenu.hidden ? openMenu() : closeMenu()));
+langBtn.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); openMenu(); }
+});
+langMenu.addEventListener("keydown", (e) => {
+  const i = menuItems.indexOf(document.activeElement);
+  if (e.key === "Escape") { e.preventDefault(); closeMenu({ focus: true }); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); menuItems[(i + 1) % menuItems.length].focus(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); menuItems[(i - 1 + menuItems.length) % menuItems.length].focus(); }
+  else if (e.key === "Home") { e.preventDefault(); menuItems[0].focus(); }
+  else if (e.key === "End") { e.preventDefault(); menuItems[menuItems.length - 1].focus(); }
+  else if (e.key === "Tab") closeMenu();
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!langMenu.hidden && !e.target.closest(".lang-switch")) closeMenu();
+});
 
 // ---- Smooth scroll (mouse and trackpad only; never under reduced motion) --------------------
 let lenis = null;

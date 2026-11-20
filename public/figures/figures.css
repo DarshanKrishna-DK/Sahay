@@ -13,7 +13,7 @@
   --anatomy-hi: #E4EDD4; --anatomy-mid: #7C8A6A; --anatomy-lo: #485240; --anatomy-faint: #262D20; --anatomy-lit: #B6F23C;
   --anatomy-halo: #020302; --anatomy-halo-opacity: .9; --anatomy-dot: #E2EBD2;
   --anatomy-weight: .6px; --anatomy-ease: cubic-bezier(.32, .72, 0, 1);
-  --anatomy-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --anatomy-mono: "Manrope", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 /* The preview page may still ask for light; the landing never does. */
 :root[data-theme="light"] .iso {
