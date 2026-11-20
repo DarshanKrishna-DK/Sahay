@@ -53,6 +53,13 @@ svg { flex: none; }
 .t-meta { font: var(--t-meta); color: var(--muted); }
 .amount { font: var(--t-amount); letter-spacing: var(--display-track); }
 .amount-xl, .figure { font: var(--t-amount-xl); letter-spacing: var(--display-track); }
+/* Every title and every amount is Jersey 10 at its only weight (400), even where a screen's own rule sets
+   a bolder weight: no faux bold, no fallback face (Yugaantar .font-display: Jersey 10, 400, .02em). */
+:root :is(.t-display, .page-title, .t-title, .section-title, .card-title, .sheet-title, .empty-title,
+.amount, .amount-xl, .figure, .tile-value, .yes-amount, .brand-word, .account-ini, .pad-text, .pad-key) {
+  font-family: var(--font-display); font-weight: var(--fw-display); font-synthesis: none;
+}
+:root :is(.card-title, .section-title) { color: var(--text); letter-spacing: var(--display-track); }
 
 /* ============================================================== buttons -- */
 /* Square HUD buttons: 48px (lg 56, sm 44 with a 48px tap area), Amarna 600 13px uppercase .14em.

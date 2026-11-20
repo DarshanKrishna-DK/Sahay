@@ -66,7 +66,8 @@
   /* --------------------------------------------------------------- type -- */
   --font: "Amarna", system-ui, -apple-system, "Segoe UI", sans-serif;        /* body */
   --font-ui: var(--font);
-  --font-display: "Jersey 10", "Amarna", ui-monospace, monospace;          /* titles, big numbers */
+  /* Titles and big numbers: Jersey 10 (one weight, 400). No monospace in the stack: while it loads, Amarna stands in. */
+  --font-display: "Jersey 10", "Amarna", system-ui, sans-serif;
   --font-hud: "Amarna", system-ui, sans-serif;                              /* HUD labels: 600, uppercase, .14em */
   --font-hi: "Hind", "Amarna", sans-serif;
   --font-hi-display: "Jaini Purva", "Hind", sans-serif;
@@ -78,7 +79,7 @@
   --hud-case: uppercase;    /* none on Hindi / Kannada pages */
   --fs-display: 3.5rem;     /* page title 56 (phone 40), Jersey 10 */
   --fs-amount-xl: 3.5rem;   /* HOW MUCH on the Yes card, Jersey 10 */
-  --fs-title: 1.875rem;     /* card titles 30, Jersey 10 */
+  --fs-title: 2rem;         /* card titles 32 (Yugaantar card h3), Jersey 10 */
   --fs-body: 1.0625rem;     /* 17 */
   --fs-amount: 1.5rem;      /* money in a row 24, Jersey 10 */
   --fs-label: .8125rem;     /* HUD 13 */
@@ -155,7 +156,7 @@
     --gutter: 16px; --card-pad: 16px; --group-gap: 24px; --topbar-h: 56px;
     --fs-display: 2.5rem;    /* 40 */
     --fs-amount-xl: 3rem;
-    --fs-title: 1.625rem;
+    --fs-title: 1.75rem;
   }
 }
 
