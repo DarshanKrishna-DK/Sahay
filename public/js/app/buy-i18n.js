@@ -155,6 +155,12 @@ addStrings({
   "s3.err.gone": ["This was already decided.", "यह पहले ही तय हो चुका है।", "ಇದನ್ನು ಈಗಾಗಲೇ ನಿರ್ಧರಿಸಲಾಗಿದೆ."],
   "s3.err.notReady": ["This button is not switched on on this server yet.", "यह बटन इस सर्वर पर अभी चालू नहीं है।", "ಈ ಬಟನ್ ಈ ಸರ್ವರ್‌ನಲ್ಲಿ ಇನ್ನೂ ಆನ್ ಆಗಿಲ್ಲ."],
 
+  "s3.sub": ["What is on your shelf", "आपकी दुकान में क्या माल है", "ನಿಮ್ಮ ಅಂಗಡಿಯಲ್ಲಿ ಏನಿದೆ"],
+  "s3.talkUpdate": ["Talk to update stock", "बोलकर माल बताइए", "ಮಾತಾಡಿ ದಾಸ್ತಾನು ಹೇಳಿ"],
+  "s3.buyAgain": ["Buy again", "फिर खरीदें", "ಮತ್ತೆ ಕೊಳ್ಳಿ"],
+  "s3.leftUnit": ["{u} left", "{u} बचा है", "{u} ಉಳಿದಿದೆ"],
+  "s3.itemsTotal": ["{n} items total", "कुल {n} चीज़ें", "ಒಟ್ಟು {n} ವಸ್ತುಗಳು"],
+
   /* ------------------------------------------------------------ v4 buy -- */
   "b4.sub": [
     "Sahay finds sellers, bargains for you and orders only after your yes.",

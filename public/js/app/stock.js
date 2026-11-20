@@ -113,24 +113,27 @@ function jarCard(it, { asks, onAnswer, incoming }) {
   const low = isLow(it);
   const name = nameOf(it);
   const prop = stock.proposals.get(String(it.id));
-  const level = it.reorderLevel !== null && it.reorderLevel !== undefined && it.reorderLevel > 0 ? qty(it.reorderLevel, it.unit) : null;
+  const hasLevel = it.reorderLevel !== null && it.reorderLevel !== undefined && it.reorderLevel > 0;
+  const level = hasLevel ? qty(it.reorderLevel, it.unit) : null;
   const coming = incoming.get(String(it.id)) || [];
   const comingQty = coming.length === 1 && coming[0].quantity !== null ? qty(coming[0].quantity, coming[0].unit || it.unit) : null;
   const comingTotal = coming.length > 1 && coming.every((c) => c.quantity !== null && (c.unit || it.unit) === (coming[0].unit || it.unit))
     ? qty(coming.reduce((s, c) => s + c.quantity, 0), coming[0].unit || it.unit) : comingQty;
   const card = prop ? (inlineCard(prop.id) || fallbackQuestion(it, prop, asks.get(String(it.id)) || {}, onAnswer)) : null;
+  // The status tag says it in a word (never colour alone): Low under the line, Enough above it,
+  // nothing when the item has no reorder line yet.
+  const tag = low ? h("span", { class: "s3-tag is-low" }, icon("alert", 14), h("span", { text: t("s3.lowWord") }))
+    : hasLevel ? h("span", { class: "s3-tag" }, h("span", { text: t("s3.okWord") })) : null;
   return h("li", { class: `s3-item${low ? " is-low" : ""}${prop ? " has-ask" : ""}` },
-    h("article", { class: `s3-card card${low ? " card-alert" : ""}`, "aria-label": name },
-      h("span", { class: "card-speak s3-card-speak" }, speakButton(`item:${it.id}`)),
-      // Top: the jar beside the name and the on-hand number (with the Low tag on the number's line);
-      // everything below runs the full width of the card, so no line is squeezed beside the jar.
-      h("div", { class: "s3-jar-wrap" }, jarSvg(it, low)),
-      h("div", { class: "s3-card-top" },
-        scripted("h3", name, { class: "s3-name" }),
-        h("p", { class: "s3-onhand" },
-          h("span", { class: "s3-onhand-num", text: amount(it.onHand ?? 0) ?? "0" }),
-          h("span", { class: "s3-onhand-unit", text: unitWord(it.unit) }),
-          low ? h("span", { class: "s3-low-tag" }, icon("alert", 16), h("span", { text: t("s3.lowWord") })) : null)),
+    h("article", { class: "s3-card card", "aria-label": name },
+      h("header", { class: "s3-card-top" },
+        h("span", { class: "s3-jar-wrap" }, jarSvg(it, low)),
+        tag,
+        h("span", { class: "card-speak s3-card-speak" }, speakButton(`item:${it.id}`))),
+      scripted("h3", name, { class: "s3-name" }),
+      h("p", { class: "s3-onhand" },
+        h("span", { class: "s3-onhand-num", text: amount(it.onHand ?? 0) ?? "0" }),
+        h("span", { class: "s3-onhand-unit", text: t("s3.leftUnit", { u: unitWord(it.unit) }).trim() })),
       h("p", { class: `s3-level${level ? "" : " is-none"}` },
         h("span", { class: "s3-level-swatch", "aria-hidden": "true" }),
         h("span", { text: level ? t("s3.reorderAt", { q: level }) : t("s3.noLevel") })),
@@ -138,7 +141,7 @@ function jarCard(it, { asks, onAnswer, incoming }) {
         icon("truck", 18), h("span", { text: comingTotal ? t("s3.incoming", { q: comingTotal }) : t("s3.coming") }), icon("arrowRight", 16)) : null,
       card ? h("div", { class: "s3-ask-slot" }, card) : null,
       card ? null : h("div", { class: "s3-card-acts" },
-        btn({ icon: "cart", word: t("s3.buyMore"), label: t("s3.buyMoreLong", { item: name }), tone: low ? "lime" : "glass",
+        btn({ icon: low ? "cart" : "plus", word: t(low ? "s3.buyAgain" : "s3.buyMore"), label: t("s3.buyMoreLong", { item: name }), tone: low ? "lime" : "glass", size: "sm",
           onClick: () => talkHere({ prompt: t("s3.buyPrompt", { item: name }), hint: "s3.buyHint" }) }))));
 }
 
@@ -225,15 +228,10 @@ export function createStock() {
     const ready = stock.status === "ready";
     const empty = ready && !items.length && !pos.length;
 
-    // v4 page head: "Stock", one plain line (the real counts, or what Stock does), Tell stock on the right.
+    // v4 page head (Stitch 07): "Stock", "What is on your shelf", Talk to update stock (full width on a phone).
     patch(head, JSON.stringify([document.documentElement.lang, ready, counts]), () => {
-      const sub = ready && counts.items
-        ? [counts.items === 1 ? t("s3.itemsOne") : t("s3.items", { n: counts.items }),
-          counts.low ? t("s3.lowCount", { n: counts.low }) : null,
-          counts.coming ? t("s3.comingCount", { n: counts.coming }) : null].filter(Boolean).join(" · ")
-        : t("s3.empty.text");
-      const node = pageHead({ title: t("nav.stock"), sub,
-        actions: [btn({ icon: "mic", word: t("s3.talk"), tone: "lime", size: "lg", onClick: () => talkHere({ hint: "s3.hint" }) })] });
+      const node = pageHead({ title: t("nav.stock"), sub: t("s3.sub"),
+        actions: [btn({ icon: "mic", word: t("s3.talkUpdate"), tone: "lime", size: "lg", cls: "s3-talk", onClick: () => talkHere({ hint: "s3.hint" }) })] });
       const h1 = node.querySelector("h1");
       if (h1) h1.id = "s3-title";
       return node;
@@ -256,14 +254,20 @@ export function createStock() {
       const ctx = { asks, onAnswer: answer, incoming };
       return [
         low.length ? h("section", { class: "s3-shelf is-low", "aria-labelledby": "s3-low-h" },
-          h("h2", { class: "section-title s3-shelf-head", id: "s3-low-h" }, icon("alert", 22), h("span", { text: t("s3.low") }), h("span", { class: "s3-count", text: String(low.length) })),
+          h("header", { class: "s3-shelf-top" },
+            h("h2", { class: "section-title s3-shelf-head", id: "s3-low-h" }, h("span", { class: "s3-dot", "aria-hidden": "true" }), h("span", { text: t("s3.low") })),
+            h("span", { class: "s3-shelf-count", text: low.length === 1 ? t("s3.itemsOne") : t("s3.items", { n: low.length }) })),
           h("ul", { class: "s3-grid" }, ...low.map((i) => jarCard(i, ctx)))) : null,
         rest.length ? h("section", { class: "s3-shelf", "aria-labelledby": "s3-shelf-h" },
-          h("h2", { class: "section-title s3-shelf-head", id: "s3-shelf-h" }, icon("jar", 22), h("span", { text: t("s3.shelf") }), h("span", { class: "s3-count", text: String(rest.length) })),
+          h("header", { class: "s3-shelf-top" },
+            h("h2", { class: "section-title s3-shelf-head", id: "s3-shelf-h", text: t("s3.shelf") }),
+            h("span", { class: "s3-shelf-count", text: t("s3.itemsTotal", { n: items.length }) })),
           h("ul", { class: "s3-grid" }, ...rest.map((i) => jarCard(i, ctx)))) : null,
         !items.length ? stateView({ kind: "empty", icon: "jar", title: t("s3.empty.title"), text: t("s3.empty.text"), compact: true, action: { label: t("s3.talk"), icon: "mic", run: () => talkHere({ hint: "s3.hint" }) } }) : null,
         pos.length ? h("section", { class: "s3-shelf is-coming", "aria-labelledby": "s3-coming-h" },
-          h("h2", { class: "section-title s3-shelf-head", id: "s3-coming-h" }, icon("truck", 22), h("span", { text: t("s3.coming") }), h("span", { class: "s3-count", text: String(pos.length) })),
+          h("header", { class: "s3-shelf-top" },
+            h("h2", { class: "section-title s3-shelf-head", id: "s3-coming-h" }, icon("truck", 22), h("span", { text: t("s3.coming") })),
+            h("span", { class: "s3-shelf-count", text: String(pos.length) })),
           h("p", { class: "s3-quiet", text: t("s3.comingText") }),
           h("ol", { class: "s3-pos" }, ...pos.map((o) => poRow(o, ui, arrived)))) : null,
       ];
