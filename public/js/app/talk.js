@@ -1,24 +1,29 @@
-// Sahay home (#/sahay; #/talk and the empty route are aliases): talking is the main act, so the
-// home is the lime orb, the call strip under it (Talk / Type / Mute / End, End its own red control),
-// the "now doing" HUD, the conversation with the disclosure pinned first, typing during a live
-// call without muting the mic (D16), and the honest recovery states (F8: safer route, network
-// blocked, call dropped, call ended, offline, a call open elsewhere, blocked audio). First visit
-// shows three "try saying" chips (instructions, never records); an idle home with no conversation
-// shows Today tiles with real numbers only. Voice and typed text are one session (call.js).
-// Logic lives in home-model.js (tested without a DOM); this file only draws it.
+// Sahay home (#/sahay; #/talk and the empty route are aliases), UI v4 (Stitch 03-home-laptop).
+// Laptop: a hero row with the greeting ("Namaste, <shop>", shop name in lime), one status sentence,
+// the trackers and the call controls (Talk to Sahay / Type request; Mute / End / Type during a
+// call) on the left, and the lime thinking orb with its state pill on the right. Below, full width:
+// the conversation card (live dot, title, call timer; turns as rows with a YOU / AI chip, a language
+// and time line, and the bubble; the composer at its foot), then "Today" with four stat cards of
+// real numbers. Phone: greeting, status, orb, controls, conversation, Today 2x2.
+// End is its own red control and the orb never ends a call (D12); typing never mutes (D16); the
+// recovery states of F8 sit under the controls. Logic is in home-model.js (tested without a DOM).
 
 import { h, icon, fill, patch, scripted } from "./dom.js";
-import { t, lang } from "./i18n.js";
+import { t, lang, when } from "./i18n.js";
 import "./home-strings.js";
 import { state, pendingApprovals } from "./store.js";
 import { sell, stock, pendingInvoices, loadSell, loadStock } from "./store-sell.js";
 import { call, inCall, startCall, endCall, setMuted, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { createOrb } from "./orb.js";
-import { runningJobs, agentState } from "./activity.js";
-import { createHud, setWaitingCount } from "./hud.js";
+import { runningJobs, agentState, nowLine } from "./activity.js";
+import { createTrackers, setWaitingCount } from "./hud.js";
 import { createComposer } from "./composer.js";
 import { mountCallDock, onHome } from "./call-dock.js";
-import { orbView, callStrip, recoveryNotes, conversationView, isFirstVisit, todayTiles, inr, grouped } from "./home-model.js";
+import { speakButton } from "./speak.js";
+import {
+  orbView, callStrip, recoveryNotes, conversationView, isFirstVisit, pillKey, statusLine,
+  todayStats, turnLang, parseTime, clock, inr, grouped,
+} from "./home-model.js";
 
 // The stylesheet for this screen (until the shell links it from app.html).
 if (!document.querySelector('link[href="/css/app-agent.css"]')) {
@@ -39,7 +44,6 @@ function openTray() {
   else location.hash = "#/waiting";
 }
 
-const PAID = new Set(["paid", "in_transit", "delivered", "closed", "cancelled", "rejected"]);
 const online = () => navigator.onLine !== false;
 
 /* ------------------------------------------------------- try chips -- */
@@ -56,42 +60,67 @@ function sayOnDevice(text, done) {
   return true;
 }
 
+/** "Sahay is ready. Tap {talk} and say what you need." with the word Talk drawn in lime. */
+function withTalkWord(sentence) {
+  const parts = sentence.split("{talk}");
+  if (parts.length < 2) return [scripted("span", sentence)];
+  return [scripted("span", parts[0]), scripted("strong", t("home.talkWord"), { class: "sh-lime" }), scripted("span", parts.slice(1).join(""))];
+}
+
 export function createSahayHome() {
   mountCallDock();
-  const el = h("section", { class: "sh-home", "aria-labelledby": "sh-title", dataset: { visual: "idle" } });
-  const title = h("h1", { class: "sr-only", id: "sh-title" });
+  const phoneQuery = matchMedia("(max-width: 599px)");
+  const el = h("section", { class: "sh-home", dataset: { visual: "idle" } });
 
+  /* ---- hero ---- */
+  const greet = h("h1", { class: "sh-greet", id: "sh-title" });
+  const status = h("div", { class: "sh-status" });
+  const trackers = createTrackers();
   const orb = createOrb({ onPress: orbPress });
-  const label = h("p", { class: "sh-orb-label", "aria-live": "polite" });
-  const hud = createHud();
-  const notes = h("div", { class: "sh-notes" });
-  const strip = h("div", { class: "sh-strip", role: "group" });
+  const pill = h("p", { class: "sh-pill", "aria-live": "polite" });
+  const figure = h("div", { class: "sh-figure" }, h("div", { class: "sh-orb-wrap" }, orb.el), pill);
+  const actions = h("div", { class: "sh-actions", role: "group" });
+  const notes = h("div", { class: "sh-notes", hidden: true });
   const hint = h("p", { class: "sh-hint", hidden: true });
-  const stage = h("div", { class: "sh-stage" }, hud.el, h("div", { class: "sh-orb-wrap" }, orb.el), label, hint, notes, strip);
+  const hero = h("section", { class: "sh-hero", "aria-labelledby": "sh-title" }, greet, status, trackers.el, figure, actions, hint, notes);
 
+  /* ---- conversation card ---- */
+  const convoTitle = h("h2", { class: "sh-card-title", id: "sh-convo-title" });
+  const liveDot = h("span", { class: "sh-live-dot", "aria-hidden": "true" });
+  const timer = h("span", { class: "sh-timer", hidden: true });
   const convo = h("ol", { class: "sh-convo" });
-  const convoWrap = h("section", { class: "sh-talk", "aria-labelledby": "sh-convo-title" }, h("h2", { class: "sr-only", id: "sh-convo-title" }), convo);
-  const top = h("div", { class: "sh-top" });
-
+  const tryRow = h("div", { class: "sh-try-row", hidden: true });
   let keyboardBtn = null;
   const composer = createComposer({
     openTray,
     waitingCount: countWaiting,
     onOpenChange: (open, restore) => {
       el.dataset.composer = open ? "open" : "closed";
-      renderStrip();
+      renderActions();
       if (!open && restore && keyboardBtn) keyboardBtn.focus({ preventScroll: true });
     },
   });
-  el.append(title, top, convoWrap, stage, composer.el);
+  const convoCard = h("article", { class: "card sh-convo-card", "aria-labelledby": "sh-convo-title" },
+    h("header", { class: "sh-card-head" }, liveDot, convoTitle, timer), convo, tryRow, composer.el);
+
+  /* ---- today ---- */
+  const todayLabel = h("h2", { class: "sh-today-label", id: "sh-today-title" });
+  const todayDate = h("span", { class: "sh-today-date" });
+  const stats = h("ul", { class: "sh-stats", role: "list" });
+  const statsNote = h("div", { class: "sh-stats-note" });
+  const today = h("section", { class: "sh-today", "aria-labelledby": "sh-today-title" },
+    h("header", { class: "sh-today-head" }, todayLabel, todayDate), stats, statsNote);
+
+  el.append(hero, convoCard, today);
   el.dataset.composer = "closed";
 
-  const phoneQuery = matchMedia("(max-width: 599px)");
-  phoneQuery.addEventListener("change", () => { convo.__key = null; renderConvo(); });
   let hintKey = null;
   let showEarlier = false;
   let stick = true; // keep the newest turn in view unless the owner scrolled up to read
+  let liveSince = null;
+  let tick = 0;
   convo.addEventListener("scroll", () => { stick = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40; }, { passive: true });
+  phoneQuery.addEventListener("change", () => { convo.__key = null; renderConvo(); });
 
   for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
   // The shell's "type" entry points (sahay:compose; sahay:focus-type from older callers) open the composer.
@@ -104,11 +133,12 @@ export function createSahayHome() {
   document.addEventListener("sahay:hint", (e) => { hintKey = e.detail && e.detail.key; render(new Set(["call"])); });
   waitingListeners.add(() => render(new Set(["approvals"])));
 
+  const first = () => isFirstVisit({ turns: call.transcript.length, requirements: state.requirements.length, orders: state.orders.size, hasRequirement: Boolean(state.requirement) });
+
   function view() {
-    const first = isFirstVisit({ turns: call.transcript.length, requirements: state.requirements.length, orders: state.orders.size, hasRequirement: Boolean(state.requirement) });
     return orbView({
       status: call.status, agentState: call.agentState, mode: call.mode, route: call.route, error: call.error,
-      ended: call.ended, online: online(), working: runningJobs().length > 0, muted: call.muted, first,
+      ended: call.ended, online: online(), working: runningJobs().length > 0, muted: call.muted, first: first(),
     });
   }
 
@@ -119,6 +149,26 @@ export function createSahayHome() {
     if (inCall() && (call.micless || call.muted)) setMuted(false);
   }
 
+  /* ---------------------------------------------------------- hero -- */
+
+  function renderGreeting() {
+    const shop = (state.business && state.business.name) || "";
+    patch(greet, `${document.documentElement.lang}|${shop}`, () => [
+      scripted("span", t("home.hello"), { class: "sh-greet-word" }), " ",
+      shop ? scripted("span", shop, { class: "sh-greet-name" }) : null,
+    ]);
+  }
+
+  function renderStatus(v) {
+    const n = nowLine();
+    const s = statusLine({ orbState: v.state, nowKey: n.key, live: inCall() });
+    const sentence = s.now ? t(n.key, n.vars) : t(s.key);
+    patch(status, `${document.documentElement.lang}|${sentence}|${s.talk}|${n.tone}`, () => [
+      h("p", { class: "sh-status-line", dataset: { tone: s.now ? n.tone : "calm" } }, ...(s.talk ? withTalkWord(sentence) : [scripted("span", sentence)])),
+      speakButton("now", { size: "sm" }),
+    ]);
+  }
+
   function renderOrb(v) {
     const pressable = call.status === "idle" || call.status === "error" || (inCall() && (call.micless || call.muted));
     const words = t(v.key);
@@ -126,8 +176,10 @@ export function createSahayHome() {
     el.dataset.visual = v.visual;
     el.dataset.state = v.state;
     el.dataset.tone = v.tone;
-    patch(label, `${words}|${v.icon}|${v.tone}`, () => [icon(v.icon, 20), scripted("span", words)]);
-    label.dataset.tone = v.tone;
+    const word = t(pillKey(v.state));
+    patch(pill, `${word}|${v.tone}|${words}`, () => [h("span", { class: "sh-pill-dot", "aria-hidden": "true" }), scripted("span", word, { class: "sh-pill-word" }), h("span", { class: "sr-only", text: `. ${words}` })]);
+    pill.dataset.tone = v.tone;
+    pill.dataset.state = v.state;
   }
 
   function act(action) {
@@ -141,37 +193,38 @@ export function createSahayHome() {
     else if (action === "endOther") endServerCall();
   }
 
-  function renderStrip() {
+  function renderActions() {
     const s = callStrip({ status: call.status, mode: call.mode, muted: call.muted, micless: call.micless, autoplay: call.autoplay, error: call.error, ended: call.ended, textSupported: textSupported() });
-    strip.setAttribute("aria-label", t("home.title"));
+    actions.setAttribute("aria-label", t("home.controls"));
     const parts = [];
-    keyboardBtn = null;
-    if (s.keyboard) {
-      const open = composer.isOpen();
-      keyboardBtn = h("button", {
-        class: "keycap keycap-md keycap-secondary sh-ctl sh-ctl-type", type: "button", "aria-expanded": String(open), "aria-controls": "sh-composer-input",
-        on: { click: () => (open ? composer.close(true) : composer.open()) },
-      }, icon(open ? "x" : "keyboard", 24), h("span", { text: open ? t("home.typeClose") : t("home.type") }));
-      parts.push(keyboardBtn);
+    if (s.primary) {
+      const key = s.primary.action === "start" ? "home.talkToSahay" : s.primary.key;
+      parts.push(h("button", { class: `keycap keycap-lg keycap-primary sh-act sh-act-primary is-${s.primary.action}`, type: "button", on: { click: () => act(s.primary.action) } },
+        icon(s.primary.icon, 24), h("span", { text: t(key) })));
     }
     if (s.mute) {
       parts.push(h("button", {
-        class: `keycap keycap-md keycap-secondary sh-ctl sh-ctl-mute${s.mute.on ? "" : " is-off"}`, type: "button",
+        class: `keycap keycap-lg keycap-secondary sh-act sh-act-mute${s.mute.on ? "" : " is-off"}`, type: "button",
         "aria-pressed": s.mute.action === "openMic" ? undefined : String(call.muted),
         "aria-label": s.mute.action === "mute" ? t("home.muteLong") : s.mute.action === "unmute" ? t("home.unmuteLong") : t(s.mute.key),
         on: { click: () => act(s.mute.action) },
       }, icon(s.mute.icon, 24), h("span", { text: t(s.mute.key) })));
     }
-    if (s.primary) {
-      parts.push(h("button", { class: `keycap keycap-md keycap-primary sh-ctl sh-ctl-primary is-${s.primary.action}`, type: "button", on: { click: () => act(s.primary.action) } },
-        icon(s.primary.icon, 24), h("span", { text: t(s.primary.key) })));
-    }
     if (s.end) {
-      parts.push(h("button", { class: "keycap keycap-md keycap-danger sh-ctl sh-ctl-end", type: "button", "aria-label": inCall() ? t("home.endLong") : t(s.end.key), on: { click: () => endCall() } },
+      parts.push(h("button", { class: "keycap keycap-lg keycap-danger sh-act sh-act-end", type: "button", "aria-label": inCall() ? t("home.endLong") : t(s.end.key), on: { click: () => endCall() } },
         icon("phoneOff", 24), h("span", { text: t(s.end.key) })));
     }
-    fill(strip, ...parts);
-    strip.dataset.count = String(parts.length);
+    keyboardBtn = null;
+    if (s.keyboard) {
+      const open = composer.isOpen();
+      keyboardBtn = h("button", {
+        class: "keycap keycap-lg keycap-ghost sh-act sh-act-type", type: "button", "aria-expanded": String(open), "aria-controls": "sh-composer-input",
+        on: { click: () => (open ? composer.close(true) : composer.open()) },
+      }, icon(open ? "x" : "keyboard", 24), h("span", { text: open ? t("home.typeClose") : t("home.typeRequest") }));
+      parts.push(keyboardBtn);
+    }
+    fill(actions, ...parts);
+    actions.dataset.count = String(parts.length);
   }
 
   function renderNotes() {
@@ -180,13 +233,15 @@ export function createSahayHome() {
       voiceServerActive: Boolean(state.voiceServer && state.voiceServer.active), issues: call.issues, autoplay: call.autoplay,
     });
     const key = JSON.stringify([document.documentElement.lang, list.map((n) => [n.kind, n.key, n.sub, n.actions]), call.endingOther]);
-    patch(notes, key, () => list.map((n) => h("article", { class: `card sh-note${n.tone === "bad" ? " card-alert" : ""}`, dataset: { tone: n.tone, kind: n.kind }, role: n.tone === "bad" ? "alert" : "status" },
-      h("span", { class: "sh-note-icon", "aria-hidden": "true" }, icon(n.icon, 22)),
+    patch(notes, key, () => list.map((n) => h("div", { class: "sh-note", dataset: { tone: n.tone, kind: n.kind }, role: n.tone === "bad" ? "alert" : "status" },
+      h("span", { class: "sh-note-icon", "aria-hidden": "true" }, icon(n.icon, 20)),
       h("div", { class: "sh-note-body" },
         h("p", { class: "sh-note-title", text: t(n.key) }),
         n.sub ? h("p", { class: "sh-note-text", text: t(n.sub) }) : null),
       noteActions(n))));
     notes.hidden = list.length === 0;
+    hint.hidden = !hintKey || call.transcript.length > 0;
+    hint.textContent = hintKey ? t(hintKey) : "";
   }
 
   function noteActions(n) {
@@ -195,8 +250,7 @@ export function createSahayHome() {
   }
 
   function noteAction(a) {
-    // Retry also sits in the call strip; the note repeats it only where the strip has none.
-    if (a === "retry") return null;
+    // Retry is the hero's primary button already; a note never repeats it.
     if (a === "tray") return h("button", { class: "chip", type: "button", on: { click: () => act("tray") } }, icon("check", 20), h("span", { text: t("home.useButtons") }));
     if (a === "type") return h("button", { class: "chip", type: "button", on: { click: () => act("type") } }, icon("keyboard", 20), h("span", { text: t("home.typeInstead") }));
     if (a === "endOther") {
@@ -206,27 +260,40 @@ export function createSahayHome() {
     return null;
   }
 
-  function bubble(role, text, extra = {}) {
-    const who = role === "agent" ? t("home.sahay") : extra.typed ? t("home.youTyped") : t("home.you");
-    return h("li", { class: `sh-bubble is-${role}${extra.live ? " is-live" : ""}${extra.cut ? " is-cut" : ""}${extra.pinned ? " is-pinned" : ""}` },
-      h("span", { class: "sh-bubble-who" },
-        role === "agent" ? h("span", { class: "sh-who-dot", "aria-hidden": "true" }) : icon(extra.typed ? "keyboard" : "mic", 16),
-        h("span", { text: who }),
-        extra.pinned ? h("span", { class: "sh-bubble-notice" }, icon("shield", 16), h("span", { text: t("notice.short") })) : null),
-      scripted("p", text, { class: "sh-bubble-text" }),
-      extra.live && role === "owner" ? h("span", { class: "sh-bubble-flag is-hearing", text: t("home.hearing") }) : null,
-      extra.cut ? h("span", { class: "sh-bubble-flag", text: t("home.cut") }) : null);
+  /* -------------------------------------------------- conversation -- */
+
+  function timeWord(ts) {
+    const d = parseTime(ts);
+    return d ? when(d, { hour: "numeric", minute: "2-digit" }) : "";
+  }
+
+  function row(role, turn, extra = {}) {
+    const meta = [];
+    if (extra.pinned) meta.push(h("span", { class: "sh-row-notice" }, icon("shield", 16), h("span", { text: t("notice.short") })));
+    else {
+      meta.push(h("span", { text: t(`home.lang.${turnLang(turn)}`) }));
+      const tw = timeWord(turn.time);
+      if (tw) meta.push(h("span", { text: tw }));
+      if (turn.via === "text") meta.push(h("span", { class: "sh-row-flag" }, icon("keyboard", 14), h("span", { text: t("home.typed") })));
+      if (turn.live && role === "owner") meta.push(h("span", { class: "sh-row-flag is-hearing", text: t("home.hearing") }));
+      if (turn.interrupted) meta.push(h("span", { class: "sh-row-flag is-cut", text: t("home.cut") }));
+    }
+    return h("li", { class: `sh-row is-${role}${turn.live ? " is-live" : ""}${extra.pinned ? " is-pinned" : ""}` },
+      h("span", { class: "sh-chip-who", "aria-hidden": "true", text: role === "agent" ? t("home.chip.ai") : t("home.chip.you") }),
+      h("div", { class: "sh-bubble" },
+        h("p", { class: "sh-row-meta" }, h("span", { class: "sr-only", text: `${role === "agent" ? t("home.sahay") : t("home.you")}: ` }), ...meta),
+        scripted("p", turn.text, { class: "sh-row-text" })));
   }
 
   function renderConvo() {
     const biz = (state.business && state.business.name) || "";
-    // Phones keep the last two turns in view (the orb and its controls must stay above the dock).
-    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier, keep: phoneQuery.matches ? 2 : 3 });
+    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier, keep: phoneQuery.matches ? 4 : 8 });
     if (!v.older) showEarlier = false;
+    convoTitle.textContent = t("home.convo");
     convo.setAttribute("aria-label", t("home.convo"));
     const key = JSON.stringify([document.documentElement.lang, v.pinned.text, showEarlier, v.older, v.shown.map((x) => [x.key, x.text, x.live, x.interrupted, x.via])]);
     const changed = patch(convo, key, () => {
-      const items = [bubble("agent", v.pinned.text, { pinned: true })];
+      const items = [row("agent", { text: v.pinned.text }, { pinned: true })];
       if (v.older) {
         items.push(h("li", { class: "sh-earlier" },
           h("button", {
@@ -234,75 +301,92 @@ export function createSahayHome() {
             on: { click: () => { showEarlier = !showEarlier; renderConvo(); requestAnimationFrame(() => { const b = convo.querySelector(".sh-earlier-btn"); if (b) b.focus({ preventScroll: true }); }); } },
           }, icon(showEarlier ? "chevronUp" : "history", 20), h("span", { text: showEarlier ? t("home.earlierHide") : t("home.earlier", { n: v.older }) }))));
       }
-      for (const x of v.shown) items.push(bubble(x.role, x.text, { live: x.live, cut: x.interrupted, typed: x.via === "text" }));
+      for (const x of v.shown) items.push(row(x.role, x));
+      if (!v.count) items.push(h("li", { class: "sh-convo-empty" }, h("p", { text: t(first() ? "home.convoFirst" : "home.convoEmpty") })));
       return items;
     });
     if (changed && stick) requestAnimationFrame(() => { convo.scrollTop = convo.scrollHeight; });
     el.dataset.turns = String(v.count);
-    hint.hidden = !hintKey || v.count > 0;
-    hint.textContent = hintKey ? t(hintKey) : "";
+    renderTry(!v.count && first());
   }
 
-  function tile(x) {
-    const value = x.kind === "money" ? inr(x.value) : grouped(x.value);
-    return h("li", null, h("a", { class: "card card-interactive sh-tile", href: x.route, dataset: { id: x.id } },
-      icon(x.icon, 22), h("span", { class: "sh-tile-word", text: t(x.key) }), h("span", { class: "sh-tile-num", text: value })));
-  }
-
-  function renderTop(v) {
-    const idle = call.status === "idle" && !call.transcript.length;
-    if (v.state === "first") {
-      patch(top, `first|${document.documentElement.lang}`, () => {
-        const chips = TRY.map((k) => {
-          const words = t(k);
-          const b = h("button", { class: "chip sh-try", type: "button", dataset: { state: "idle" } },
-            icon("speaker", 20), scripted("span", words));
-          b.setAttribute("aria-label", `${t("home.tryHear")}: ${words}`);
-          b.addEventListener("click", () => {
-            for (const o of top.querySelectorAll(".sh-try")) o.dataset.state = "idle";
-            b.dataset.state = "playing";
-            sayOnDevice(words, () => { b.dataset.state = "idle"; });
-          });
-          return h("li", null, b);
+  function renderTry(show) {
+    tryRow.hidden = !show;
+    if (!show) return;
+    patch(tryRow, `try|${document.documentElement.lang}`, () => {
+      const chips = TRY.map((k) => {
+        const words = t(k);
+        const b = h("button", { class: "chip sh-try", type: "button", dataset: { state: "idle" }, "aria-label": `${t("home.tryHear")}: ${words}` },
+          icon("speaker", 20), scripted("span", words));
+        b.addEventListener("click", () => {
+          for (const o of tryRow.querySelectorAll(".sh-try")) o.dataset.state = "idle";
+          b.dataset.state = "playing";
+          sayOnDevice(words, () => { b.dataset.state = "idle"; });
         });
-        return [h("p", { class: "sh-try-title", text: t("home.trySaying") }), h("ul", { class: "sh-try-list", role: "list" }, ...chips)];
+        return h("li", null, b);
       });
-      top.hidden = false;
-      top.dataset.kind = "try";
-      return;
-    }
-    if (!idle) { top.hidden = true; top.__key = null; return; }
-    const owed = sell.status === "ready" ? sell.owed.reduce((s, o) => s + (o.amount || 0), 0) : null;
-    const orders = [...state.orders.values()].filter((o) => o.status && !PAID.has(o.status));
-    const toPay = state.boot === "ready" ? orders.reduce((s, o) => s + (o.amount || 0), 0) : null;
-    const low = stock.status === "ready" ? [...stock.items.values()].filter((i) => i.low === true).length : null;
-    const bills = sell.status === "ready" ? pendingInvoices().length : null;
-    const tiles = todayTiles({ toCollect: owed, toPay, low, billsWaiting: bills });
-    // Loading: one skeleton per tile still coming. Error: one line with Try again (never a zero).
-    const waitingFor = (sell.status === "loading" ? 3 : 0) + (stock.status === "loading" ? 1 : 0);
-    const failed = [sell, stock].filter((x) => x.status === "error");
-    patch(top, JSON.stringify(["tiles", document.documentElement.lang, tiles.map((x) => [x.id, x.value]), waitingFor, failed.length]), () => [
-      h("h2", { class: "sh-today-title", text: t("home.today") }),
-      h("ul", { class: "sh-tiles", role: "list", "aria-busy": waitingFor ? "true" : undefined },
-        ...tiles.map(tile),
-        ...Array.from({ length: Math.min(waitingFor, 4 - tiles.length) }, () => h("li", { "aria-hidden": "true" }, h("span", { class: "skel skel-card sh-tile-skel" })))),
-      failed.length ? h("p", { class: "error-line sh-tiles-error", role: "alert" }, icon("alert", 20), h("span", { text: t("home.tilesFail") }),
-        h("button", { class: "chip", type: "button", on: { click: () => { if (sell.status === "error") loadSell(); if (stock.status === "error") loadStock(); } } }, icon("refresh", 20), h("span", { text: t("retry") }))) : null,
-    ]);
-    top.hidden = tiles.length === 0 && !waitingFor && !failed.length;
-    top.dataset.kind = "tiles";
+      return [h("p", { class: "sh-try-title", text: t("home.trySaying") }), h("ul", { class: "sh-try-list", role: "list" }, ...chips)];
+    });
   }
+
+  function renderTimer() {
+    const live = inCall();
+    if (live && !liveSince) liveSince = Date.now();
+    if (!live && call.status !== "ending") liveSince = null;
+    convoCard.dataset.live = String(live);
+    timer.hidden = !liveSince;
+    if (liveSince) {
+      timer.textContent = clock(Date.now() - liveSince);
+      timer.setAttribute("aria-label", t("home.callTime", { time: timer.textContent }));
+      if (!tick) tick = setInterval(() => { if (!liveSince) { clearInterval(tick); tick = 0; return; } timer.textContent = clock(Date.now() - liveSince); }, 1000);
+    } else if (tick) { clearInterval(tick); tick = 0; }
+  }
+
+  /* --------------------------------------------------------- today -- */
+
+  function statCard(x) {
+    const value = x.value === null ? null : x.kind === "money" ? inr(x.value) : grouped(x.value);
+    if (value === null) return h("li", { "aria-hidden": "true" }, h("span", { class: "skel skel-card sh-stat-skel" }));
+    return h("li", null, h("a", { class: "card card-interactive sh-stat", href: x.route, dataset: { id: x.id, tone: x.tone } },
+      h("span", { class: "sh-stat-word" }, icon(x.icon, 18), h("span", { text: t(x.key) })),
+      h("span", { class: "sh-stat-num", text: value })));
+  }
+
+  function renderToday() {
+    todayLabel.textContent = t("home.today");
+    todayDate.textContent = when(new Date(), { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+    const list = todayStats({
+      now: new Date(),
+      orders: [...state.orders.values()],
+      ordersReady: state.boot === "ready",
+      invoices: sell.status === "ready" ? [...sell.invoices.values()] : null,
+      receipts: sell.status === "ready" ? sell.receipts : null,
+      items: stock.status === "ready" ? [...stock.items.values()] : null,
+    });
+    // A source that failed or is missing on this server says so instead of a skeleton.
+    const gone = (id) => (id === "low" ? ["error", "missing"].includes(stock.status) : (id === "bills" || id === "received") && ["error", "missing"].includes(sell.status));
+    const shown = list.filter((x) => !gone(x.id));
+    patch(stats, JSON.stringify([document.documentElement.lang, shown.map((x) => [x.id, x.value])]), () => shown.map(statCard));
+    stats.dataset.count = String(shown.length);
+    const failed = [sell, stock].filter((x) => x.status === "error").length;
+    patch(statsNote, `${document.documentElement.lang}|${failed}`, () => failed
+      ? h("p", { class: "error-line", role: "alert" }, icon("alert", 20), h("span", { text: t("home.statsFail") }),
+        h("button", { class: "chip", type: "button", on: { click: () => { if (sell.status === "error") loadSell(); if (stock.status === "error") loadStock(); } } }, icon("refresh", 20), h("span", { text: t("retry") })))
+      : []);
+  }
+
+  /* -------------------------------------------------------- render -- */
 
   function render(parts) {
     const all = parts.has("all") || parts.has("lang");
-    title.textContent = t("home.title");
     const v = view();
+    if (all || parts.has("business")) renderGreeting();
     if (all || parts.has("call") || parts.has("work") || parts.has("approvals") || parts.has("business") || parts.has("agent")) {
-      renderOrb(v); renderNotes(); renderStrip(); composer.update();
+      renderOrb(v); renderNotes(); renderActions(); renderTimer(); composer.update();
     }
-    if (all || parts.has("call") || parts.has("work") || parts.has("approvals") || parts.has("orders") || parts.has("sell") || parts.has("stock") || parts.has("transcript")) hud.update();
-    if (all || parts.has("transcript") || parts.has("call") || parts.has("business")) renderConvo();
-    if (all || parts.has("call") || parts.has("transcript") || parts.has("orders") || parts.has("sell") || parts.has("stock") || parts.has("boot")) renderTop(v);
+    if (all || parts.has("call") || parts.has("work") || parts.has("approvals") || parts.has("orders") || parts.has("transcript")) { renderStatus(v); trackers.update(); }
+    if (all || parts.has("transcript") || parts.has("call") || parts.has("business") || parts.has("orders")) renderConvo();
+    if (all || parts.has("orders") || parts.has("sell") || parts.has("stock") || parts.has("boot")) renderToday();
     el.dataset.live = String(inCall());
     el.dataset.mode = call.mode;
   }
@@ -311,7 +395,7 @@ export function createSahayHome() {
     el,
     update: (_s, parts) => render(parts),
     enter() {
-      // Today tiles read sell and stock; load them quietly once (a missing route leaves its tile out).
+      // Today reads sell and stock; load them quietly once (a missing route shows its own line).
       if (sell.status === "idle") loadSell({ quiet: true });
       if (stock.status === "idle") loadStock({ quiet: true });
       render(new Set(["all"]));

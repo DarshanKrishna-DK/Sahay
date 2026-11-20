@@ -1,146 +1,128 @@
 /* Sahay home (#/sahay), the composer and the call dock. Owner: W2 (talk.js, orb.js, hud.js,
-   composer.js, call-dock.js). Tokens: tokens-v3.css; primitives (keycap, chip, card, glass, pill,
-   icon-btn, spinner, error-line) from components-v3.css. Class prefix: sh-.
-   One bold moment: the lime orb in its piano-black well. Everything around it stays quiet.
+   composer.js, call-dock.js). UI v4 (Stitch 03-home-laptop): hero row (greeting, status, controls |
+   orb + state pill), the conversation card, Today stat cards. Tokens: tokens-v3.css (v4 type scale:
+   --font-display Jaini Purva, --font-body Manrope, --t-*); primitives (keycap, chip, card, glass,
+   pill, icon-btn, spinner, error-line, skel) from components-v3.css. Class prefix: sh-.
    Size classes (README-v3): phone <= 599, phoneLand (h <= 500, w >= 568, landscape),
    tablet 600-1023, laptop 1024-1599, wide >= 1600. */
 
 /* ================================================================ layout -- */
 
-/* Phone portrait (and tablet): the home is exactly the height between the top zone and the dock
-   (#main padding in app-shell.css), so the orb and its controls always sit just above the dock in
-   thumb reach, never below the fold. Top to bottom: Today row (idle, no conversation) or try
-   chips, the conversation (newest at the bottom, scrolls inside, shrinks first), the now line +
-   trackers, the orb, its label, notes, the call strip. */
 .sh-home {
-  --orb: clamp(100px, 16dvh, 136px);
-  --home-h: max(320px, calc(100dvh - var(--top-zone-h, 64px) - 24px - var(--safe-t) - var(--dock-h) - var(--dock-lift) - 44px - var(--safe-b)));
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: var(--s-3);
+  --orb: clamp(124px, 17dvh, 148px);
+  display: grid;
+  gap: var(--s-5);
   width: 100%;
-  max-width: 640px;
-  height: var(--home-h);
-  margin-inline: auto;
+  min-width: 0;
+  font-family: var(--font-body);
 }
-.sh-top { grid-area: top; flex: none; min-width: 0; }
-.sh-talk { grid-area: talk; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; }
-.sh-talk .sh-convo { flex: 0 1 auto; min-height: 0; max-height: none; }
-.sh-stage { grid-area: stage; flex: none; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--s-2); }
-.sh-composer { grid-area: composer; flex: none; }
+.sh-home > * { min-width: 0; }
 
-/* Phone and tablet portrait order: now line, orb, label, notes, controls (thumb zone). */
-.sh-hud { order: 1; }
-.sh-orb-wrap { order: 2; }
-.sh-orb-label { order: 3; }
-.sh-hint { order: 4; }
-.sh-notes { order: 5; }
-.sh-strip { order: 6; }
-
-@media (max-width: 599px) {
-  .sh-orb-wrap { padding: 8px; }
-  /* Trackers: one row that scrolls sideways inside itself, never three stacked rows. */
-  .sh-trackers { flex-wrap: nowrap; justify-content: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; padding-inline: 2px; }
-  .sh-trackers::-webkit-scrollbar { display: none; }
-  .sh-tracker { flex: none; white-space: nowrap; }
-  /* Today: a compact row of icon + word + number chips. */
-  .sh-today-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .sh-tiles { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; padding: 2px; }
-  .sh-tiles::-webkit-scrollbar { display: none; }
-  .sh-tiles > li { flex: none; }
-  .sh-tile { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: var(--touch-min); padding: 6px 14px; border-radius: var(--r-pill); }
-  .sh-tile-num { font-size: 1.25rem; }
-  .sh-tile-skel { display: block; width: 132px; min-height: var(--touch-min); border-radius: var(--r-pill); }
-  /* Try chips: one sideways row too. */
-  .sh-try-list { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; padding: 2px; }
-  .sh-try-list::-webkit-scrollbar { display: none; }
-  .sh-try-list > li { flex: none; }
-  .sh-try span { white-space: nowrap; }
+/* Hero. Phone: greeting, status, trackers, orb + pill, controls, notes (one column).
+   From 600 px: text and controls left, the orb figure right, spanning the hero's rows. */
+.sh-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "greet" "status" "trackers" "figure" "actions" "hint" "notes";
+  align-items: start;
+  gap: var(--s-3);
 }
-/* Short phones (360x640): drop the secondary rows so the primary ones fit. */
-@media (max-width: 599px) and (max-height: 700px) {
-  .sh-trackers, .sh-try-title { display: none; }
-  .sh-home { gap: var(--s-2); }
-}
+.sh-greet { grid-area: greet; }
+.sh-status { grid-area: status; }
+.sh-trackers { grid-area: trackers; }
+.sh-figure { grid-area: figure; }
+.sh-actions { grid-area: actions; }
+.sh-hint { grid-area: hint; }
+.sh-notes { grid-area: notes; }
 
 @media (min-width: 600px) {
-  .sh-home { --orb: clamp(140px, 20dvh, 180px); --home-h: max(460px, calc(100dvh - 190px - var(--safe-t) - var(--safe-b))); }
-  .sh-stage { gap: var(--s-3); }
-}
-
-/* Laptop: the shell's chrome around #main is about 172 px tall (sticky top capsule ~84, #main
-   padding 24 top / 64 bottom), so the home takes the rest of the viewport, so nothing clips at 701 / 768 / 900 px tall.
-   Left: orb + label + now line + controls, centred. Right: the conversation panel at full height
-   (scrolls inside), Today tiles under it when idle, the composer at its foot. */
-@media (min-width: 1024px) {
-  .sh-home {
-    --orb: clamp(150px, 30dvh, 240px);
-    --home-h: max(460px, calc(100dvh - 190px - var(--safe-t) - var(--safe-b)));
-    display: grid;
-    max-width: var(--content-max);
-    height: var(--home-h);
-    min-height: 0;
-    padding-block: 0;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-    grid-template-areas: "stage talk" "stage top" "stage composer";
-    grid-template-rows: minmax(0, 1fr) auto auto;
-    align-content: stretch;
+  .sh-home { --orb: 184px; gap: var(--s-6); }
+  .sh-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "greet figure" "status figure" "trackers figure" "actions figure" "hint figure" "notes figure";
+    grid-template-rows: auto auto auto auto auto 1fr;
     column-gap: var(--s-6);
-    row-gap: var(--s-3);
   }
-  .sh-stage { justify-content: center; min-height: 0; overflow-y: auto; scrollbar-width: none; padding-block: var(--s-2); }
-  .sh-orb-wrap { order: 1; padding: 18px; } /* room for the voice halo and focus ring inside the scroller */
-  .sh-orb-label { order: 2; }
-  .sh-hud { order: 3; }
-  /* The conversation panel: a piano surface that fills its row; the list scrolls inside it. */
-  .sh-talk {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
-    border: 1px solid transparent;
-    border-radius: var(--r-card);
-    background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
-    box-shadow: var(--shadow-2);
-  }
-  .sh-talk .sh-convo { flex: 1 1 auto; padding-right: var(--s-2); }
-  .sh-top { min-width: 0; }
-  .sh-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .sh-tile { min-height: 84px; }
-  .sh-tile-skel { min-height: 84px; }
+  .sh-figure { align-self: center; }
 }
-/* Short laptops: a smaller orb and tighter stage so every control stays on screen. */
-@media (min-width: 1024px) and (max-height: 760px) {
-  .sh-home { --orb: clamp(140px, 27dvh, 200px); }
-  .sh-stage { gap: var(--s-2); }
-  .sh-tile, .sh-tile-skel { min-height: 72px; }
-  .sh-tile-num { font-size: var(--fs-h2); }
-}
-@media (min-width: 1600px) and (min-height: 900px) { .sh-home { --orb: 280px; } }
-
-
-/* Phone landscape: orb + controls left (40 %), conversation right. */
+@media (min-width: 1024px) { .sh-home { --orb: 208px; } .sh-hero { padding-top: var(--s-3); } }
+@media (min-width: 1600px) { .sh-home { --orb: 232px; } }
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
-  .sh-home {
-    --orb: 96px;
-    --home-h: max(240px, calc(100dvh - 130px - var(--safe-t) - var(--safe-b)));
-    display: grid;
-    max-width: none;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    grid-template-areas: "stage talk" "stage top" "stage composer";
-    grid-template-rows: minmax(0, 1fr) auto auto;
-    align-content: stretch;
-    min-height: 0;
-  }
-  .sh-stage { justify-content: center; min-height: 0; overflow-y: auto; scrollbar-width: none; gap: var(--s-2); }
-  .sh-orb-wrap { padding: 8px; }
-  .sh-trackers { display: none; }
-  .sh-talk .sh-convo { flex: 1 1 auto; }
-  .sh-orb-wrap { order: 1; }
-  .sh-orb-label { order: 2; }
-  .sh-hud { order: 3; }
+  .sh-home { --orb: 112px; }
 }
+
+/* ============================================================ greeting -- */
+
+.sh-greet {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(38px, 3.2vw + 20px, 72px);
+  line-height: 1.02;
+  letter-spacing: var(--track-display);
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}
+.sh-greet-name { color: var(--accent-text); }
+.sh-greet:lang(hi), .sh-greet:lang(kn), .sh-greet :lang(hi), .sh-greet :lang(kn) { letter-spacing: 0; line-height: 1.25; }
+
+.sh-status { display: flex; align-items: center; gap: var(--s-2); }
+.sh-status-line {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-md);
+}
+.sh-status-line:lang(hi), .sh-status-line :lang(hi), .sh-status-line:lang(kn), .sh-status-line :lang(kn) { line-height: 1.7; }
+.sh-status-line[data-tone="busy"], .sh-status-line[data-tone="done"] { color: var(--text-hi); }
+.sh-status-line[data-tone="needs"], .sh-status-line[data-tone="bad"] { color: var(--coral-text); }
+.sh-lime { color: var(--accent-text); font-weight: 700; }
+.sh-status .speak-wrap { flex: none; }
+
+.sh-hint { margin: 0; color: var(--text-md); font-size: var(--t-body); }
+.sh-hint[hidden] { display: none; }
+
+/* ============================================================== actions -- */
+
+.sh-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.sh-act { min-height: 64px; border-radius: var(--r-pill); font-family: var(--font-body); font-weight: 700; gap: 10px; }
+.sh-act span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-act-primary { padding-inline: 28px 32px; box-shadow: var(--depth), var(--glow-lime); }
+.sh-act-mute.is-off { color: var(--amber-text); }
+@media (max-width: 599px) {
+  /* Phone: one full-width row, Talk the widest; during a call Mute / End / Type share it. */
+  .sh-actions { flex-wrap: nowrap; gap: var(--s-2); }
+  .sh-act { flex: 1 1 0; min-width: 0; padding-inline: 12px; }
+  .sh-act-primary { flex-grow: 1.7; }
+  .sh-actions[data-count="3"] .sh-act { padding-inline: 8px; gap: 6px; }
+}
+
+/* ======================================================= orb figure + pill -- */
+
+.sh-figure { display: grid; justify-items: center; gap: var(--s-2); }
+.sh-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(var(--hex-rgb), .45);
+  background: rgba(var(--hex-rgb), .07);
+  font-family: var(--font-body);
+  font-size: var(--t-label);
+  font-weight: 700;
+  color: var(--accent-text);
+}
+:root[lang="en"] .sh-pill-word { text-transform: uppercase; letter-spacing: var(--track-label); }
+.sh-pill-word:lang(hi), .sh-pill-word:lang(kn) { font-size: var(--t-body); }
+.sh-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.sh-pill[data-state="listening"] .sh-pill-dot, .sh-pill[data-state="speaking"] .sh-pill-dot, .sh-pill[data-state="thinking"] .sh-pill-dot { animation: sh-blink 1.4s ease-in-out infinite; }
+.sh-pill[data-tone="warn"] { color: var(--amber-text); border-color: var(--amber); background: transparent; }
+.sh-pill[data-tone="bad"] { color: var(--coral-text); border-color: var(--coral); background: transparent; }
+.sh-pill[data-state="ended"] { color: var(--text-md); border-color: var(--edge); background: transparent; }
 
 /* ================================================================== orb -- */
 
@@ -241,59 +223,15 @@
 .sh-orb-badge[hidden] { display: none; }
 .sh-orb[data-visual="error"] .sh-orb-badge { color: var(--coral-text); }
 
-.sh-orb-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  min-height: 44px;
-  margin: 0;
-  padding: 8px 18px;
-  border-radius: var(--r-pill);
-  background: var(--piano-surface);
-  box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline);
-  font-size: var(--fs-body);
-  font-weight: var(--fw-strong);
-  line-height: var(--lh-tight);
-  color: var(--text-hi);
-  text-align: center;
-}
-.sh-orb-label svg { flex: none; color: var(--text-lo); }
-.sh-orb-label[data-tone="live"] svg { color: var(--accent-text); }
-.sh-orb-label[data-tone="warn"] svg { color: var(--amber-text); }
-.sh-orb-label[data-tone="bad"] { color: var(--coral-text); }
-.sh-orb-label[data-tone="bad"] svg { color: var(--coral-text); }
-.sh-orb-label :lang(hi), .sh-orb-label :lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-body); }
-
-.sh-hint { margin: 0; max-width: 34ch; text-align: center; color: var(--text-md); font-size: var(--fs-body); }
-.sh-hint[hidden] { display: none; }
-
-/* ============================================================ call strip -- */
-
-.sh-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--s-3);
-  width: 100%;
-  max-width: 460px;
-}
-.sh-strip:empty { display: none; }
-.sh-ctl { flex: 1 1 0; min-width: 0; max-width: 168px; min-height: var(--touch); padding-inline: 14px; gap: 8px; }
-.sh-ctl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sh-strip[data-count="1"] .sh-ctl { max-width: 240px; }
-.sh-ctl-primary { flex-grow: 1.4; }
-.sh-ctl-mute.is-off { color: var(--amber-text); }
-@media (max-width: 359px) {
-  .sh-strip { gap: var(--s-2); }
-  .sh-ctl span { font-size: var(--fs-sm); }
-}
-
 /* ============================================================= notes (F8) -- */
 
-.sh-notes { display: grid; gap: var(--s-2); width: 100%; max-width: 520px; }
+.sh-notes { display: grid; gap: var(--s-2); width: 100%; max-width: 560px; }
 .sh-notes[hidden] { display: none; }
 .sh-note {
   display: grid;
+  border-radius: var(--r-md);
+  background: var(--piano-1);
+  box-shadow: 0 0 0 1px var(--hairline);
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: var(--s-1) var(--s-3);
@@ -305,28 +243,17 @@
 .sh-note[data-tone="calm"] .sh-note-icon { color: var(--ok-text); }
 .sh-note[data-tone="info"] .sh-note-icon { color: var(--cyan-text); }
 .sh-note-body { min-width: 0; }
-.sh-note-title { margin: 6px 0 0; font-weight: var(--fw-strong); font-size: var(--fs-body); color: var(--text-hi); }
+.sh-note-title { margin: 6px 0 0; font-weight: 700; font-size: var(--t-body); color: var(--text-hi); }
 .sh-note-text { margin: var(--s-1) 0 0; font-size: var(--fs-sm); color: var(--text-md); line-height: var(--lh-body); }
 .sh-note-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
 
-/* ================================================================== HUD -- */
-
-.sh-hud { display: grid; justify-items: center; gap: var(--s-2); width: 100%; }
-.sh-now { display: flex; align-items: center; justify-content: center; gap: var(--s-2); max-width: 100%; }
-.sh-now-line { display: flex; align-items: center; gap: var(--s-2); margin: 0; min-width: 0; font-size: var(--fs-body); color: var(--text-hi); }
-.sh-now-text { overflow-wrap: anywhere; }
-.sh-now-mark { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--text-lo); }
-.sh-now-line[data-tone="busy"] .sh-now-mark { background: var(--lime); box-shadow: var(--glow-lime); animation: sh-blink 1.6s ease-in-out infinite; }
-.sh-now-line[data-tone="needs"] .sh-now-mark { background: var(--coral); }
-.sh-now-line[data-tone="done"] .sh-now-mark { background: var(--ok); }
-.sh-now-line[data-tone="bad"] .sh-now-mark { background: var(--coral); }
-.sh-now-line[data-tone="needs"] .sh-now-text { color: var(--coral-text); font-weight: var(--fw-strong); }
+/* ============================================================== trackers -- */
 
 /* Trackers: Gather-style corner brackets around each real number (no box, no fill). */
 .sh-trackers {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--s-2) var(--s-3);
   margin: 0;
   padding: 0;
@@ -365,79 +292,97 @@
 .sh-tracker.is-new { animation: sh-flash 900ms var(--ease-out) 1; }
 .sh-sim { margin-left: 2px; }
 
-/* ========================================================== conversation -- */
+/* ==================================================== conversation card -- */
+
+.sh-convo-card { gap: var(--s-3); padding: var(--s-4); }
+.sh-card-head { display: flex; align-items: center; gap: var(--s-2); min-height: 32px; padding-bottom: var(--s-3); border-bottom: 1px solid var(--hairline); }
+.sh-card-title { margin: 0; font-family: var(--font-body); font-size: var(--t-label); font-weight: 700; color: var(--text-hi); }
+:root[lang="en"] .sh-card-title { text-transform: uppercase; letter-spacing: var(--track-label); }
+:root[lang="hi"] .sh-card-title, :root[lang="kn"] .sh-card-title { font-size: var(--t-body); }
+.sh-live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-faint); }
+.sh-convo-card[data-live="true"] .sh-live-dot { background: var(--lime); box-shadow: var(--glow-lime); animation: sh-blink 1.6s ease-in-out infinite; }
+.sh-timer { margin-left: auto; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: var(--t-body); color: var(--text-md); }
+.sh-timer[hidden] { display: none; }
 
 .sh-convo {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
   margin: 0;
-  padding: var(--s-2) 2px var(--s-2);
+  padding: 0 var(--s-1) 0 0;
   list-style: none;
+  max-height: clamp(220px, 42dvh, 460px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
 }
+@media (max-width: 599px) { .sh-convo { max-height: 46dvh; } }
+.sh-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: start; gap: var(--s-3); }
+.sh-chip-who {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-family: var(--font-body);
+  font-size: .75rem;
+  font-weight: 800;
+  background: var(--piano-4);
+  color: var(--text-hi);
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+:root[lang="en"] .sh-chip-who { text-transform: uppercase; letter-spacing: .04em; }
+.sh-row.is-agent .sh-chip-who { background: var(--lime); color: var(--on-accent); box-shadow: var(--glow-lime); }
 .sh-bubble {
   display: grid;
   gap: 4px;
-  max-width: min(88%, 520px);
+  min-width: 0;
   padding: 10px 16px 12px;
-  border-radius: 20px;
-  background: var(--piano-surface);
-  box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline);
+  border-radius: var(--r-md);
+  background: var(--piano-1);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
-.sh-bubble.is-agent { align-self: flex-start; border-bottom-left-radius: 6px; }
-.sh-bubble.is-owner {
-  align-self: flex-end;
-  border-bottom-right-radius: 6px;
-  background: rgba(var(--hex-rgb), .1);
-  box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .32);
-}
-.sh-bubble-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-lo); }
-.sh-who-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--lime); box-shadow: var(--glow-lime); }
-.sh-bubble-text { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--text-hi); overflow-wrap: anywhere; }
-.sh-bubble-text:lang(hi), .sh-bubble-text:lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-indic); }
-/* The disclosure leads every conversation and carries the automated-assistant notice. */
-.sh-bubble.is-pinned { max-width: 100%; align-self: stretch; box-shadow: var(--depth-soft), 0 0 0 1px var(--hairline), inset 0 2px 0 rgba(var(--hex-rgb), .45); }
-.sh-bubble-notice { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--accent-text); }
-.sh-bubble.is-live { box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .5); background: transparent; }
-.sh-bubble.is-live .sh-bubble-text { color: var(--text-md); }
-.sh-bubble-flag { justify-self: start; font-size: var(--fs-sm); color: var(--amber-text); }
-.sh-bubble-flag.is-hearing { color: var(--accent-text); }
-.sh-bubble-flag.is-hearing::after { content: "…"; display: inline-block; animation: sh-blink 1.2s steps(2) infinite; }
+.sh-row.is-agent .sh-bubble { background: rgba(var(--hex-rgb), .06); box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .4); }
+.sh-row.is-live .sh-bubble { box-shadow: 0 0 0 1px rgba(var(--hex-rgb), .5); background: transparent; }
+.sh-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: .875rem; color: var(--text-lo); }
+.sh-row-notice { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); font-weight: 600; }
+.sh-row-flag { display: inline-flex; align-items: center; gap: 4px; color: var(--text-md); }
+.sh-row-flag.is-cut { color: var(--amber-text); }
+.sh-row-flag.is-hearing { color: var(--accent-text); }
+.sh-row-flag.is-hearing::after { content: "\2026"; animation: sh-blink 1.2s steps(2) infinite; }
+.sh-row-text { margin: 0; font-size: var(--t-body); line-height: 1.6; color: var(--text-hi); overflow-wrap: anywhere; }
+.sh-row-text:lang(hi), .sh-row-text:lang(kn) { font-size: var(--t-body-indic); line-height: 1.7; }
 .sh-earlier { align-self: center; }
+.sh-convo-empty p { margin: 0; padding: var(--s-2) 0 0 52px; color: var(--text-md); font-size: var(--t-body); }
 
-/* =========================================================== first visit -- */
-
-.sh-top[hidden] { display: none; }
-.sh-try-title { margin: 0 0 var(--s-2); text-align: center; color: var(--text-md); font-size: var(--fs-body); }
-.sh-try-list { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.sh-try-row[hidden] { display: none; }
+.sh-try-title { margin: 0 0 var(--s-2); color: var(--text-md); font-size: var(--t-body); }
+.sh-try-list { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
 .sh-try { max-width: 100%; }
 .sh-try span { white-space: normal; text-align: start; }
 .sh-try[data-state="playing"] { box-shadow: 0 0 0 2px var(--lime); }
+.sh-composer { border-top: 1px solid var(--hairline); padding-top: var(--s-3); }
 
-/* ============================================================ Today tiles -- */
+/* ================================================================= Today -- */
 
-.sh-today-title { margin: 0 0 var(--s-2); font-size: var(--fs-h3); font-family: var(--font-display); color: var(--text-hi); }
-.sh-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
-.sh-tile {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s-1) var(--s-2);
-  min-height: 96px;
-  padding: var(--s-3) var(--s-4);
-  color: var(--text-hi);
-  text-decoration: none;
-}
-.sh-tile svg { color: var(--accent-text); }
-.sh-tile-skel { display: block; min-height: 96px; border-radius: var(--r-card); }
-.sh-tiles-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-3); }
-.sh-tile-word { font-size: var(--fs-sm); color: var(--text-md); }
-.sh-tile-num { grid-column: 1 / -1; font-family: var(--font-num); font-size: var(--fs-amount); font-weight: var(--fw-display); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.sh-today { display: grid; gap: var(--s-3); }
+.sh-today-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.sh-today-label { margin: 0; font-family: var(--font-body); font-size: var(--t-label); font-weight: 700; color: var(--text-md); }
+:root[lang="en"] .sh-today-label { text-transform: uppercase; letter-spacing: var(--track-label); }
+:root[lang="hi"] .sh-today-label, :root[lang="kn"] .sh-today-label { font-size: var(--t-body); }
+.sh-today-date { font-size: .875rem; color: var(--text-lo); }
+.sh-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 900px) { .sh-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sh-stat { display: grid; align-content: space-between; gap: var(--s-2); min-height: 112px; padding: var(--s-4); color: var(--text-hi); text-decoration: none; }
+.sh-stat-word { display: inline-flex; align-items: center; gap: 8px; font-size: .9375rem; color: var(--text-md); }
+.sh-stat-word svg { flex: none; color: var(--text-lo); }
+.sh-stat-num { font-family: var(--font-num); font-weight: 700; font-variant-numeric: tabular-nums; font-size: clamp(30px, 1.6vw + 18px, 44px); line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.sh-stat[data-tone="lime"] { background: var(--piano-surface) padding-box, linear-gradient(160deg, rgba(var(--hex-rgb), .8), rgba(var(--hex-rgb), .18)) border-box; }
+.sh-stat[data-tone="lime"] .sh-stat-num { color: var(--accent-text); }
+.sh-stat[data-tone="amber"] .sh-stat-num { color: var(--amber-text); }
+.sh-stat-skel { display: block; height: 112px; min-height: 112px; border-radius: var(--r-card); }
+.sh-stats-note:empty { display: none; }
+.sh-stats-note .error-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
 
 /* ============================================================== composer -- */
 
@@ -464,8 +409,9 @@
   background: var(--piano-1);
   color: var(--text-hi);
   font: inherit;
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: 1.6;
   resize: none;
 }
 .sh-composer-input:focus-visible { outline: none; border-color: var(--edge-accent); box-shadow: var(--focus-ring); }
@@ -487,7 +433,6 @@
     background: var(--glass-fill-strong);
     box-shadow: var(--shadow-float), 0 0 0 1px var(--edge);
   }
-  .sh-home[data-composer="open"] .sh-top { display: none; }
 }
 
 /* ============================================================== call dock -- */
@@ -551,6 +496,18 @@
 .sh-mini-orb[data-visual="error"] { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 0 2px var(--coral); }
 .sh-mini-orb[data-visual="error"] .torb { opacity: .4; }
 
+/* Short phones (360x640): smaller greeting and orb, pill beside the orb, so Talk / Type stay
+   above the dock without scrolling. */
+@media (max-width: 599px) and (max-height: 700px) {
+  .sh-home { --orb: 92px; gap: var(--s-4); }
+  .sh-hero { gap: var(--s-2); }
+  .sh-greet { font-size: 32px; }
+  .sh-status-line { font-size: 1rem; line-height: 1.5; }
+  .sh-trackers { display: none; }
+  .sh-figure { display: flex; align-items: center; justify-content: center; gap: var(--s-3); }
+  .sh-orb-wrap { padding: 8px; }
+}
+
 /* ================================================================ motion -- */
 
 @keyframes sh-spin { to { transform: rotate(360deg); } }
@@ -560,7 +517,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sh-orb, .sh-orb-level, .sh-orb-ring, .sh-orb-core { transition: none; }
-  .sh-orb-ring, .sh-orb-level, .sh-now-mark, .sh-bubble-flag.is-hearing::after, .sh-tracker.is-new { animation: none !important; }
+  .sh-orb-ring, .sh-orb-level, .sh-live-dot, .sh-pill-dot, .sh-row-flag.is-hearing::after, .sh-tracker.is-new { animation: none !important; }
   .sh-orb-level { transform: none; }
-  /* Thinking still reads without motion: a half-lit rim plus the word under the orb. */
+  /* Thinking still reads without motion: a half-lit rim plus the word in the pill. */
 }

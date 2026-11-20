@@ -175,13 +175,56 @@ test("trackers come only from real values; at most four; need drops first", asyn
     { price: 96, unit: null, vendorId: 3, simulated: true });
 });
 
-test("today tiles keep real zeros and leave out what has not loaded", async () => {
-  const { todayTiles, inr } = await load();
-  const t = todayTiles({ toCollect: 0, toPay: 20200, low: null, billsWaiting: 2 });
-  assert.deepEqual(t.map((x) => [x.id, x.value]), [["collect", 0], ["pay", 20200], ["bills", 2]]);
+test("today stats: real counts for today only; a source not loaded is null, never zero", async () => {
+  const { todayStats, inr } = await load();
+  const now = new Date(2026, 10, 20, 15, 0, 0);
+  const iso = (d) => d.toISOString();
+  const todayIso = iso(new Date(2026, 10, 20, 10, 0, 0));
+  const yesterday = iso(new Date(2026, 10, 19, 10, 0, 0));
+  const s = todayStats({
+    now,
+    orders: [{ createdAt: todayIso }, { createdAt: yesterday }, { createdAt: todayIso }],
+    invoices: [{ status: "issued", issuedAt: todayIso }, { status: "pending", createdAt: todayIso }, { status: "paid", issuedAt: yesterday }],
+    receipts: [{ amount: 1200, createdAt: todayIso }, { amount: 50.5, createdAt: todayIso }, { amount: 999, createdAt: yesterday }],
+    items: [{ low: true }, { low: false }, { low: true }],
+  });
+  assert.deepEqual(s.map((x) => [x.id, x.value]), [["orders", 2], ["bills", 1], ["received", 1250.5], ["low", 2]]);
+  assert.deepEqual(s.map((x) => x.tone), ["plain", "plain", "lime", "amber"]);
+  const empty = todayStats({ now, orders: [], invoices: null, receipts: null, items: null });
+  assert.deepEqual(empty.map((x) => x.value), [0, null, null, null], "orders known (0), the rest not loaded");
+  assert.equal(todayStats({ now, ordersReady: false }).find((x) => x.id === "orders").value, null);
   assert.equal(inr(185000), "₹1,85,000");
   assert.equal(inr(55.5), "₹55.5");
   assert.equal(inr(null), "");
+});
+
+test("status line, state pill, turn language, time parsing and the call clock", async () => {
+  const { statusLine, pillKey, turnLang, parseTime, clock, orbView } = await load();
+  assert.deepEqual(statusLine({ orbState: "idle", nowKey: "now.idle", live: false }), { key: "home.status.ready", now: false, talk: true });
+  assert.equal(statusLine({ orbState: "listening", nowKey: "now.searching", live: true }).key, "now.searching", "real work wins");
+  assert.equal(statusLine({ orbState: "listening", nowKey: "now.idle", live: true }).key, "home.status.live");
+  assert.equal(statusLine({ orbState: "blocked", nowKey: "now.idle", live: false }).key, "home.status.trouble");
+  assert.equal(statusLine({ orbState: "offline", nowKey: "now.idle", live: false }).key, "home.status.offline");
+  assert.equal(statusLine({ orbState: "safer", nowKey: "now.idle", live: false }).key, "home.status.connecting");
+  assert.equal(pillKey("listening"), "home.pill.listening");
+  assert.equal(pillKey("first"), "home.pill.ready");
+  assert.equal(pillKey("nonsense"), "home.pill.ready");
+  assert.equal(turnLang({ language: "hi-IN", text: "x" }), "hi");
+  assert.equal(turnLang({ text: "ನನಗೆ ಅಕ್ಕಿ ಬೇಕು" }), "kn");
+  assert.equal(turnLang({ text: "मुझे चावल चाहिए" }), "hi");
+  assert.equal(turnLang({ text: "rice please" }), "en");
+  assert.equal(parseTime("2026-11-20 10:00:00").toISOString(), "2026-11-20T10:00:00.000Z", "SQLite time is UTC");
+  assert.equal(parseTime(1763632800).getTime(), 1763632800000, "seconds");
+  assert.equal(parseTime(""), null);
+  assert.equal(parseTime("nope"), null);
+  assert.equal(clock(65000), "01:05");
+  assert.equal(clock(3723000), "1:02:03");
+  // Every orb state has a pill word (checked against the strings file below).
+  const strings = read("public/js/app/home-strings.js");
+  const states = ["idle", "first", "mic", "connecting", "safer", "waiting", "listening", "yourTurn", "thinking", "speaking", "muted", "working", "reconnecting", "ending", "error", "blocked", "micBlocked", "dropped", "ended", "offline"];
+  for (const st of states) assert.ok(strings.includes(`"${pillKey(st)}": [`), `${st} -> ${pillKey(st)}`);
+  for (const L of ["en", "hi", "kn"]) assert.ok(strings.includes(`"home.lang.${L}": [`));
+  assert.ok(orbView({ status: "idle", online: true }).key);
 });
 
 test("D16: switching to typing never mutes the microphone (call.js)", () => {
@@ -195,7 +238,7 @@ test("D16: switching to typing never mutes the microphone (call.js)", () => {
 test("home strings exist in all three languages, native script", () => {
   const src = read("public/js/app/home-strings.js");
   const used = new Set();
-  for (const f of ["public/js/app/home-model.js", "public/js/app/talk.js", "public/js/app/composer.js", "public/js/app/call-dock.js", "public/js/app/hud.js"]) {
+  for (const f of ["public/js/app/home-model.js", "public/js/app/talk.js", "public/js/app/composer.js", "public/js/app/call-dock.js", "public/js/app/hud.js", "public/js/app/home-strings.js"]) {
     for (const m of read(f).matchAll(/"((?:home|hud)\.[A-Za-z0-9.]+)"/g)) used.add(m[1]);
   }
   for (const k of used) {

@@ -231,21 +231,6 @@ export function bestQuote(quotes, requirementId) {
   return best;
 }
 
-/**
- * Today tiles (idle home, no conversation yet): each value is a real number or the tile is left
- * out (a source not loaded yet is not a zero). 0 shows as 0.
- * input: { toCollect, toPay, low, billsWaiting } (number | null each) -> [{ id, key, value, kind, icon, route }]
- */
-export function todayTiles(d) {
-  const rows = [
-    { id: "collect", key: "home.tile.collect", value: d.toCollect, kind: "money", icon: "moneyIn", route: "#/money" },
-    { id: "pay", key: "home.tile.pay", value: d.toPay, kind: "money", icon: "rupee", route: "#/money" },
-    { id: "low", key: "home.tile.low", value: d.low, kind: "count", icon: "jar", route: "#/stock" },
-    { id: "bills", key: "home.tile.bills", value: d.billsWaiting, kind: "count", icon: "receipt", route: "#/sell" },
-  ];
-  return rows.filter((r) => Number.isFinite(r.value));
-}
-
 /** "₹20,200" / "₹55.5" in Indian grouping. */
 export function inr(v) {
   if (v === null || v === undefined || v === "") return "";
@@ -259,4 +244,81 @@ export function inr(v) {
 export function grouped(v) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n) : "";
+}
+
+/* ------------------------------------------------------------------ v4 home -- */
+
+/** One short state word for the pill under the orb (Stitch 03: READY / LISTENING / THINKING / SPEAKING). */
+const PILL = {
+  idle: "ready", first: "ready", mic: "allowMic", connecting: "connecting", safer: "safer", waiting: "joining",
+  listening: "listening", yourTurn: "yourTurn", thinking: "thinking", speaking: "speaking", muted: "micOff",
+  working: "working", reconnecting: "reconnecting", ending: "ending", error: "failed", blocked: "blocked",
+  micBlocked: "micBlocked", dropped: "dropped", ended: "ended", offline: "offline",
+};
+export function pillKey(state) { return `home.pill.${PILL[state] || "ready"}`; }
+
+/**
+ * The one-line status under the greeting: what Sahay is doing (activity.js nowLine) when there is
+ * work to tell, else a sentence for the call state. `talk: true` marks the sentence that names the
+ * Talk button (the word is drawn in lime).
+ * input: { orbState, nowKey, live } -> { key, now: bool, talk: bool }
+ */
+export function statusLine({ orbState, nowKey, live }) {
+  if (nowKey && nowKey !== "now.idle") return { key: nowKey, now: true, talk: false };
+  if (live) return { key: "home.status.live", now: false, talk: false };
+  if (orbState === "offline") return { key: "home.status.offline", now: false, talk: false };
+  if (["blocked", "error", "micBlocked", "dropped"].includes(orbState)) return { key: "home.status.trouble", now: false, talk: false };
+  if (["mic", "connecting", "safer", "waiting", "reconnecting", "ending"].includes(orbState)) return { key: "home.status.connecting", now: false, talk: false };
+  return { key: "home.status.ready", now: false, talk: true };
+}
+
+/** A transcript timestamp (ms, s, ISO, or SQLite "YYYY-MM-DD HH:MM:SS" in UTC) -> Date | null. */
+export function parseTime(ts) {
+  if (ts === null || ts === undefined || ts === "") return null;
+  if (typeof ts === "number") { const d = new Date(ts < 1e12 ? ts * 1000 : ts); return Number.isNaN(d.getTime()) ? null : d; }
+  let s = String(ts).trim();
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) s = s.replace(" ", "T");
+  if (/^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(s)) s += "Z";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+const ISSUED = new Set(["issued", "part_paid", "paid"]);
+/**
+ * Today's four stat cards (Stitch 03), real numbers only. A source that has not loaded gives null
+ * (the card shows a skeleton), never a made-up zero.
+ * input: { now, orders: [{createdAt}], ordersReady, invoices: [{status, issuedAt, createdAt}] | null,
+ *   receipts: [{amount, createdAt}] | null, items: [{low}] | null }
+ */
+export function todayStats({ now = new Date(), orders = [], ordersReady = true, invoices = null, receipts = null, items = null }) {
+  const today = (ts) => sameDay(parseTime(ts), now);
+  return [
+    { id: "orders", key: "home.stat.orders", kind: "count", tone: "plain", icon: "cart", route: "#/buy",
+      value: ordersReady ? orders.filter((o) => today(o.createdAt)).length : null },
+    { id: "bills", key: "home.stat.bills", kind: "count", tone: "plain", icon: "receipt", route: "#/sell",
+      value: invoices ? invoices.filter((i) => ISSUED.has(i.status) && today(i.issuedAt || i.createdAt)).length : null },
+    { id: "received", key: "home.stat.received", kind: "money", tone: "lime", icon: "moneyIn", route: "#/money",
+      value: receipts ? receipts.filter((r) => today(r.createdAt)).reduce((s, r) => s + (Number(r.amount) || 0), 0) : null },
+    { id: "low", key: "home.stat.low", kind: "count", tone: "amber", icon: "jar", route: "#/stock",
+      value: items ? items.filter((i) => i && i.low === true).length : null },
+  ];
+}
+
+/** The language of a turn for its meta line: the turn's own code ("hi-IN") or its script. -> "en" | "hi" | "kn" */
+export function turnLang(turn) {
+  const code = String((turn && turn.language) || "").slice(0, 2).toLowerCase();
+  if (code === "hi" || code === "kn" || code === "en") return code;
+  const text = String((turn && turn.text) || "");
+  if (/[ಀ-೿]/u.test(text)) return "kn";
+  if (/[ऀ-ॿ]/u.test(text)) return "hi";
+  return "en";
+}
+
+/** "04:05" / "1:02:09" for the call timer. */
+export function clock(ms) {
+  const s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return hh ? `${hh}:${p(mm)}:${p(ss)}` : `${p(mm)}:${p(ss)}`;
 }
