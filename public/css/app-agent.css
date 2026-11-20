@@ -39,27 +39,55 @@
   .sh-home { --orb: 180px; --convo-max: clamp(160px, 34dvh, 420px); min-height: calc(100dvh - 120px); }
 }
 
-/* Laptop: orb + label + now line + controls on the left half, conversation + composer on the
-   right half, Today tiles under both. */
+/* Laptop: the shell's chrome around #main is about 172 px tall (sticky top capsule ~84, #main
+   padding 24 top / 64 bottom), so the home takes the rest of the viewport, so nothing clips at 701 / 768 / 900 px tall.
+   Left: orb + label + now line + controls, centred. Right: the conversation panel at full height
+   (scrolls inside), Today tiles under it when idle, the composer at its foot. */
 @media (min-width: 1024px) {
   .sh-home {
-    --orb: 240px;
-    --convo-max: calc(100dvh - 260px);
+    --orb: clamp(150px, 30dvh, 240px);
+    --home-h: max(460px, calc(100dvh - 190px - var(--safe-t) - var(--safe-b)));
     max-width: var(--content-max);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas: "stage talk" "stage composer" "top top";
+    height: var(--home-h);
+    min-height: 0;
+    padding-block: 0;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    grid-template-areas: "stage talk" "stage top" "stage composer";
     grid-template-rows: minmax(0, 1fr) auto auto;
     align-content: stretch;
     column-gap: var(--s-6);
-    min-height: calc(100dvh - 96px);
+    row-gap: var(--s-3);
   }
-  .sh-stage { justify-content: center; position: sticky; top: var(--s-5); align-self: start; padding-block: var(--s-5); }
-  .sh-orb-wrap { order: 1; }
+  .sh-stage { justify-content: center; min-height: 0; overflow-y: auto; scrollbar-width: none; padding-block: var(--s-2); }
+  .sh-orb-wrap { order: 1; padding: 18px; } /* room for the voice halo and focus ring inside the scroller */
   .sh-orb-label { order: 2; }
   .sh-hud { order: 3; }
-  .sh-talk { display: flex; flex-direction: column; justify-content: flex-end; }
+  /* The conversation panel: a piano surface that fills its row; the list scrolls inside it. */
+  .sh-talk {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+    border: 1px solid transparent;
+    border-radius: var(--r-card);
+    background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
+    box-shadow: var(--shadow-2);
+  }
+  .sh-convo { flex: 1 1 auto; min-height: 0; max-height: none; padding-right: var(--s-2); }
+  .sh-top { min-width: 0; }
+  .sh-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sh-tile { min-height: 84px; }
+  .sh-tile-skel { min-height: 84px; }
 }
-@media (min-width: 1600px) { .sh-home { --orb: 280px; } }
+/* Short laptops: a smaller orb and tighter stage so every control stays on screen. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .sh-home { --orb: clamp(140px, 27dvh, 200px); }
+  .sh-stage { gap: var(--s-2); }
+  .sh-tile, .sh-tile-skel { min-height: 72px; }
+  .sh-tile-num { font-size: var(--fs-h2); }
+}
+@media (min-width: 1600px) and (min-height: 900px) { .sh-home { --orb: 280px; } }
+
 
 /* Phone landscape: orb + controls left (40 %), conversation right. */
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
@@ -360,7 +388,6 @@
 
 .sh-today-title { margin: 0 0 var(--s-2); font-size: var(--fs-h3); font-family: var(--font-display); color: var(--text-hi); }
 .sh-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
-@media (min-width: 1024px) { .sh-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .sh-tile {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
