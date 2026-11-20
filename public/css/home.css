@@ -2,34 +2,65 @@
    borders and hard shadows, HUD labels (uppercase only on English pages, via --hud-case), the pixel
    agent sprite. Tokens only (tokens.css); kit classes from components.css (btn, link-btn, card, list,
    row, tiles, tile, input, note-line, error-line, spinner). Class prefix hm-. No glow, no blur.
-   Owner's layout (live test): laptop = compact top row (sprite, state word, TALK / TYPE; MUTE / END /
-   TYPE during a call) + conversation LEFT and Discovery board RIGHT filling the viewport height, with
-   Needs you + Today below the fold. At 1568x701 the top row (with Mute and End) and both panels are on
-   screen without scrolling. Phone: sprite + Talk / Type, board (when it has content), conversation,
-   Needs you, Today. */
+   Owner's layout:
+   - laptop (>= 1024): ONE screen (100dvh minus the bar, the notice strip and the page's bottom
+     padding; no page scroll at 1568x701, 1440x900, 1920x1080), three equal-height columns:
+     conversation | greeting + mascot + TALK / TYPE + Needs you + Today | Discovery board.
+   - tablet (768-1023): mascot + controls, then conversation | board, then Needs you / Today.
+   - phone: mascot + controls, board (only with content), conversation, Needs you, Today. */
 
-.hm { display: flex; flex-direction: column; gap: var(--s5); }
+/* Phone first: one column; the centre column's parts join the page flow (display: contents). */
+.hm { display: flex; flex-direction: column; gap: var(--s4); }
+.hm-centre { display: contents; }
+.hm-head { order: 1; }
+.hm-figure { order: 2; }
+.hm-actions { order: 3; }
+.hm-board-panel { order: 4; }
+.hm-convo-panel { order: 5; }
+.hm-cards { order: 6; }
+.hm-board-panel[data-empty="true"] { display: none; }
 
-/* ============================================================= top row -- */
-.hm-hero {
-  display: grid; align-items: center; gap: var(--s3) var(--s4);
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas: "fig text" "actions actions" "notes notes";
-}
-.hm-figure { grid-area: fig; }
-.hm-hero-text { grid-area: text; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
-.hm-actions { grid-area: actions; }
-.hm-notes { grid-area: notes; }
-
+/* ============================================ greeting, state, notes -- */
+.hm-head { display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center; min-width: 0; }
 .hm-greet {
   margin: 0; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
   color: var(--muted); max-width: 100%; overflow-wrap: anywhere;
 }
 .hm-greet:focus { outline: none; }
-.hm-assistant { margin: 0; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--muted); }
+.hm-assistant { margin: 0; font-size: var(--fs-label); line-height: var(--lh-meta); color: var(--muted); }
 
-/* The pixel sprite: one 192px cell per state in agent-sheet.png; --cell is the state's index (home.js). */
-.hm-figure { --fig: 144px; flex: none; display: grid; place-items: center; width: var(--fig); height: var(--fig); }
+.hm-state {
+  display: flex; align-items: center; justify-content: center; gap: var(--s2); margin: 0;
+  font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--text);
+}
+.hm-state-dot { flex: none; width: 10px; height: 10px; background: var(--muted); box-shadow: 2px 2px 0 0 var(--deep); }
+.hm-state[data-tone="live"] .hm-state-dot { background: var(--accent); }
+.hm-state[data-tone="warn"] .hm-state-dot { background: var(--warn); }
+.hm-state[data-tone="bad"] .hm-state-dot { background: var(--needs); }
+.hm-state[data-tone="bad"] .hm-state-text { color: var(--needs); }
+.hm-state-text { min-width: 0; overflow-wrap: anywhere; }
+.hm-state .speak-wrap { flex: none; }
+
+/* Recovery notes (blocked network, dropped call, offline, a call open elsewhere). */
+.hm-notes { display: flex; flex-direction: column; gap: var(--s2); width: 100%; text-align: left; }
+.hm-notes[hidden] { display: none; }
+.hm-note {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: start;
+  padding: var(--s3); border: 0; border-radius: 0; background: var(--surface); box-shadow: var(--pixel-edge), var(--shadow);
+}
+.hm-note > svg { margin-top: 2px; color: var(--muted); }
+.hm-note[data-tone="bad"] { box-shadow: 0 0 0 2px var(--needs), var(--shadow); }
+.hm-note[data-tone="bad"] > svg { color: var(--needs); }
+.hm-note[data-tone="warn"] > svg { color: var(--warn); }
+.hm-note[data-tone="calm"] > svg { color: var(--good); }
+.hm-note[data-tone="info"] > svg { color: var(--info); }
+.hm-note-title { margin: 0; font-weight: 700; }
+.hm-note-text { margin: 2px 0 0; font-size: var(--fs-label); color: var(--muted); line-height: 1.5; }
+.hm-note-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
+
+/* ================================================================ mascot -- */
+/* One 192px cell per state in agent-sheet.png; --cell is the state's index (home.js). */
+.hm-figure { --fig: 144px; flex: none; align-self: center; display: grid; place-items: center; width: var(--fig); height: var(--fig); }
 .hm-agent {
   --cell: 0;
   display: block; width: var(--fig); height: var(--fig);
@@ -45,59 +76,22 @@
 }
 @keyframes hm-bob { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 
-.hm-state {
-  display: flex; align-items: center; gap: var(--s2); margin: 0; text-align: left;
-  font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--text);
-}
-.hm-state-dot { flex: none; width: 10px; height: 10px; background: var(--muted); box-shadow: 2px 2px 0 0 var(--deep); }
-.hm-state[data-tone="live"] .hm-state-dot { background: var(--accent); }
-.hm-state[data-tone="warn"] .hm-state-dot { background: var(--warn); }
-.hm-state[data-tone="bad"] .hm-state-dot { background: var(--needs); }
-.hm-state[data-tone="bad"] .hm-state-text { color: var(--needs); }
-.hm-state-text { min-width: 0; overflow-wrap: anywhere; }
-.hm-state .speak-wrap { flex: none; }
-
-/* TALK / TYPE in one row; during a call MUTE / END (red) / TYPE. */
-.hm-actions { display: flex; flex-wrap: nowrap; gap: var(--s3); min-width: 0; }
-.hm-actions .btn { flex: 1 1 0; min-width: 0; }
+/* TALK / TYPE in one row under the mascot; during a call MUTE / END (red) / TYPE. */
+.hm-actions { display: flex; flex-wrap: nowrap; gap: var(--s2); width: 100%; min-width: 0; }
+.hm-actions .btn { flex: 1 1 0; min-width: 0; padding-inline: 12px; }
 .hm-actions .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hm-talk { flex-grow: 1.6; }
+.hm-talk { flex-grow: 1.7; }
 .hm-mute.is-off { color: var(--warn); }
 
-/* Recovery notes (blocked network, dropped call, offline, a call open elsewhere). */
-.hm-notes { display: flex; flex-direction: column; gap: var(--s2); width: 100%; text-align: left; }
-.hm-notes[hidden] { display: none; }
-.hm-note {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: start;
-  padding: var(--s3) var(--s4); border: 0; border-radius: 0; background: var(--surface); box-shadow: var(--pixel-edge), var(--shadow);
-}
-.hm-note > svg { margin-top: 2px; color: var(--muted); }
-.hm-note[data-tone="bad"] { box-shadow: 0 0 0 2px var(--needs), var(--shadow); }
-.hm-note[data-tone="bad"] > svg { color: var(--needs); }
-.hm-note[data-tone="warn"] > svg { color: var(--warn); }
-.hm-note[data-tone="calm"] > svg { color: var(--good); }
-.hm-note[data-tone="info"] > svg { color: var(--info); }
-.hm-note-title { margin: 0; font-weight: 700; }
-.hm-note-text { margin: 2px 0 0; font-size: var(--fs-label); color: var(--muted); line-height: 1.5; }
-.hm-note-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
-
 /* ============================================ conversation + board panels -- */
-.hm-main { display: contents; }
 .hm-panel {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   padding: var(--s4); background: var(--surface); box-shadow: var(--pixel-edge), var(--shadow);
 }
-.hm-panel-head { display: flex; align-items: center; gap: var(--s2); padding-bottom: var(--s3); margin-bottom: var(--s3); border-bottom: 2px solid var(--line); }
+.hm-panel-head { flex: none; display: flex; align-items: center; gap: var(--s2); padding-bottom: var(--s2); margin-bottom: var(--s3); border-bottom: 2px solid var(--line); }
 .hm-panel-title { margin: 0; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--text); }
 .hm-live-dot { flex: none; width: 10px; height: 10px; background: var(--muted); box-shadow: 2px 2px 0 0 var(--deep); }
 .hm-convo-panel[data-live="true"] .hm-live-dot { background: var(--accent); }
-
-/* Phone order: top row, board (only with content), conversation, Needs you + Today. */
-.hm-hero { order: 1; }
-.hm-board-panel { order: 2; }
-.hm-convo-panel { order: 3; }
-.hm-cards { order: 4; }
-.hm-board-panel[data-empty="true"] { display: none; }
 
 /* The conversation: every turn, scrolls, newest at the bottom; "jump to latest" when scrolled up. */
 .hm-convo-scroll { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -106,7 +100,7 @@
   display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0 var(--s2) var(--s2) 0; list-style: none;
 }
 .hm-convo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.hm-turn { display: grid; grid-template-columns: 72px minmax(0, 1fr); column-gap: var(--s3); row-gap: 2px; }
+.hm-turn { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: var(--s3); row-gap: 2px; }
 .hm-who { grid-row: span 3; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--muted); padding-top: 3px; }
 .hm-turn.is-agent .hm-who { color: var(--accent); }
 .hm-said { margin: 0; line-height: var(--lh); overflow-wrap: anywhere; }
@@ -119,7 +113,7 @@
 .hm-jump[hidden] { display: none; }
 
 /* The typed input sits at the foot of the conversation. */
-.hm-composer { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); padding-top: var(--s3); border-top: 2px solid var(--line); text-align: left; }
+.hm-composer { flex: none; display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); padding-top: var(--s3); border-top: 2px solid var(--line); text-align: left; }
 .hm-composer[hidden] { display: none; }
 .hm-composer-row { display: flex; gap: var(--s2); }
 .hm-input { flex: 1 1 auto; min-width: 0; }
@@ -136,12 +130,11 @@
 .hm-board-art { display: block; width: 120px; height: 120px; background: url("/art/step-2-finds-sellers.png") center / 120px 120px no-repeat; image-rendering: pixelated; }
 .hm-board-empty-text { margin: 0; max-width: 34ch; color: var(--muted); }
 
-/* ============================================================ the cards -- */
-.hm-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); width: 100%; }
-@media (min-width: 900px) { .hm-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+/* ======================================================= Needs you, Today -- */
+.hm-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); width: 100%; min-width: 0; }
 .hm-card { min-width: 0; }
 
-/* Needs you: [icon] [what + who] [amount] [Check]; the whole row opens the Yes card. */
+/* Needs you: [icon] [what + who] [amount over Check]; the whole row opens the Yes card. */
 .hm-needs-list { margin: 0 calc(-1 * var(--s4)); }
 .hm-need { align-items: center; }
 .hm-need .row-title, .hm-need .row-sub { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
@@ -164,8 +157,6 @@
 
 /* ================================================================ phone -- */
 @media (max-width: 767px) {
-  .hm-actions[data-count="3"] { gap: var(--s2); }
-  .hm-actions[data-count="3"] .btn { padding-inline: 10px; }
   .hm-tile { min-height: 96px; }
   /* Needs-you row wraps: what on line 1, who on line 2, amount + Check on line 3 at the right. */
   .hm-need { flex-wrap: wrap; }
@@ -175,33 +166,62 @@
 /* Narrow phones: Today tile words stay whole ("Low stock" fits a 79px slot). */
 @media (max-width: 599px) { .hm-tile-word { font-size: 12px; letter-spacing: .04em; } }
 
-/* =============================================================== laptop -- */
-/* One compact row on top, then conversation (left) and Discovery board (right) filling the rest of
-   the viewport: the shell above #main takes about 112px (top bar + page padding), the top row about
-   112px, the gap 24px; about 40px stays free below so nothing scrolls at 1568x701. */
-@media (min-width: 1024px) {
-  .hm-hero {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: "fig text actions" "notes notes notes";
-    column-gap: var(--s5);
+/* =============================================================== tablet -- */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .hm {
+    display: grid; gap: var(--s4);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "head head" "fig fig" "actions actions" "convo board" "cards cards";
   }
-  .hm-figure { --fig: 96px; }
-  .hm-actions .btn { flex: 0 0 auto; }
-  .hm-talk { min-width: 240px; }
-  .hm-main {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s5); order: 2;
-    height: max(340px, calc(100dvh - 300px - var(--safe-t) - var(--safe-b)));
-  }
-  .hm-main > .hm-panel { order: 0; height: 100%; }
-  .hm-board-panel[data-empty="true"] { display: flex; }
+  .hm-head { grid-area: head; }
+  .hm-figure { grid-area: fig; justify-self: center; }
+  .hm-actions { grid-area: actions; max-width: 520px; justify-self: center; }
+  .hm-convo-panel { grid-area: convo; height: 60dvh; }
+  .hm-board-panel, .hm-board-panel[data-empty="true"] { grid-area: board; display: flex; height: 60dvh; }
+  .hm-cards { grid-area: cards; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
   .hm-convo { max-height: none; }
-  .hm-cards { order: 3; }
+}
+
+/* =============================================================== laptop -- */
+/* One screen: the bar (66px) and the notice strip (26px) are above #main, the page keeps 48px of
+   bottom padding, so the three columns get 100dvh - 140px and nothing scrolls the page. */
+@media (min-width: 1024px) {
+  .hm {
+    display: grid; gap: 20px; align-items: stretch;
+    grid-template-columns: minmax(300px, 1fr) minmax(320px, .9fr) minmax(320px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    height: max(480px, calc(100dvh - 140px - var(--safe-t) - var(--safe-b)));
+  }
+  .hm-convo-panel, .hm-board-panel, .hm-board-panel[data-empty="true"] { display: flex; order: 0; height: 100%; }
+  .hm-convo-panel { grid-column: 1; }
+  .hm-board-panel { grid-column: 3; }
+  .hm-convo { max-height: none; }
+
+  /* The centre column: head, mascot, controls, then compact Needs you and Today; it scrolls by
+     itself only when many decisions wait. */
+  .hm-centre {
+    grid-column: 2; display: flex; flex-direction: column; align-items: stretch; gap: var(--s3);
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 6px; scrollbar-width: thin;
+  }
+  .hm-centre > * { order: 0; flex: none; }
+  .hm-figure { align-self: center; }
+
+  /* Compact cards for the centre column. */
+  .hm-card { padding: var(--s3) var(--s4); gap: var(--s2); }
+  .hm-card .card-title { font-size: 1.5rem; line-height: 1.05; }
+  .hm-card .card-head { margin-bottom: 0; }
+  .hm-tiles { gap: 10px; }
+  .hm-tile { min-height: 64px; padding: 10px 12px; gap: 4px; }
+  .hm-tile .tile-value { font-size: 1.75rem; }
+  .hm-tile-word { font-size: 12px; letter-spacing: .04em; }
+  .hm-need { min-height: 56px; padding: 8px var(--s4); gap: 10px; }
+  .hm-need .row-ico { width: 36px; height: 36px; }
+  .hm-need-end { flex-direction: column; align-items: flex-end; gap: 4px; }
+  .hm-need-end .amount { font-size: 1.125rem; }
 }
 @media (min-width: 1024px) and (max-height: 760px) {
-  .hm { gap: var(--s4); }
-  .hm-panel { padding: var(--s3) var(--s4); }
-  .hm-panel-head { padding-bottom: var(--s2); margin-bottom: var(--s2); }
-  .hm-main { height: max(320px, calc(100dvh - 276px - var(--safe-t) - var(--safe-b))); }
-  .hm-card { padding: 20px; }
-  .hm-tile { min-height: 80px; padding: 12px; }
+  .hm-centre { gap: var(--s2); }
+  .hm-actions .btn { min-height: 56px; }
+  .hm-tile { min-height: 58px; padding: 8px 10px; }
+  .hm-tile .tile-value { font-size: 1.5rem; }
 }

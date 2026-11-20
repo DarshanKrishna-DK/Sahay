@@ -1,10 +1,11 @@
 // Home (#/home; #/sahay, #/talk and the empty route are aliases). UI v7, owner's layout (live test):
-//   laptop (>= 1024): one compact top row (pixel agent sprite + state word + greeting | TALK / TYPE),
-//   then a two-column main area filling the viewport height: LEFT the conversation (always there,
-//   scrolls, newest at the bottom, "jump to latest", the typed input at its foot), RIGHT the
-//   Discovery board (W4A's createDiscoveryBoard() from discovery.js; an empty board until Sahay
-//   publishes sellers and deals). Below the fold: Needs you + Today.
-//   phone: sprite + Talk / Type, the board (only when it has something), the conversation, Needs you, Today.
+//   laptop (>= 1024): ONE screen, no page scroll, three equal-height columns: LEFT the conversation
+//   (scrolls, newest at the bottom, "jump to latest", the typed input at its foot); CENTRE the
+//   greeting + state word + assistant line, the pixel mascot, TALK / TYPE (MUTE / END / TYPE in a
+//   call), then compact Needs you and Today; RIGHT the Discovery board (W4A's createDiscoveryBoard()
+//   from discovery.js; an empty board until Sahay publishes sellers and deals).
+//   tablet: mascot + controls, conversation | board, Needs you / Today.
+//   phone: mascot + controls, the board (only when it has something), conversation, Needs you, Today.
 // Behaviour kept: the call contract (call.js / voice.js), drop and blocked-network recovery, typing
 // during a call never mutes the mic (D16), a typed yes never approves, read-aloud of "now".
 // Logic is in home-model.js (tested without a DOM).
@@ -52,10 +53,13 @@ function preloadAgent() {
     preloaded.push(img);
   }
 }
-const FIG_QUERIES = ["(max-width: 767px)", "(max-height: 700px)"];
+const FIG_QUERIES = ["(max-width: 767px)", "(max-width: 1023px)", "(max-height: 700px)", "(max-height: 760px)", "(max-height: 900px)"];
 function figureSize() {
-  if (matchMedia("(max-width: 767px)").matches) return matchMedia("(max-height: 700px)").matches ? 120 : 144;
-  return 96;
+  const mq = (q) => matchMedia(q).matches;
+  if (mq("(max-width: 767px)")) return mq("(max-height: 700px)") ? 120 : 144;
+  if (mq("(max-width: 1023px)")) return 144;
+  // Laptop: the mascot sits in the centre column of a one-screen layout.
+  return mq("(max-height: 760px)") ? 120 : mq("(max-height: 900px)") ? 144 : 168;
 }
 function createFigure() {
   preloadAgent();
@@ -140,11 +144,9 @@ export function createHome() {
   const assistant = h("p", { class: "hm-assistant" });
   const actions = h("div", { class: "hm-actions", role: "group" });
   const notes = h("div", { class: "hm-notes", hidden: true });
-  const hero = h("section", { class: "hm-hero", "aria-labelledby": "hm-title" },
-    figure.el,
-    h("div", { class: "hm-hero-text" }, greet, word, assistant),
-    actions,
-    notes);
+  // Centre column: greeting + state word + assistant line (+ recovery notes) above the mascot,
+  // TALK / TYPE (MUTE / END / TYPE in a call) under it, then Needs you and Today.
+  const head = h("header", { class: "hm-head" }, greet, word, assistant, notes);
 
   /* ---- conversation panel (always there) ---- */
   const convoTitle = h("h2", { class: "hm-panel-title", id: "hm-convo-title" });
@@ -163,14 +165,16 @@ export function createHome() {
   const boardSlot = createBoardSlot((isEmpty) => { boardPanel.dataset.empty = String(isEmpty); });
   boardPanel.append(h("header", { class: "hm-panel-head" }, boardTitle), boardSlot.el);
 
-  const main = h("div", { class: "hm-main" }, convoPanel, boardPanel);
+  const centre = h("section", { class: "hm-centre", "aria-labelledby": "hm-title" });
 
   /* ---- Needs you + Today (below the fold) ---- */
   const needsBody = h("div", { class: "hm-needs" });
   const todayBody = h("div", { class: "hm-today" });
   const cards = h("div", { class: "hm-cards" });
 
-  el.append(hero, main, cards);
+  centre.append(head, figure.el, actions, cards);
+  // Laptop: three columns, conversation | mascot + controls + Needs you + Today | Discovery board.
+  el.append(convoPanel, centre, boardPanel);
 
   let failedText = null;
   let typedYes = false;
