@@ -229,12 +229,13 @@ export function turnLang(turn) {
 /* ------------------------------------------------------------------- v5 home -- */
 
 /**
- * The agent figure's state (voicebox.js: idle | listening | thinking | speaking | waiting | trouble)
- * from orbView(). `waitingYes` > 0 shows "waiting for your yes" while nobody is talking.
+ * The agent sprite's state (public/art/agent-<state>.png: idle | listening | thinking | speaking |
+ * waiting | trouble) from orbView(). Connecting is "thinking"; a safer route, no internet, a voice
+ * error or a dropped call is "trouble". `waitingYes` > 0 shows "waiting" while nobody is talking.
  */
 export function boxState(view, waitingYes = 0) {
   if (!view) return "idle";
-  if (view.visual === "error") return "trouble";
+  if (view.visual === "error" || view.state === "safer") return "trouble";
   if (view.visual === "speaking") return "speaking";
   if (view.visual === "thinking") return "thinking";
   if (view.visual === "listening") return view.state === "muted" ? (waitingYes > 0 ? "waiting" : "idle") : "listening";

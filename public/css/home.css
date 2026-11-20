@@ -1,6 +1,7 @@
-/* Home (#/home). Owner: W2 (home.js). UI v5, screens.md section 4 (01 laptop, 02 phone).
-   Tokens only (tokens.css); kit classes from components.css (btn, link-btn, card, list, row, tiles, tile,
-   input, note-line, error-line, spinner). Class prefix hm-. Calm: no glow, no blur, no uppercase.
+/* Home (#/home). Owner: W2 (home.js). UI v7 (yugaantar.org look, Sahay-themed): square, pixel
+   borders and hard shadows, HUD labels (uppercase only on English pages, via --hud-case), the pixel
+   agent sprite. Tokens only (tokens.css); kit classes from components.css (btn, link-btn, card, list,
+   row, tiles, tile, input, note-line, error-line, spinner). Class prefix hm-. No glow, no blur.
    Must fit 1568x701 without scrolling (laptop) and keep the figure + Talk above the tab bar at
    390x844 and 360x640 (phone). */
 
@@ -12,24 +13,35 @@
   width: 100%; max-width: 560px; margin: 0 auto;
 }
 .hm-greet {
-  margin: 0; font-size: .9375rem; font-weight: 600; line-height: var(--lh-label); color: var(--muted);
-  max-width: 100%; overflow-wrap: anywhere;
+  margin: 0; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
+  color: var(--muted); max-width: 100%; overflow-wrap: anywhere;
 }
 .hm-greet:focus { outline: none; }
 
 /* The figure with its state word beside it. */
 .hm-figure-row { display: flex; align-items: center; justify-content: center; gap: var(--s4); margin-top: var(--s3); }
 .hm-figure { --fig: 168px; flex: none; display: grid; place-items: center; width: var(--fig); height: var(--fig); }
-/* The voice box fills its box even if its own stylesheet is late. */
-.hm-figure > .vbx { width: var(--fig) !important; height: var(--fig) !important; }
-.hm-figure .vbx-svg { display: block; width: 100%; height: 100%; }
-.hm-figure-blank { display: block; width: 100%; height: 100%; }
+/* One 192px cell per state in agent-sheet.png; --cell is the state's index (home.js). */
+.hm-agent {
+  --cell: 0;
+  display: block; width: var(--fig); height: var(--fig);
+  background-image: url("/art/agent-sheet.png");
+  background-repeat: no-repeat;
+  background-size: calc(var(--fig) * 6) var(--fig);
+  background-position: calc(var(--fig) * var(--cell) * -1) 0;
+  image-rendering: pixelated;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hm-agent { animation: hm-bob 1.2s steps(1, end) infinite; }
+  .hm-agent[data-state="thinking"], .hm-agent[data-state="speaking"], .hm-agent[data-state="listening"] { animation-duration: .8s; }
+}
+@keyframes hm-bob { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 .hm-state {
   display: flex; align-items: center; gap: var(--s2); margin: 0; max-width: 220px; text-align: left;
-  font-size: var(--fs-body); font-weight: 600; line-height: 1.4; color: var(--text);
+  font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--text);
 }
-.hm-state-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
-.hm-state[data-tone="live"] .hm-state-dot { background: var(--pink); }
+.hm-state-dot { flex: none; width: 10px; height: 10px; background: var(--muted); box-shadow: 2px 2px 0 0 var(--deep); }
+.hm-state[data-tone="live"] .hm-state-dot { background: var(--accent); }
 .hm-state[data-tone="warn"] .hm-state-dot { background: var(--warn); }
 .hm-state[data-tone="bad"] .hm-state-dot { background: var(--needs); }
 .hm-state[data-tone="bad"] .hm-state-text { color: var(--needs); }
@@ -45,7 +57,7 @@
 .hm-actions[data-count="2"] .btn { flex: 1 1 0; max-width: 240px; }
 .hm-mute.is-off { color: var(--warn); }
 
-.hm-type { margin-top: var(--s1); color: var(--muted); font-size: var(--fs-label); font-weight: 600; }
+.hm-type { margin-top: var(--s1); color: var(--muted); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
 .hm-type[hidden] { display: none; }
 .hm-assistant { margin: 0; font-size: var(--fs-meta); line-height: var(--lh-meta); color: var(--muted); }
 
@@ -65,10 +77,10 @@
 .hm-notes[hidden] { display: none; }
 .hm-note {
   display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: start;
-  padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r-input); background: var(--surface);
+  padding: var(--s3) var(--s4); border: 0; border-radius: 0; background: var(--surface); box-shadow: var(--pixel-edge), var(--shadow);
 }
 .hm-note > svg { margin-top: 2px; color: var(--muted); }
-.hm-note[data-tone="bad"] { border-color: rgba(238, 142, 130, .45); }
+.hm-note[data-tone="bad"] { box-shadow: 0 0 0 2px var(--needs), var(--shadow); }
 .hm-note[data-tone="bad"] > svg { color: var(--needs); }
 .hm-note[data-tone="warn"] > svg { color: var(--warn); }
 .hm-note[data-tone="calm"] > svg { color: var(--good); }
@@ -82,8 +94,8 @@
 .hm-convo-wrap[hidden] { display: none; }
 .hm-convo { display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0; list-style: none; max-height: 40dvh; overflow-y: auto; overscroll-behavior: contain; }
 .hm-turn { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: var(--s3); row-gap: 2px; }
-.hm-who { grid-row: span 2; font-size: var(--fs-label); font-weight: 700; color: var(--muted); padding-top: 2px; }
-.hm-turn.is-agent .hm-who { color: var(--pink); }
+.hm-who { grid-row: span 2; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--muted); padding-top: 2px; }
+.hm-turn.is-agent .hm-who { color: var(--accent); }
 .hm-said { margin: 0; line-height: var(--lh); overflow-wrap: anywhere; }
 .hm-said:lang(hi), .hm-said:lang(kn) { line-height: var(--lh-indic); }
 .hm-turn.is-live .hm-said { color: var(--muted); }

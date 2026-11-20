@@ -1,5 +1,5 @@
 // Home (#/home; #/sahay, #/talk and the empty route are aliases). UI v5, screens.md section 4 (01, 02).
-// Calm and simple, one column: a time-of-day greeting, the agent figure (voicebox.js) with its state
+// Calm and simple, one column: a time-of-day greeting, the pixel agent sprite (public/art) with its state
 // word, one big pink "Talk to Sahay" (Mute / End during a call, End red), "Type instead" (a one-line
 // input in place), the automated-assistant line; the conversation only during or just after a call
 // or after typing; then two cards: "Needs you" (up to 3 rows, "Check" opens the Yes card) and "Today"
@@ -15,8 +15,7 @@ import { state } from "./store.js";
 import { sell, stock, loadSell, loadStock } from "./store-sell.js";
 // yes.js is imported here directly so Home never depends on boot order (W3 owns the decisions).
 import { needsRows, onNeedsRows, openNeeds, onCount, typedYesHint } from "./yes.js";
-import { createVoicebox } from "./voicebox.js";
-import { call, inCall, busy, startCall, endCall, setMuted, sendText, textSupported, resumeAudio, endServerCall, onLevels } from "./call.js";
+import { call, inCall, busy, startCall, endCall, setMuted, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { runningJobs, nowLine } from "./activity.js";
 import { speakButton } from "./speak.js";
 import {
@@ -33,50 +32,45 @@ const online = () => navigator.onLine !== false;
 const MAX_TEXT = 500;
 
 /**
- * The agent figure (voicebox.js), the hero of Home: 168px on laptops, 144px on phones, 120px on
- * short phones. If its art cannot load, the box keeps its size (empty) and the console says why.
+ * The agent figure: the pixel helper sprite (public/art/agent-*.png, README there), one 192px cell
+ * per state in agent-sheet.png (idle, listening, thinking, speaking, waiting, trouble). Shown at
+ * 168px on laptops, 144px on phones, 120px on short phones with pixelated scaling (home.css). The
+ * sheet is one image, preloaded with the six single frames, so a state change never flashes; a
+ * gentle two-step bob runs only when motion is allowed (CSS, still under reduced motion).
  */
+const AGENT_STATES = ["idle", "listening", "thinking", "speaking", "waiting", "trouble"];
+const AGENT_SHEET = "/art/agent-sheet.png";
+const preloaded = [];
+function preloadAgent() {
+  if (preloaded.length || typeof Image !== "function") return;
+  for (const src of [AGENT_SHEET, ...AGENT_STATES.map((st) => `/art/agent-${st}.png`)]) {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = src;
+    preloaded.push(img);
+  }
+}
 const FIG_QUERIES = ["(max-width: 767px)", "(max-height: 700px)"];
 function figureSize() {
   if (matchMedia("(max-width: 767px)").matches) return matchMedia("(max-height: 700px)").matches ? 120 : 144;
   return 168;
 }
 function createFigure() {
-  const host = h("div", { class: "hm-figure" });
-  let box = null;
-  let size = 0;
-  let current = "idle";
-  function mount() {
-    const want = figureSize();
-    if (want === size && box) return;
-    size = want;
-    host.style.setProperty("--fig", `${size}px`);
-    if (box) { try { box.destroy(); } catch { /* gone */ } box = null; }
-    try {
-      box = createVoicebox({ size, label: t("home.figure") });
-      host.replaceChildren(box.el);
-      box.setState(current);
-      box.ready.then(() => { host.dataset.load = "ready"; }, (err) => {
-        host.dataset.load = "error";
-        console.warn("Home: the voice box art did not load", err);
-      });
-    } catch (err) {
-      host.dataset.load = "error";
-      host.replaceChildren(h("span", { class: "hm-figure-blank" }));
-      console.warn("Home: the voice box could not be made", err);
-    }
-  }
-  for (const q of FIG_QUERIES) matchMedia(q).addEventListener("change", mount);
-  mount();
+  preloadAgent();
+  const sprite = h("span", { class: "hm-agent", role: "img", dataset: { state: "idle" } });
+  const host = h("div", { class: "hm-figure", dataset: { state: "idle" } }, sprite);
+  const size = () => host.style.setProperty("--fig", `${figureSize()}px`);
+  for (const q of FIG_QUERIES) matchMedia(q).addEventListener("change", size);
+  size();
   return {
     el: host,
     set(st) {
-      current = st;
-      host.dataset.state = st;
-      if (box) { try { box.setState(st); } catch (err) { console.warn(err); } }
+      const next = AGENT_STATES.includes(st) ? st : "idle";
+      host.dataset.state = next;
+      sprite.dataset.state = next;
+      sprite.style.setProperty("--cell", String(AGENT_STATES.indexOf(next)));
     },
-    level(n) { if (box) box.setLevel(n); },
-    relabel() { if (box && box.el) box.el.setAttribute("aria-label", t("home.figure")); },
+    relabel(label) { sprite.setAttribute("aria-label", label); },
   };
 }
 
@@ -194,6 +188,7 @@ export function createHome() {
       w.now ? speakButton("now", { size: "sm" }) : null,
     ]);
     word.dataset.tone = w.tone;
+    figure.relabel(`${t("home.figure")}: ${text}`);
     el.dataset.state = v.state;
   }
 
@@ -359,7 +354,7 @@ export function createHome() {
     const all = parts.has("all") || parts.has("lang");
     if (all) { fill(cards); needsBody.__key = null; todayBody.__key = null; convo.__key = null; }
     const v = view();
-    if (all || parts.has("business")) { renderGreeting(); figure.relabel(); }
+    if (all || parts.has("business")) renderGreeting();
     renderState(v);
     if (all || parts.has("call") || parts.has("business") || parts.has("agent")) { renderActions(); renderNotes(); renderComposer(); }
     if (all || parts.has("call") || parts.has("transcript") || parts.has("business")) renderConvo();
@@ -367,15 +362,6 @@ export function createHome() {
     el.dataset.live = String(inCall());
   }
 
-  // The figure's level follows the live voice: the owner's mic while listening, Sahay's voice while speaking.
-  let raf = 0;
-  let pending = 0;
-  onLevels(({ mic, agent }) => {
-    const st = call.agentState;
-    pending = st === "speaking" ? Math.min(1, agent * 1.4) : st === "listening" && !call.muted ? Math.min(1, mic * 1.6) : 0;
-    if (raf) return;
-    raf = requestAnimationFrame(() => { raf = 0; figure.level(pending); });
-  });
   for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
   // "Type" from elsewhere (sahay:compose) opens the input here.
   document.addEventListener("sahay:compose", () => { if (!/^#\/(home|sahay|talk)?$/.test(location.hash || "")) location.hash = "#/home"; requestAnimationFrame(() => setComposer(true, true)); });

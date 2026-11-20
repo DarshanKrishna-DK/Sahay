@@ -185,6 +185,8 @@ test("figure state, state word and greeting follow the call and the waiting deci
   assert.equal(boxState(v({ status: "live", agentState: "thinking" })), "thinking");
   assert.equal(boxState(v({ status: "live", agentState: "speaking" }), 1), "speaking", "speaking wins over waiting");
   assert.equal(boxState(v({ status: "connecting" })), "thinking");
+  assert.equal(boxState(v({ status: "connecting", route: "proxy" })), "trouble", "a safer route shows trouble");
+  assert.equal(boxState(v({ status: "waiting" })), "thinking", "Sahay joining is thinking");
   assert.equal(boxState(v({ status: "error", error: { code: "network_blocked" } })), "trouble");
   assert.equal(boxState(v({ ended: { reason: "dropped" } })), "trouble");
   assert.equal(boxState(v({ online: false })), "trouble");
