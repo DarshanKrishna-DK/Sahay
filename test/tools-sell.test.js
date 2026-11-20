@@ -117,8 +117,9 @@ test("no bill on a typed yes, an unclear reply, or off a call", async (t) => {
 
   call.owner("yes", "message");
   await assert.rejects(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), (e) => ["TYPED_ANSWER", "NO_ANSWER_YET"].includes(e.code) && Boolean(e.say));
+  // Security review r2 #3: the typed reply came first, so no later spoken words answer this read-back.
   call.owner("yes but only one kilo?");
-  await refused(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), "NOT_AFFIRMATIVE");
+  await refused(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), "TYPED_ANSWER");
   await refused(registry.callTool({ ...ctx, agentId: null }, "confirm_invoice", { decision: "approve" }), "NO_VOICE_EVIDENCE");
   assert.equal(invoices.get(biz, drafted.invoiceId).status, "pending");
   assert.equal(stock.onHand(biz, rice.id), 0);
@@ -233,4 +234,28 @@ test("E2E full run bug 5a: 'add a customer' saves the name alone; the phone is o
   assert.equal(out.saved, true);
   assert.equal(out.customer.phone, null);
   assert.equal(out.say, "रमेश ट्रेडर्स ग्राहक के रूप में जोड़ लिया।");
+});
+
+test("security review r2 #3: a yes after a maybe gets the bill read out again; the next yes issues it", async (t) => {
+  const biz = shop("en-IN");
+  const ctx = ctxFor(biz, "AG-R");
+  const call = fakeCall(t);
+  items.upsert(biz, { name: "toor dal", unit: "kg", sale_price: 120 });
+  settings.save(biz, { gst_scheme: "composition" });
+  call.owner("Lakshmi took 2 kg toor dal");
+  const drafted = await registry.callTool(ctx, "draft_invoice", { customer: "Lakshmi", lines: [{ item: "toor dal", quantity: 2 }] });
+  await registry.callTool(ctx, "request_invoice_approval", {});
+  const readback = call.spoken.at(-1);
+
+  call.owner("maybe");
+  await refused(registry.callTool(ctx, "confirm_invoice", { decision: "approve" }), "NOT_AFFIRMATIVE");
+  call.owner("yes");
+  const again = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["asked", true, "NOT_AFFIRMATIVE", "Shall I make the bill, yes or no?"]);
+  assert.equal(call.spoken.at(-1), readback, "the same bill, read out again by the server");
+  assert.equal(invoices.get(biz, drafted.invoiceId).status, "pending");
+
+  call.owner("yes");
+  const done = await registry.callTool(ctx, "confirm_invoice", { decision: "approve" });
+  assert.equal(done.status, "issued");
 });

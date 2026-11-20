@@ -510,10 +510,96 @@ test("any table of server-spoken questions (name *_readbacks with spoken_text) i
   const approval = putToOwner(businessId, seedQuote(businessId));
   db.prepare("INSERT INTO probe_readbacks VALUES (?, ?, ?, ?, ?)").run("prb_1", businessId, "AG1", "यह नया सवाल है?", new Date().toISOString());
   assert.throws(() => voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said("यह नया सवाल है?", 20), asr("हाँ", 30)]), refuses("READBACK_SUPERSEDED"));
-  // Another business's questions are not this call's.
+  // Since security review r2 #3 any server line in between supersedes the read-back, even one that is
+  // no question of this business at all; with nothing in between the yes still answers it.
   const other = seedBusiness();
   const theirs = "उनका सवाल?";
   itemTaxAsked(other, theirs);
-  assert.equal(voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said(theirs, 20), asr("हाँ", 30)]).status, "approved");
+  assert.throws(() => voice(businessId, approval, [...heard(approval.readback, { from: 10 }), said(theirs, 20), asr("हाँ", 30)]), refuses("READBACK_SUPERSEDED"));
+  assert.equal(voice(businessId, approval, [...heard(approval.readback, { from: 10 }), asr("हाँ", 30)]).status, "approved");
   db.getDb().exec("DROP TABLE probe_readbacks");
+});
+
+/* ----------- security review r2 #3: the yes is the FIRST answer after the read-back, nothing between --- */
+
+/** Agora /history items the brain adds around an MCP tool call (agora-findings section 10). */
+const toolCall = (name, id, turn_id) => ({ role: "assistant", tool_calls: [{ id, name: `sahay__${name}`, arguments: {} }], metadata: {}, turn_id });
+const toolResult = (id, turn_id) => ({ role: "tool", tool_call_id: id, content: "[{\"type\":\"text\",\"text\":\"{}\"}]", metadata: {}, turn_id });
+
+test("security review r2 #3 PoC: a yes to a different question the model asked never approves the deal", () => {
+  const businessId = seedBusiness({ language: "en-IN" });
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const readback = heard(approval.readback, { from: 10 });
+  // The reviewer's history: the model asks its own question in between, the owner answers that one.
+  const poc = [
+    ...readback,
+    said("Shall I confirm this order?", 20, "llm"),
+    asr("wait, what about the other vendor", 21),
+    said("Shall I start a negotiation with the other vendor too?", 22, "llm"),
+    asr("yes", 23),
+  ];
+  assert.throws(() => voice(businessId, approval, poc), (err) => err instanceof approvals.ApprovalError && ["READBACK_SUPERSEDED", "NOT_AFFIRMATIVE"].includes(err.code));
+  // Without the owner's first words: the model's other question alone supersedes the read-back.
+  const otherQuestion = [...readback, said("Shall I start a negotiation with the other vendor too?", 20, "llm"), asr("yes", 21)];
+  assert.throws(() => voice(businessId, approval, otherQuestion), refuses("READBACK_SUPERSEDED"));
+  // The first owner turn is the answer: "wait" then "yes" is not a yes to the deal.
+  assert.throws(() => voice(businessId, approval, [...readback, asr("wait", 20), asr("yes", 21)]), refuses("NOT_AFFIRMATIVE"));
+  assert.equal(approvals.answerAfterSpoken(businessId, [...readback, asr("maybe", 20), asr("yes", 21)], { agentId: "AG1", spoken: [approval.readback], subject: { approvalId: approval.id } }).text, "maybe");
+  assert.equal(repo.getApproval(businessId, approval.id).status, "pending");
+});
+
+test("r2 #3: any other tool call, server line or typed message between the read-back and the answer refuses the yes", () => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const readback = heard(approval.readback, { from: 10 });
+  const yes = asr("हाँ", 30);
+
+  assert.throws(() => voice(businessId, approval, [...readback, toolCall("start_negotiation", "c1", 20), toolResult("c1", 20), yes]), refuses("READBACK_SUPERSEDED"), "another tool ran");
+  assert.throws(() => voice(businessId, approval, [...readback, toolResult("c-unknown", 20), yes]), refuses("READBACK_SUPERSEDED"), "a tool result nobody can name");
+  assert.throws(() => voice(businessId, approval, [...readback, said("खोज पूरी हुई, 10 विक्रेता मिले।", 20), yes]), refuses("READBACK_SUPERSEDED"), "a narrator line");
+  assert.throws(() => voice(businessId, approval, [...readback, said("और कुछ बताइए?", 20, "llm"), yes]), refuses("READBACK_SUPERSEDED"), "the model's own question");
+  assert.throws(() => voice(businessId, approval, [...readback, said("क्या मैं यह नियम रख लूँ?", 20, "llm"), yes]), refuses("READBACK_SUPERSEDED"), "another subject's short question");
+  assert.throws(() => voice(businessId, approval, [...readback, asr("हाँ", 20, { metadata: { source: "message" } }), yes]), refuses("TYPED_ANSWER"), "the first reply was typed");
+  assert.equal(repo.getApproval(businessId, approval.id).status, "pending");
+});
+
+test("r2 #3: the live one-yes flow still approves: read-back, the tool's own call and result, the short question, then हाँ", () => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const history = [
+    asr("सबसे अच्छा सौदा पक्का करो", 8),
+    ...heard(approval.readback, { from: 10 }),
+    toolCall("request_approval", "c1", 8),
+    toolResult("c1", 8),
+    said("क्या मैं ऑर्डर कर दूँ", 20, "llm"), // the tool's `say`, as the model spoke it (punctuation may differ)
+    asr("हाँ", 21),
+  ];
+  assert.equal(voice(businessId, approval, history).status, "approved");
+});
+
+test("r2 #3: each subject allows only its own short question; a rule's question is fine for a rule, not for a deal", () => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const rule = "मैं बासमती चावल के लिए प्रति किलो 80 रुपये से ज़्यादा कभी नहीं दूँगी। यह नियम रख लूँ?";
+  const ask = (line) => approvals.answerAfterSpoken(businessId, [said(rule, 10), toolCall("teach_rule", "c9", 9), toolResult("c9", 9), said(line, 11, "llm"), asr("हाँ", 12)], { agentId: "AG1", spoken: [rule], subject: { ruleId: "rul_x" } });
+  assert.equal(ask("यह नियम रख लूँ?").text, "हाँ");
+  assert.throws(() => ask("क्या मैं ऑर्डर कर दूँ?"), refuses("READBACK_SUPERSEDED"));
+  // A subject of no known kind allows nothing in between at all.
+  assert.throws(
+    () => approvals.answerAfterSpoken(businessId, [said(rule, 10), said("यह नियम रख लूँ?", 11, "llm"), asr("हाँ", 12)], { agentId: "AG1", spoken: [rule], subject: {} }),
+    refuses("READBACK_SUPERSEDED"),
+  );
+});
+
+/* ----------- security review r2 #6: a trailing tag particle after a yes is not a no --- */
+
+test("r2 #6: 'हाँ कर दो ना', 'haan kar do na', 'ಹೌದು ಮಾಡಿ ನಾ' are a yes; a genuine mix stays a no", () => {
+  for (const yes of ["हाँ कर दो ना", "हाँ, कर दो ना।", "haan kar do na", "Haan kar do naa", "कर दीजिए ना", "ಹೌದು ಮಾಡಿ ನಾ", "ಮಾಡಿ ನಾ", "yes do it na"]) {
+    assert.equal(approvals.classifyUtterance(yes), "affirmative", yes);
+  }
+  for (const no of ["हाँ नहीं", "yes no", "हाँ ना नहीं", "na", "ना", "नहीं ना", "nahi na", "ಬೇಡ ನಾ"]) {
+    assert.equal(approvals.classifyUtterance(no), "negative", no);
+  }
+  assert.equal(approvals.classifyUtterance("हाँ कर दो ना?"), "unclear", "a question is never a yes");
+  assert.notEqual(approvals.classifyUtterance("शायद ना"), "affirmative");
+  assert.notEqual(approvals.classifyUtterance("ना हाँ"), "affirmative", "a leading ना is not a tag");
 });

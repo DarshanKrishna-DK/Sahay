@@ -282,16 +282,7 @@ async function heardPayment(ctx, args, language) {
   }
 
   const { draft } = khata.draftReceipt(ctx.businessId, input, { language });
-  // The server speaks the read-back itself, so the yes it later accepts answers exactly these
-  // figures; nothing else is narrated between the read-back and the owner's answer.
-  require("../agora/narrator").holdForApproval(ctx.businessId, `receipt:${draft.id}`);
-  try {
-    await require("../agora/agent").speak(ctx.agentId, draft.readback, { priority: "APPEND", interruptable: false });
-  } catch (err) {
-    throw new ToolError("READBACK_NOT_SPOKEN", SAY.READBACK_NOT_SPOKEN[langKey(language)], { status: 502, message: `The payment read-back could not be spoken: ${err.message}` });
-  }
-  khata.markDraftSpoken(ctx.businessId, draft.id, { agentId: ctx.agentId, text: draft.readback });
-  events.emit(ctx.businessId, "receipt.spoken", { draftId: draft.id, customerId: customer.id, amount: draft.amount, mode: draft.mode, readback: draft.readback }, { sessionId: ctx.sessionId ?? null, actor: "agent" });
+  await speakReadback(ctx, draft, draft.readback, language);
   return {
     recorded: false,
     status: "awaiting_answer",
@@ -313,13 +304,57 @@ function invoiceNamed(businessId, customerId, said) {
   return hits[0].id;
 }
 
+const approvals = () => require("../approvals");
+/** Gate refusals after which a later clear yes gets the payment read out again (answerPayment). */
+const REREAD_ON = new Set(["NOT_AFFIRMATIVE", "READBACK_SUPERSEDED", "ANSWER_DURING_READBACK"]);
+
+/**
+ * The server speaks the read-back itself, so the yes it later accepts answers exactly these figures;
+ * nothing else is narrated between the read-back and the owner's answer.
+ */
+async function speakReadback(ctx, draft, text, language) {
+  require("../agora/narrator").holdForApproval(ctx.businessId, `receipt:${draft.id}`);
+  try {
+    await require("../agora/agent").speak(ctx.agentId, text, { priority: "APPEND", interruptable: false });
+  } catch (err) {
+    throw new ToolError("READBACK_NOT_SPOKEN", SAY.READBACK_NOT_SPOKEN[langKey(language)], { status: 502, message: `The payment read-back could not be spoken: ${err.message}` });
+  }
+  khata.markDraftSpoken(ctx.businessId, draft.id, { agentId: ctx.agentId, text });
+  const customerId = draft.customerId ?? draft.customer_id;
+  events.emit(ctx.businessId, "receipt.spoken", { draftId: draft.id, customerId, amount: draft.amount, mode: draft.mode, readback: text }, { sessionId: ctx.sessionId ?? null, actor: "agent" });
+}
+
 async function answerPayment(ctx, args, language) {
   const draft = khata.pendingDraft(ctx.businessId);
   if (!draft) throw khataToolError(new khata.KhataError("NO_PENDING_PAYMENT", "No payment is waiting for the owner's yes.", { status: 409 }), language);
   if (!ctx.agentId) throw khataToolError({ code: "NO_VOICE_EVIDENCE", message: "A spoken answer needs this call's history.", status: 409 }, language);
-  const out = await withHistory(ctx, (history) =>
-    khata.confirmDraft(ctx.businessId, draft.id, { decision: args.decision, agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
-  );
+  let laterYes = false;
+  let out;
+  try {
+    out = await withHistory(ctx, (history) => {
+      try {
+        return khata.confirmDraft(ctx.businessId, draft.id, { decision: args.decision, agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null });
+      } catch (err) {
+        // Security review r2 #3: only the owner's first spoken turn after the read-back answers it. A
+        // clear yes that came later is not consent to these figures: the server reads them out again.
+        laterYes = args.decision === "confirm" && REREAD_ON.has(err?.code) && approvals().isAffirmative(approvals().lastOwnerWords(history));
+        throw err;
+      }
+    });
+  } catch (err) {
+    if (!laterYes || !draft.spoken_text) throw err;
+    await speakReadback(ctx, draft, draft.spoken_text, language);
+    return {
+      recorded: false,
+      status: "awaiting_answer",
+      draftId: draft.id,
+      readbackSpoken: true,
+      readAgain: true,
+      refused: err.code,
+      next: "record_payment with decision",
+      say: phrase("payment_question", language),
+    };
+  }
   if (!out.receipt) {
     events.emit(ctx.businessId, "receipt.cancelled", { draftId: draft.id, customerId: draft.customer_id }, { sessionId: ctx.sessionId ?? null, actor: "owner" });
     return outcome.settle(ctx, phrase("payment_cancelled", language), language, { recorded: false, status: "cancelled", draftId: draft.id });

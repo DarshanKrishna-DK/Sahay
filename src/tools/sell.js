@@ -361,6 +361,9 @@ function dismissSaleTwins(ctx, lineItems, now = Date.now()) {
 
 /* --------------------------------------------------------------- tools --- */
 
+/** Gate refusals after which a later clear yes gets the bill read out again (confirm_invoice). */
+const REREAD_ON = new Set(["NOT_AFFIRMATIVE", "READBACK_SUPERSEDED", "ANSWER_DURING_READBACK"]);
+
 function sellTools({ ownerObj, idArg, withHistory }) {
   const run = (handler) => async (ctx, args, language) => {
     try {
@@ -579,9 +582,24 @@ function sellTools({ ownerObj, idArg, withHistory }) {
         }
         if (!ctx.agentId) throw new ToolError("NO_VOICE_EVIDENCE", SAY.EVIDENCE_REQUIRED[langKey(language)], { status: 409 });
         const approval = pending.at(-1);
-        const { invoice } = await withHistory(ctx, (history) =>
-          gate.confirmInvoice(ctx.businessId, approval.id, { decision: args.decision, via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null }),
-        );
+        let laterYes = false;
+        let invoice;
+        try {
+          ({ invoice } = await withHistory(ctx, (history) => {
+            try {
+              return gate.confirmInvoice(ctx.businessId, approval.id, { decision: args.decision, via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null });
+            } catch (err) {
+              // Security review r2 #3: only the owner's first spoken turn after the read-back answers it.
+              // A clear yes that came later is not consent to this bill: the server reads it out again.
+              laterYes = args.decision === "approve" && REREAD_ON.has(err?.code) && gate.classifyReply(require("../approvals").lastOwnerWords(history)) === "affirmative";
+              throw err;
+            }
+          }));
+        } catch (err) {
+          if (!laterYes) throw err;
+          const asked = await askInvoice(ctx, { invoiceId: approval.invoice_id, repeat: true }, language);
+          return { ...asked, status: "asked", readAgain: true, refused: err.code };
+        }
         if (invoice.status !== "issued") return outcome.settle(ctx, phrase("invoice_rejected", language), language, { invoiceId: invoice.id, status: invoice.status });
         const { invoice: done, problems } = await gate.finishIssue(ctx.businessId, invoice.id, { sessionId: ctx.sessionId ?? null });
         const failed = problems.map((p) => WHAT[p.step][langKey(language)]);

@@ -255,7 +255,7 @@ function classifyReply(text) {
  */
 function spokenAnswer(businessId, approval, history, agentId) {
   const own = agentId ? readbacksOf(businessId, approval.id, agentId) : [];
-  const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: own, subject: {} });
+  const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: own, subject: { kind: "invoice" } });
   return text;
 }
 

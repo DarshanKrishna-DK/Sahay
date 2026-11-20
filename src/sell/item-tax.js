@@ -82,7 +82,7 @@ function pendingFor(businessId, agentId) {
 function confirm(businessId, { agentId, history, sessionId = null }) {
   const pending = agentId ? pendingFor(businessId, agentId) : null;
   if (!pending) throw new SellError("READBACK_NOT_SPOKEN", "No item tax was read out in this call.", { status: 409 });
-  const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: [pending.spoken_text], subject: {} });
+  const { text } = approvals.answerAfterSpoken(businessId, history, { agentId, spoken: [pending.spoken_text], subject: { kind: "item_tax" } });
   if (approvals.classifyUtterance(text) !== "affirmative") {
     throw new SellError("NOT_AFFIRMATIVE", "The owner's reply was not a clear yes; the item's tax is not saved.", { status: 409 });
   }

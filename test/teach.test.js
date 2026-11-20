@@ -270,10 +270,6 @@ test("confirm_rule keeps the rule on a spoken yes after the read-back; a yes bef
   call.owner("हाँ");
   const out = await registry.callTool(ctx, "teach_rule", { kind: "avoid_vendor", name: "Ravi Traders" });
   await expectToolError(registry.callTool(ctx, "confirm_rule", { decision: "keep" }), "NO_ANSWER_YET");
-  call.typed("हाँ");
-  await expectToolError(registry.callTool(ctx, "confirm_rule", { decision: "keep" }), "NO_ANSWER_YET");
-  assert.equal(rules.get(businessId, out.ruleId).status, "suggested", "a typed yes never keeps a rule");
-
   // Another call's agent never spoke it.
   call.owner("हाँ जी");
   await expectToolError(registry.callTool({ ...ctx, agentId: "AGX" }, "confirm_rule", { decision: "keep" }), "NO_SPOKEN_RULE");
@@ -285,6 +281,18 @@ test("confirm_rule keeps the rule on a spoken yes after the read-back; a yes bef
   assert.equal(kept.outcome, "ठीक है, यह नियम याद रखूँगी।");
   assert.equal(call.spoken.at(-1), kept.outcome, "the server says the rule is kept");
   assert.equal(rules.get(businessId, out.ruleId).status, "active");
+});
+
+test("security review r2 #3: a typed reply between the rule's read-back and a spoken yes means the yes never keeps it", async (t) => {
+  const call = fakeCall(t);
+  const businessId = seedBusiness("hi-IN");
+  const ctx = ownerCtx(businessId, { agentId: "AGT" });
+  const out = await registry.callTool(ctx, "teach_rule", { kind: "avoid_vendor", name: "Ravi Traders" });
+  call.typed("हाँ");
+  await expectToolError(registry.callTool(ctx, "confirm_rule", { decision: "keep" }), "READBACK_SUPERSEDED");
+  call.owner("हाँ जी");
+  await expectToolError(registry.callTool(ctx, "confirm_rule", { decision: "keep" }), "READBACK_SUPERSEDED");
+  assert.equal(rules.get(businessId, out.ruleId).status, "suggested", "a typed yes never keeps a rule, nor a spoken one after it");
 });
 
 test("confirm_rule: a maybe is not a yes; a no forgets the suggestion", async (t) => {
@@ -351,8 +359,6 @@ test("usual_quantity fills a missing quantity only after the server read it out 
 
   // The model claims the yes before the owner said it: nothing is filled.
   await expectToolError(registry.callTool(ctx, "save_requirement", { use_usual_quantity: true }), "NO_ANSWER_YET");
-  call.typed("हाँ");
-  await expectToolError(registry.callTool(ctx, "save_requirement", { use_usual_quantity: true }), "NO_ANSWER_YET");
   assert.equal(repo.getRequirement(businessId, first.requirementId).quantity, null);
 
   call.owner("हाँ जी");
@@ -386,12 +392,16 @@ test("a rule can never reach create_order or confirm_approval", async (t) => {
   const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
   await registry.callTool(ctx, "teach_rule", { kind: "bargain_style", style: "tough" });
   call.owner("yes");
-  await expectToolError(registry.callTool(ctx, "confirm_approval", { decision: "approve" }), "READBACK_SUPERSEDED");
+  // The yes answered the rule. Since security review r2 #3 the server then reads the deal out again
+  // instead of only refusing, so the owner's next yes can answer exactly these figures.
+  const again = await registry.callTool(ctx, "confirm_approval", { decision: "approve" });
+  assert.deepEqual([again.status, again.readAgain, again.refused], ["pending", true, "READBACK_SUPERSEDED"]);
   assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
   // And a deal read out after the rule: the yes answers the deal, never the rule.
-  await registry.callTool(ctx, "request_approval", { quoteId: quote.id, repeat: true });
   call.owner("yes");
-  await expectToolError(registry.callTool(ctx, "confirm_rule", { decision: "keep" }), "READBACK_SUPERSEDED");
+  // The first yes after the rule's question was the answer to it, so the rule may be kept from it;
+  // the second yes, the first after the deal's new read-back, answers the deal.
+  assert.equal((await registry.callTool(ctx, "confirm_rule", { decision: "keep" })).status, "active");
   assert.equal(approvals.confirmApproval(businessId, asked.approvalId, { decision: "approve", via: "voice", agentId: "AGT", history: call.items.slice() }).status, "approved");
 });
 

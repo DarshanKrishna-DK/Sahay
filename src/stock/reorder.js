@@ -274,7 +274,7 @@ function decide(businessId, proposalId, decision, { via, agentId = null, history
     if (!row) throw new StockError("NO_PROPOSAL", "There is no such reorder proposal.", { status: 404 });
     if (decision === "yes") {
       const spoken = agentId ? readbacks(businessId, row.id, agentId).map((r) => r.spoken_text) : [];
-      evidence = approvals.answerAfterSpoken(businessId, history, { agentId, spoken, subject: {} }).text;
+      evidence = approvals.answerAfterSpoken(businessId, history, { agentId, spoken, subject: { kind: "reorder" } }).text;
       if (approvals.classifyUtterance(evidence) !== "affirmative") throw new StockError("NOT_AFFIRMATIVE", "The owner's reply was not a clear yes.", { status: 409 });
     } else {
       evidence = approvals.lastOwnerWords(history);

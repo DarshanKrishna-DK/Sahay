@@ -125,6 +125,12 @@ test("record_payment in a call: the server reads the payment back itself, and on
   await expectToolError(registry.callTool({ ...ctx, agentId: "AGX" }, "record_payment", { decision: "confirm" }), "READBACK_NOT_SPOKEN");
   call.owner("पता नहीं");
   await expectToolError(registry.callTool(ctx, "record_payment", { decision: "confirm" }), "NOT_AFFIRMATIVE");
+  // Security review r2 #3: a yes after that first answer is no answer to the read-back; the server
+  // reads the payment out again, and the owner's next yes answers exactly that.
+  call.owner("हाँ");
+  const again = await registry.callTool(ctx, "record_payment", { decision: "confirm" });
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["awaiting_answer", true, "NOT_AFFIRMATIVE", "क्या मैं यह खाते में लिख दूँ?"]);
+  assert.deepEqual(call.spoken, ["रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में।", "रमेश से 2 हज़ार रुपये नकद मिले, उनके खाते में।"]);
   assert.equal(receiptCount(businessId), 0);
 
   call.owner("हाँ");

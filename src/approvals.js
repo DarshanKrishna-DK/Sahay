@@ -150,6 +150,9 @@ const NO = phrases([
   "ಬೇಡ", "ಬೇಡಿ", "ಇಲ್ಲ", "ಅಲ್ಲ", "ರದ್ದು", "ನಿಲ್ಲಿಸಿ", "beda", "bedi", "illa", "alla",
 ]);
 
+/** Tag particles that end a request ("कर दो ना"): neutral as the last word after a yes, a no anywhere else. */
+const TAG = new Set(["ना", "na", "naa", "ನಾ"].map(normalise));
+
 /** Short sounds that are a yes only when they are the entire reply. */
 const WHOLE_REPLY_YES = new Set(["हा", "haa"].map(normalise));
 
@@ -190,6 +193,12 @@ function strip(tokens, list) {
 function classifyUtterance(text) {
   const tokens = normalise(text).split(" ").filter(Boolean);
   if (!tokens.length) return "unclear";
+  // "हाँ कर दो ना" / "haan kar do na" / "ಮಾಡಿ ನಾ": a trailing tag particle after a clear yes is emphasis,
+  // not a no (security review r2 #6). Only the last word, and only when everything before it is a yes.
+  const head = tokens.slice(0, -1);
+  if (head.length && TAG.has(tokens.at(-1)) && !(head.length === 1 && WHOLE_REPLY_YES.has(head[0])) && classifyUtterance(head.join(" ")) === "affirmative") {
+    return String(text).includes("?") ? "unclear" : "affirmative";
+  }
   if (strip(tokens, NO).found > 0) return "negative";
   if (String(text).includes("?")) return "unclear";
   // "हा" / "haa" is a yes only as the whole reply; "हा हा" is laughter (security review r1 #8).
@@ -296,13 +305,16 @@ function answerToReadback(businessId, approval, contents, { agentId }) {
  * Fails closed:
  * - the server must have spoken it through this agent;
  * - every piece of it must be in the history as a server line, not interrupted;
- * - the owner's last ASR turn must come after it, in array order AND by a larger numeric
- *   turn_id (an item without a turn_id cannot be ordered, so it is not evidence); a typed
- *   message is not an ASR turn, so it is never an answer (TYPED_ANSWER when it is all there is);
+ * - the answer is the owner's FIRST ASR turn after it (security review r2 #3), in array order AND
+ *   by a larger numeric turn_id (an item without a turn_id cannot be ordered, so it is not
+ *   evidence); a typed message before it means the owner's reply was typed (TYPED_ANSWER);
+ * - nothing else may stand between the read-back and that turn: no tool call or result other than
+ *   the subject's own asking or answering tool, and no assistant line (model, narrator, card) other
+ *   than the subject's own short question (ASKED; `subject.kind`, or implied by approvalId/ruleId);
  * - when Agora gives both speech timings, the owner must not have spoken over it;
  * - no other question the server spoke (another approval or rule, a reorder, an invoice, an item's
  *   tax: every `*_readbacks` table) may have been spoken in between.
- * Returns `{ text, turnId }`; throws an ApprovalError otherwise.
+ * Returns `{ text, turnId, index }`; throws an ApprovalError otherwise.
  */
 function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject = {} }) {
   if (!agentId || !spoken.length) throw new ApprovalError("READBACK_NOT_SPOKEN", "This was not read out to the owner in this call.");
@@ -330,14 +342,17 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
     throw new ApprovalError("READBACK_NOT_HEARD", "The read-back was cut off before the owner heard all of it.");
   }
 
+  // The answer is the owner's FIRST spoken turn after the read-back, never a later one (security
+  // review r2 #3: a yes to a question the model asked afterwards must not approve this).
   let answerAt = -1;
-  for (let i = contents.length - 1; i >= 0 && answerAt < 0; i--) if (isOwnerAsr(contents[i])) answerAt = i;
-  if (answerAt <= anchor) {
-    // A typed reply is the owner's words, but never consent: they press the card or say it aloud,
-    // and they are told so instead of "I did not hear a clear yes" (final-2 E).
-    if (contents.slice(anchor + 1).some(isOwnerTyped)) throw new ApprovalError("TYPED_ANSWER", "A typed reply cannot answer a read-back; the owner must say it aloud or press the button.");
-    throw new ApprovalError("NO_ANSWER_YET", "The owner has not answered since the read-back.");
-  }
+  for (let i = anchor + 1; i < contents.length && answerAt < 0; i++) if (isOwnerAsr(contents[i])) answerAt = i;
+  const between = contents.slice(anchor + 1, answerAt < 0 ? contents.length : answerAt);
+  // A typed reply is the owner's words, but never consent: they press the card or say it aloud,
+  // and they are told so instead of "I did not hear a clear yes" (final-2 E).
+  if (between.some(isOwnerTyped)) throw new ApprovalError("TYPED_ANSWER", "A typed reply cannot answer a read-back; the owner must say it aloud or press the button.");
+  const intruder = interveningItem(between, contents, subject);
+  if (intruder) throw new ApprovalError("READBACK_SUPERSEDED", `Something else happened after this was read out (${intruder}).`);
+  if (answerAt < 0) throw new ApprovalError("NO_ANSWER_YET", "The owner has not answered since the read-back.");
 
   const said = contents[answerAt];
   const read = contents[anchor];
@@ -359,7 +374,67 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
       throw new ApprovalError("READBACK_SUPERSEDED", "Something else was read out after this one.");
     }
   }
-  return { text: said.content.trim(), turnId: said.turn_id };
+  return { text: said.content.trim(), turnId: said.turn_id, index: answerAt };
+}
+
+/** A lazily read phrase table entry in the three read-back languages. */
+const allLanguages = (entry) => ["hi-IN", "kn-IN", "en-IN"].map((language) => entry[language]());
+
+/**
+ * What may stand between a read-back and the owner's answer, per kind of subject: the tools that ask
+ * or answer this very question (their call and result items appear in /history around the read-back
+ * the tool spoke), and the subject's own short question, which the model says from the tool's `say`.
+ * Anything else (another tool, a narrator or card line, any other model sentence) means the owner's
+ * next words may answer something else (security review r2 #3).
+ */
+const ASKED = {
+  approval: { tools: ["request_approval", "confirm_approval"], questions: () => allLanguages(require("./tools/registry").PHRASES.approval_question) },
+  rule: {
+    // A rule's own sentence, a reorder level (set_reorder_level), or the usual quantity (save_requirement).
+    tools: ["teach_rule", "set_reorder_level", "save_requirement", "confirm_rule"],
+    questions: () => {
+      const { PHRASES } = require("./tools/registry");
+      return [...allLanguages(PHRASES.rule_question), ...allLanguages(PHRASES.usual_quantity_question), ...allLanguages(require("./stock/say").LINES.level_question)];
+    },
+  },
+  invoice: { tools: ["request_invoice_approval", "confirm_invoice"], questions: () => allLanguages(require("./tools/sell").PHRASES.invoice_question) },
+  receipt: { tools: ["record_payment"], questions: () => allLanguages(require("./tools/khata").PHRASES.payment_question) },
+  reorder: { tools: ["confirm_reorder"], questions: () => [] },
+  item_tax: { tools: ["set_item"], questions: () => allLanguages(require("./tools/sell").PHRASES.item_tax_question) },
+};
+
+/** The kind of a subject: given, or implied by its id. */
+const kindOf = (subject) => subject.kind ?? (subject.approvalId ? "approval" : subject.ruleId ? "rule" : null);
+
+/** A tool name as Agora's MCP client writes it ("<server>__<tool>"), without the server prefix. */
+const bareTool = (name) => String(name ?? "").replace(/^[A-Za-z0-9]+__/, "");
+
+/**
+ * The first item between the read-back and the answer that is not allowed there, described for the
+ * error message; null when there is none. Fails closed: an unknown tool result or role is an intruder.
+ */
+function interveningItem(between, contents, subject) {
+  const asked = ASKED[kindOf(subject)] ?? { tools: [], questions: () => [] };
+  const questions = new Set(asked.questions().map(normalise));
+  const calls = new Map();
+  for (const item of contents) for (const call of Array.isArray(item?.tool_calls) ? item.tool_calls : []) calls.set(call?.id, bareTool(call?.name ?? call?.function?.name));
+  for (const item of between) {
+    if (!item || typeof item !== "object") continue;
+    if (Array.isArray(item.tool_calls) && item.tool_calls.length) {
+      const other = item.tool_calls.map((call) => bareTool(call?.name ?? call?.function?.name)).find((name) => !asked.tools.includes(name));
+      if (other !== undefined) return `tool ${other}`;
+    }
+    if (item.role === "tool") {
+      const name = calls.get(item.tool_call_id);
+      if (!asked.tools.includes(name)) return `tool ${name ?? "result"}`;
+      continue;
+    }
+    const content = typeof item.content === "string" ? item.content.trim() : "";
+    if (!content) continue;
+    if (item.role === "assistant" && questions.has(normalise(content))) continue;
+    return `${item.role ?? "unknown"} line`;
+  }
+  return null;
 }
 
 /**

@@ -211,7 +211,7 @@ async function look(businessId, state, call, now) {
   }
   let answer;
   try {
-    answer = approvals.answerAfterSpoken(businessId, history, { agentId: call.agentId, spoken: subject.spoken, subject: subject.subject });
+    answer = approvals.answerAfterSpoken(businessId, history, { agentId: call.agentId, spoken: subject.spoken, subject: { ...subject.subject, kind: subject.kind } });
   } catch {
     return "waiting"; // no spoken answer after the read-back yet (or it was typed, or another question came after it)
   }

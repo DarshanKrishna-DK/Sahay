@@ -376,6 +376,17 @@ test("confirm_approval by voice approves on a clear yes to the read-back the ser
   // Another call's agent never spoke this read-back.
   await expectToolError(registry.callTool({ ...ctx, agentId: "AGX" }, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" }), "READBACK_NOT_SPOKEN");
 
+  // Security review r2 #3: the owner's first answer after the read-back was a maybe, so a later yes
+  // does not approve these figures; the server reads the deal out again and asks once more.
+  call.owner("हाँ जी, कर दो");
+  const spokenBefore = call.spoken.length;
+  const again = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
+  assert.deepEqual([again.status, again.readAgain, again.refused, again.say], ["pending", true, "NOT_AFFIRMATIVE", "क्या मैं ऑर्डर कर दूँ?"]);
+  assert.equal(call.spoken.length, spokenBefore + 1, "the read-back, spoken by the server again");
+  assert.equal(call.spoken.at(-1), repo.listApprovalReadbacks(businessId, { approval_id: asked.approvalId, agent_id: "AGV" })[0].spoken_text, "the same words as the first read-back");
+  assert.equal(repo.listApprovalReadbacks(businessId, { approval_id: asked.approvalId, agent_id: "AGV" }).length, 2);
+  assert.equal(repo.getApproval(businessId, asked.approvalId).status, "pending");
+
   call.owner("हाँ जी, कर दो");
   const ok = await registry.callTool(ctx, "confirm_approval", { approvalId: asked.approvalId, decision: "approve" });
   assert.equal(ok.status, "approved");

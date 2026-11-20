@@ -302,6 +302,12 @@ test("a heard payment is written only after the owner's spoken yes to the read-b
   assert.throws(() => khata.confirmDraft(businessId, draft.id, { decision: "cancel", agentId: "AGV", history: [...history(), { role: "user", content: "हाँ", metadata: { source: "asr" }, turn_id: 99 }] }), { code: "NOT_NEGATIVE" });
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE business_id = ?").get(businessId).n, 0);
 
+  // Security review r2 #3: the first answer after the read-back was a maybe; a later yes is not an answer to it.
+  call.owner("हाँ जी");
+  assert.throws(() => khata.confirmDraft(businessId, draft.id, { decision: "confirm", agentId: "AGV", history: history() }), { code: "NOT_AFFIRMATIVE" });
+  // Read out again, the next spoken yes answers it.
+  call.speak(draft.readback);
+  khata.markDraftSpoken(businessId, draft.id, { agentId: "AGV", text: draft.readback });
   call.owner("हाँ जी");
   const out = khata.confirmDraft(businessId, draft.id, { decision: "confirm", agentId: "AGV", history: history() });
   assert.equal(out.receipt.recorded_via, "voice");

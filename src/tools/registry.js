@@ -874,6 +874,34 @@ async function awaitingAnswer(ctx, approval, result, language) {
   };
 }
 
+/** Gate refusals after which a later clear yes gets the deal read out again (confirm_approval). */
+const REREAD_ON = new Set(["NOT_AFFIRMATIVE", "READBACK_SUPERSEDED", "ANSWER_DURING_READBACK"]);
+
+/**
+ * The read-back as the owner hears it: the stored one is in the business language, the spoken one
+ * follows the owner's language. Same figures, and the item named in that language's script.
+ */
+function spokenReadback(ctx, quoteId, deal, language) {
+  const requirement = repo.getRequirement(ctx.businessId, repo.getQuote(ctx.businessId, quoteId)?.requirement_id);
+  const item = requirement ? spokenItem(ctx.businessId, requirement, language) : deal.item;
+  return approvals.buildReadback({ ...deal, item }, READBACK_LANGUAGE[language]);
+}
+
+/**
+ * In a call the server speaks the read-back itself, so the yes it later accepts answers exactly these
+ * words (security review r1 #2); the model only asks the short question. Nothing else may be narrated
+ * between the read-back and the owner's answer to it.
+ */
+async function readOut(ctx, approval, readback, language) {
+  require("../agora/narrator").holdForApproval(ctx.businessId, approval.id);
+  try {
+    await require("../agora/agent").speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
+  } catch (err) {
+    throw new ToolError("READBACK_NOT_SPOKEN", phrase("readback_not_spoken", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
+  }
+  approvals.recordReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
+}
+
 /* ----------------------------------------------------------- defaults --- */
 
 const READBACK_LANGUAGE = { "hi-IN": "hi", "kn-IN": "kn", "en-IN": "en" };
@@ -1435,31 +1463,17 @@ const TOOLS = [
     async handler(ctx, args, language) {
       const quoteId = args.quoteId ?? defaultDeal(ctx, args, language).quoteId;
       const { approval, deal } = approvals.requestApproval(ctx.businessId, quoteId, { sessionId: ctx.sessionId ?? null });
-      // The stored read-back is in the business language; the spoken one follows the owner's language. Same figures,
-      // and the item named in that language's script (the stored one keeps the owner's words).
-      const requirement = repo.getRequirement(ctx.businessId, repo.getQuote(ctx.businessId, quoteId)?.requirement_id);
-      const item = requirement ? spokenItem(ctx.businessId, requirement, language) : deal.item;
-      const readback = approvals.buildReadback({ ...deal, item }, READBACK_LANGUAGE[language]);
+      const readback = spokenReadback(ctx, quoteId, deal, language);
       const result = { approvalId: approval.id, quoteId, status: approval.status, totalAmount: approval.total_amount };
       // No call (or the deal is already approved): nothing can be answered by voice, so the model may read it out.
       if (!ctx.agentId || approval.status !== "pending") return { ...result, readback, say: readback };
 
-      const agent = require("../agora/agent");
       // Already read out in this call (in any language): asking again is not a reason to read it
       // again; the owner's answer belongs to confirm_approval (E2E r4: three read-backs for one yes).
       const readBefore = repo.listApprovalReadbacks(ctx.businessId, { approval_id: approval.id, agent_id: ctx.agentId }).length > 0;
       if (readBefore && !args.repeat) return awaitingAnswer(ctx, approval, result, language);
 
-      // In a call the server speaks the read-back itself, so the yes it later accepts answers exactly
-      // these words (security review r1 #2). The model only asks the question.
-      // Nothing else may be narrated between the read-back and the owner's answer to it.
-      require("../agora/narrator").holdForApproval(ctx.businessId, approval.id);
-      try {
-        await agent.speak(ctx.agentId, readback, { priority: "APPEND", interruptable: false });
-      } catch (err) {
-        throw new ToolError("READBACK_NOT_SPOKEN", phrase("readback_not_spoken", language), { status: 502, message: `The read-back could not be spoken: ${err.message}` });
-      }
-      approvals.recordReadbackSpoken(ctx.businessId, approval.id, { agentId: ctx.agentId, text: readback, sessionId: ctx.sessionId ?? null });
+      await readOut(ctx, approval, readback, language);
       return { ...result, readbackSpoken: true, say: phrase("approval_question", language) };
     },
   },
@@ -1484,15 +1498,27 @@ const TOOLS = [
       // read-back the server spoke (approvals.answerToReadback). /history can lag the transcript
       // by about 0.5 s, so an answer not there yet is looked for again.
       // Gate refusals map to a spoken line in errors.js CODE_MAP.
-      const decided = await withHistory(ctx, (history) =>
-        approvals.confirmApproval(ctx.businessId, approval.id, {
-          decision: args.decision,
-          via: "voice",
-          agentId: ctx.agentId,
-          history,
-          sessionId: ctx.sessionId ?? null,
-        }),
-      );
+      let laterYes = false;
+      let decided;
+      try {
+        decided = await withHistory(ctx, (history) => {
+          try {
+            return approvals.confirmApproval(ctx.businessId, approval.id, { decision: args.decision, via: "voice", agentId: ctx.agentId, history, sessionId: ctx.sessionId ?? null });
+          } catch (err) {
+            // Security review r2 #3: only the owner's FIRST spoken turn after the read-back, with
+            // nothing else said or run in between, answers it. A clear yes that came later (after a
+            // maybe, or after the model asked something else) is not consent to these figures, so the
+            // server reads the deal out again and the owner's next yes answers exactly that.
+            laterYes = args.decision === "approve" && REREAD_ON.has(err?.code) && approvals.isAffirmative(approvals.lastOwnerWords(history));
+            throw err;
+          }
+        });
+      } catch (err) {
+        if (!laterYes) throw err;
+        const deal = approvals.loadDeal(ctx.businessId, approval.quote_id);
+        await readOut(ctx, approval, spokenReadback(ctx, approval.quote_id, deal, language), language);
+        return { approvalId: approval.id, status: "pending", readbackSpoken: true, readAgain: true, refused: err.code, next: "confirm_approval on the owner's answer", say: phrase("approval_question", language) };
+      }
       const result = { approvalId: decided.id, status: decided.status, evidenceUtterance: decided.evidence_utterance };
       if (decided.status !== "approved") return outcome.settle(ctx, phrase("approval_rejected", language), language, result);
       // The spoken yes IS the owner's approval: the server places the order now, exactly as the
