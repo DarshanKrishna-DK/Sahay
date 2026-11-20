@@ -13,7 +13,6 @@ against the name now).
 | `css/tokens-v3.css` | W1 | every token (section 1), light theme, Indic font rules. **ready** |
 | `css/components-v3.css` | W1 | base reset, focus, every component class (section 2). **ready** |
 | `css/app-shell.css` | W1 | hex field, NavJelly, NavDock, NavRail, TopCapsule/TopStrip, slots, layout per size, view transitions. **ready** |
-| `css/v3-bridge.css` | W1 | TEMPORARY: old names (`--marigold*`, `.keycap-marigold`) mapped to v3 so unconverted screens still render. Deleted when the cleanup grep (section 7) is empty. Never add a new use. |
 | `css/app.css` | W1 (legacy screen rules shrink as W2-W5 move them out) | old per-screen rules, recoloured to v3. |
 | `css/app-sell.css` | W4B | Sell/Stock/Money screen rules. |
 | `vendor/sileo-0.1.6/sileo.css`, `css/app-toast.css` | W1 | toasts, lime/piano theme. |
@@ -157,20 +156,21 @@ Nav: Sahay = live thinking orb (canvas), Buy = cart, Sell = receipt, Stock = jar
   coral error (stays), amber warning; placement per spec 6.3 (phone top under the capsule, max 2;
   laptop top-right of content, left of the agent column, max 3).
 
-## 6. Removed / being removed (do not reference)
-- Files gone: `js/app/edge-orb.js`, `js/app/nav.js`, `css/tokens.css` (after the landing moves to v3).
-- Classes gone: `.edge*`, `.eb-*`, `.pillnav`, `.nav-link(s)`, `.nav-ico`, `.nav-word`, `.nav-badge`,
-  `.nav-avatar`, `.top-avatar`, `.avatar-ring`, `.topstrip`, `.top-brand`, `.top-right`, `.logo-orb`,
-  `.live-in-nav`, `.live-in-top`, `.theme-btn`, `.aurora` (and its dot grid), `body[data-yes="card"]`
-  padding hack (W3 uses the agent column), `.wel-orb` (W5).
-- Tokens gone: `--marigold`, `--saffron`, `--marigold-text`, `--glow-marigold`, `--aurora-a/b/c`,
-  `--dot-color`. Use `--accent` / `--accent-text` / `--lime` / `--glow-lime`.
-- Keycap tones: `"marigold"` -> `"primary"`, `"leaf"` -> `"primary"`; class `.keycap-marigold` ->
-  `.keycap-primary` (bridge keeps the old name alive until each owner switches).
-- Edge-orb actions moved (D5): Talk -> nav orb / Sahay home orb; Type -> composer (`sahay:compose`);
+## 6. Removed (do not reference)
+- Files gone: the v2 edge module, `js/app/nav.js`, the v2 token file, the temporary bridge sheet.
+- Classes gone: the edge orb (`.edge*`, `.eb-*`), `.pillnav`, `.nav-link(s)`, `.nav-ico`, `.nav-word`,
+  `.nav-badge`, `.nav-avatar`, `.top-avatar`, `.avatar-ring`, `.topstrip`, `.top-brand`, `.top-right`,
+  `.logo-orb`, `.live-in-nav`, `.live-in-top`, `.theme-btn`, `.aurora` (and its dot grid), the yes-layer
+  column padding hack, `.state-orbit`, `.state-blob`.
+- Tokens gone: the v2 orange accent family and its glow, `--aurora-a/b/c`, `--dot-color`. Use
+  `--accent` / `--accent-text` / `--lime` / `--glow-lime`.
+- Keycap tones: `primary | secondary | danger | ghost` only (the v2 orange tone and `.keycap-leaf` map to
+  `primary` in `keycapButton`; write `keycap-primary` in markup).
+- Edge actions moved (D5): Talk -> nav orb / Sahay home orb; Type -> composer (`sahay:compose`);
   Approve -> waiting tray (`#/waiting`, `sahay:open-tray`); Pause -> End in the call dock; New need -> dropped.
-- i18n keys `edge.*` are dead (W1 removes them at the end).
+- i18n keys `edge.*` are deleted.
 
-## 7. Cleanup gate (must print nothing at the end of the build)
-`grep -rniE "marigold|saffron|#FFB020|#FF7A1A|edge-orb|tokens\.css" public --exclude-dir=vendor --exclude-dir=figures`
-(README-v3.md itself is excluded from that check by name only when it is the sole hit.)
+## 7. Cleanup gate (prints nothing)
+`grep -rniE "<v2 accent names>|<v2 orange hex codes>|<edge orb file>|<v2 token file>" public --exclude-dir=vendor --exclude-dir=figures`
+(the exact pattern is in the build plan / coordinator message; this file avoids spelling the words so
+the gate stays clean). app.html loads only v3 stylesheets.

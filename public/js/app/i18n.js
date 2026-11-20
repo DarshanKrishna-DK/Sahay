@@ -37,18 +37,6 @@ const T = {
   "theme.dark": ["Use dark screen", "गहरी स्क्रीन", "ಗಾಢ ಪರದೆ"],
   "theme.light": ["Use light screen", "हल्की स्क्रीन", "ತಿಳಿ ಪರದೆ"],
 
-  "edge.open": ["Quick actions", "जल्दी के काम", "ತ್ವರಿತ ಕ್ರಿಯೆಗಳು"],
-  "edge.close": ["Close quick actions", "जल्दी के काम बंद करें", "ತ್ವರಿತ ಕ್ರಿಯೆಗಳನ್ನು ಮುಚ್ಚಿ"],
-  "edge.talk": ["Talk", "बोलें", "ಮಾತಾಡಿ"],
-  "edge.type": ["Type", "लिखें", "ಬರೆಯಿರಿ"],
-  "edge.need": ["Need", "ज़रूरत", "ಅಗತ್ಯ"],
-  "edge.needLong": ["New need", "नई ज़रूरत", "ಹೊಸ ಅಗತ್ಯ"],
-  "edge.approve": ["Approve", "मंज़ूरी", "ಒಪ್ಪಿಗೆ"],
-  "edge.pause": ["Pause", "रोकें", "ನಿಲ್ಲಿಸಿ"],
-  "edge.pauseLong": ["Pause Sahay (end the call)", "सहाय को रोकें (कॉल बंद)", "ಸಹಾಯ್ ನಿಲ್ಲಿಸಿ (ಕರೆ ಮುಗಿಸಿ)"],
-  "edge.soon": ["soon", "जल्द", "ಶೀಘ್ರ"],
-  "edge.noApprovals": ["Nothing is waiting for your yes", "आपकी हाँ के लिए कुछ नहीं रुका", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಏನೂ ಕಾಯುತ್ತಿಲ್ಲ"],
-  "edge.notInCall": ["Sahay is not on a call", "सहाय अभी कॉल पर नहीं है", "ಸಹಾಯ್ ಈಗ ಕರೆಯಲ್ಲಿಲ್ಲ"],
 
   "boot.loading": ["Opening Sahay", "सहाय खुल रहा है", "ಸಹಾಯ್ ತೆರೆಯುತ್ತಿದೆ"],
   "boot.error": ["Could not reach Sahay", "सहाय से जुड़ नहीं पाए", "ಸಹಾಯ್ ಸಂಪರ್ಕವಾಗಲಿಲ್ಲ"],
