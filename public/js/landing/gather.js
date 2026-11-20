@@ -167,7 +167,9 @@ export const bucketFor = (d) => (d < -0.45 ? 0 : d < 0.05 ? 1 : d < 0.5 ? 2 : 3)
 // DOM part
 
 const RING_SHARE = 0.2;       // share of points on the orb's dotted ring
-const START_AT = 1.3;         // seconds into the first drift when the page opens
+// The page opens at the start of the orb phase with the points already near the orb, so the very
+// first frame (and any screenshot) shows the gathered cloud; the drift comes later in the loop.
+const START_AT = CYCLE[0].dur;
 const BUCKET_ALPHA = [0.2, 0.38, 0.62, 0.92];
 const BUCKET_SIZE = [1.0, 1.25, 1.5, 1.8];
 const LIME = "182, 242, 60";
@@ -240,8 +242,10 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
   function seedPositions() {
     if (!lay) return;
     for (let i = 0; i < n; i++) {
-      if (reducedQuery.matches) { const p = orbPoint(i, 0.5); px[i] = p.x; py[i] = p.y; }
-      else { px[i] = swarmX(i, t); py[i] = swarmY(i, t); }
+      // Start just outside the orb (1.25x, with jitter): it settles inward on the first frames.
+      const p = orbPoint(i, reducedQuery.matches ? 0.5 : t * 0.32);
+      const k = reducedQuery.matches ? 1 : 1.18 + seed[i] * 0.14;
+      px[i] = lay.cx + (p.x - lay.cx) * k; py[i] = lay.cy + (p.y - lay.cy) * k;
       vx[i] = 0; vy[i] = 0;
     }
   }
@@ -273,9 +277,9 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     tmp.z = clamp(-x * sinS * 1.6 + z * cosS * 2, -1, 1);
     return tmp;
   }
-  const swarmCx = () => (lay.mode === "wide" ? lay.cx - lay.R * 0.2 : W / 2);
-  const swarmX = (i, time) => swarmCx() + sc[i * 3] * (lay.mode === "wide" ? W * 0.4 : W * 0.5) + Math.sin(time * 0.35 + seed[i] * 6.283) * lay.R * 0.14;
-  const swarmY = (i, time) => lay.cy + sc[i * 3 + 1] * H * 0.5 + Math.cos(time * 0.29 + seed[i] * 9.1) * lay.R * 0.14;
+  // The drift stays a loose nebula around the cloud's place (never a blank half of the hero).
+  const swarmX = (i, time) => lay.cx + sc[i * 3] * lay.R * 1.9 + Math.sin(time * 0.35 + seed[i] * 6.283) * lay.R * 0.14;
+  const swarmY = (i, time) => lay.cy + sc[i * 3 + 1] * lay.R * 1.5 + Math.cos(time * 0.29 + seed[i] * 9.1) * lay.R * 0.14;
   function target(name, i, time) {
     if (name === "orb") return orbPoint(i);
     if (name === "rupee") return rupeePoint(i);
@@ -285,6 +289,7 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
 
   function step(dt) {
     t += dt;
+    const opening = t < START_AT + 1; // the opening gather has no stagger back to the drift
     frameConsts(t);
     const ph = phaseAt(t);
     if (ph.name !== phaseName) { phaseName = ph.name; host.dataset.phase = ph.name; }
@@ -292,7 +297,7 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     const jitter = ph.name === "swarm" ? 0 : 1.1;
     const rep = pointer.on ? 90 : 0, rep2 = rep * rep;
     for (let i = 0; i < n; i++) {
-      const name = ph.elapsed < delay[i] ? ph.prev : ph.name;
+      const name = ph.elapsed < delay[i] && !opening ? ph.prev : ph.name;
       const p = target(name, i, t);
       const tx = p.x + Math.sin(t * 1.7 + seed[i] * 40) * jitter;
       const ty = p.y + Math.cos(t * 1.3 + seed[i] * 31) * jitter;
