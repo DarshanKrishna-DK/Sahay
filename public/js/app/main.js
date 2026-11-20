@@ -11,6 +11,7 @@ import { mountShell, slots, setRoute, setNeedsCount, setTitle, setShop, setLogou
 import { parseRoute } from "./routes.js";
 import { SCREENS, AUTH } from "./screens.js";
 import { startCall, serverEnded, preload } from "./call.js";
+import "./yes.js"; // W3: the Needs-you host, the count, #/needs, Home's Check, auto-open on a spoken read-back
 import "./moments.js";
 
 addStrings({

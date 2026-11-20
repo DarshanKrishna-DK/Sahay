@@ -6,10 +6,15 @@
 //   notify, dismiss                                                                          (toast.js)
 //   createKeypad                                                                             (keypad.js)
 //   button({ word, icon, kind, size, onClick, href, label, busy, block, type, newTab })
+//                                                         flat solid pills: primary pink, secondary cream outline;
+//                                                         sizes lg 60 | md 52 (primary default) | sm 44 + 48px tap area (others' default)
+//   loader(word)                                          three pink dots + a word ("Sahay is checking prices")
+//   tile({ label, value, icon, href })                    Home "Today" tile (value "—" when unknown, never a fake 0)
+//   searchField({ label, onInput })                       the only field with an icon inside (magnifier)
 //   pageHead({ title, accent, sentence, action })        title + one plain sentence + ONE primary action
 //   section({ title, count, sub, action, body })          an h2 group (never more than ~3 per view)
 //   card({ title, sub, body, foot, onClick, needs })      a solid card; onClick makes it one button
-//   list(rows, { limit = 5, showAllWord, onShowAll })     cards' list of rows; rows: { icon, title, sub, end, onClick, href, lang }
+//   list(rows, { limit = 5, label })                      a card's list of rows; rows: { icon, title, sub, amount, end, onClick, href, label }
 //   chip(word, { tone, icon })                            status chip: good | warn | needs | info | (neutral)
 //   simChip(), testChip()                                 "simulated vendor", "test mode" (always shown where they apply)
 //   emptyState({ icon, title, text, action, inline })     icon, one title, one sentence, one action
@@ -19,7 +24,8 @@
 //   segmented({ label, options, value, onPick })          tabs / segmented choice
 //   toggle({ label, checked, onChange })                  on / off switch
 //   yesNo({ onYes, onNo, busy, yesWord, noWord, yesLabel, noLabel })   two big buttons, No left, Yes pink right
-//   openSheet({ title, body, footer, opener, label, onClose, speakKey }) -> handle; closeSheet()
+//   openSheet({ title, body, footer, opener, label, onClose, speakKey, scrimCloses }) -> handle; closeSheet()
+//                                                         (the Yes card passes scrimCloses: false: only No / Yes / X)
 //                                                         bottom sheet on phones, centred modal from 768px
 //   openMenu({ anchor, label, items, onPick })            small menu under its button (language, account)
 //   langSwitch() -> { el, update }; uiLang(); setUiLang(code)   English default, per device (sahay-ui-lang)
@@ -46,16 +52,26 @@ addStrings({
 
 /* ------------------------------------------------------------ buttons -- */
 const KINDS = new Set(["primary", "secondary", "ghost", "danger"]);
-export function button({ word, icon: ic, kind = "primary", size = "md", onClick, href, label, busy = false, block = false, type = "button", newTab = false, cls = "" } = {}) {
+/** Three pink dots (uiverse adamgiebl_thin-lionfish-5, adapted), always beside a word. */
+export function dots() { return h("span", { class: "dots", "aria-hidden": "true" }, h("span"), h("span"), h("span")); }
+export function loader(word) { return h("span", { class: "loading-line", role: "status" }, dots(), word ? scripted("span", word) : null); }
+
+/**
+ * size: "lg" (60: Talk to Sahay, Yes) | "md" (52) | "sm" (44, 48px tap area). Primary defaults to md, the others to sm
+ * (pass size "md" / "lg" when a secondary sits beside a primary of that size). "hero" = "lg".
+ * busy: the word stays, three dots replace the icon.
+ */
+export function button({ word, icon: ic, kind = "primary", size, onClick, href, label, busy = false, block = false, type = "button", newTab = false, cls = "", disabled = false } = {}) {
   const k = KINDS.has(kind) ? kind : "primary";
-  const classes = `btn btn-${k}${size === "hero" ? " btn-hero" : size === "sm" ? " btn-sm" : ""}${block ? " btn-block" : ""}${cls ? ` ${cls}` : ""}`;
-  const inner = [busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : (ic ? icon(ic, 22) : null), scripted("span", word || "")];
+  const sz = size === "hero" ? "lg" : size || (k === "primary" ? "md" : "sm");
+  const classes = `btn btn-${k} btn-${sz}${block ? " btn-block" : ""}${cls ? ` ${cls}` : ""}`;
+  const inner = [busy ? dots() : (ic ? icon(ic, 20) : null), scripted("span", word || "")];
   const aria = label && label !== word ? label : undefined;
   if (href) {
     const ext = newTab || /^https?:/i.test(href);
     return h("a", { class: classes, href, "aria-label": aria, target: ext ? "_blank" : undefined, rel: ext ? "noopener noreferrer" : undefined, on: onClick ? { click: onClick } : undefined }, ...inner);
   }
-  return h("button", { class: classes, type, "aria-label": aria, "aria-busy": busy ? "true" : undefined, disabled: busy ? true : undefined, on: onClick ? { click: onClick } : undefined }, ...inner);
+  return h("button", { class: classes, type, "aria-label": aria, "aria-busy": busy ? "true" : undefined, disabled: busy || disabled ? true : undefined, on: onClick ? { click: onClick } : undefined }, ...inner);
 }
 
 /* -------------------------------------------------------- page / section -- */
@@ -89,11 +105,17 @@ export function card({ title, sub, body, foot, onClick, needs = false, speakKey,
   return h("article", { class: classes }, ...kids);
 }
 
+/** A row: [icon] [title + sub] [amount] [end: a status chip or ONE action]; the whole row opens details. */
 function row(r) {
+  const end = [
+    r.amount ? h("span", { class: "amount", text: r.amount }) : null,
+    ...(Array.isArray(r.end) ? r.end : r.end ? [r.end] : []),
+    (r.onClick || r.href) && !r.end && !r.amount ? icon("chevronRight", 20, "row-chev") : null,
+  ].filter(Boolean);
   const kids = [
-    r.icon ? h("span", { class: "row-ico", "aria-hidden": "true" }, icon(r.icon, 22)) : null,
+    r.icon ? h("span", { class: "row-ico", "aria-hidden": "true" }, icon(r.icon, 24)) : null,
     h("span", { class: "row-main" }, scripted("span", r.title || "", { class: "row-title" }), r.sub ? scripted("span", r.sub, { class: "row-sub" }) : null),
-    r.end || r.onClick || r.href ? h("span", { class: "row-end" }, ...(Array.isArray(r.end) ? r.end : r.end ? [r.end] : []), r.onClick || r.href ? icon("chevronRight", 20, "row-chev") : null) : null,
+    end.length ? h("span", { class: "row-end" }, ...end) : null,
   ];
   if (r.href) return h("a", { class: "row", href: r.href, "aria-label": r.label }, ...kids);
   if (r.onClick) return h("button", { class: "row", type: "button", "aria-label": r.label, on: { click: r.onClick } }, ...kids);
@@ -121,8 +143,16 @@ const TONES = new Set(["good", "warn", "needs", "info"]);
 export function chip(word, { tone, icon: ic } = {}) {
   return h("span", { class: `chip${TONES.has(tone) ? ` chip-${tone}` : ""}` }, ic ? icon(ic, 16) : null, scripted("span", word || ""));
 }
-export const simChip = () => chip(t("simulated"), { tone: "info", icon: "robot" });
-export const testChip = () => chip(t("ui.testMode"), { tone: "warn", icon: "shield" });
+/** "simulated vendor" / "test mode": plain words in --warn (spec: text, not a pill), always shown where they apply. */
+export const simChip = () => h("span", { class: "chip chip-warn chip-plain" }, scripted("span", t("simulated")));
+export const testChip = () => h("span", { class: "chip chip-warn chip-plain" }, scripted("span", t("ui.testMode")));
+
+/** Home "Today" tile: label, value ("—" when unknown), icon; the whole tile is a link. */
+export function tile({ label, value, icon: ic, href, onClick } = {}) {
+  const kids = [scripted("span", label || "", { class: "tile-label" }), h("span", { class: "tile-value", text: value === null || value === undefined || value === "" ? "—" : String(value) }), ic ? icon(ic, 20, "tile-ico") : null];
+  if (href) return h("a", { class: "tile", href }, ...kids);
+  return h("button", { class: "tile", type: "button", on: onClick ? { click: onClick } : undefined }, ...kids);
+}
 
 export function emptyState({ icon: ic = "spark", title, text, action, inline = false } = {}) {
   const act = action instanceof Node ? action : action ? button({ kind: "secondary", ...action }) : null;
@@ -169,6 +199,16 @@ export function field({ label, value = "", help = "", type = "text", inputmode, 
   return { el, input, get value() { return input.value; }, setError, validate: check };
 }
 
+/** searchField({ label, onInput }) -> the one field with an icon inside (magnifier). */
+export function searchField({ label, value = "", onInput } = {}) {
+  const id = `f${++seq}`;
+  const input = h("input", { class: "input", id, type: "search", autocomplete: "off", spellcheck: "false" });
+  input.value = value;
+  input.addEventListener("input", () => onInput && onInput(input.value));
+  const el = h("div", { class: "field" }, h("label", { class: "field-label", for: id, text: label }), h("div", { class: "search-field" }, icon("search", 20), input));
+  return { el, input, get value() { return input.value; } };
+}
+
 /** phoneField({ label, value, onInput }) -> a 10-digit Indian mobile number with a fixed +91. */
 export function phoneField({ label, value = "", help = "", onInput } = {}) {
   const id = `f${++seq}`;
@@ -181,17 +221,42 @@ export function phoneField({ label, value = "", help = "", onInput } = {}) {
   return { el, input, get value() { return input.value; } };
 }
 
+/**
+ * Sliding tabs (uiverse Admin12121_cold-bobcat-20, adapted): a radio group with one pink glider under
+ * the checked option. Max 3 options. Arrow keys move the choice.
+ */
 export function segmented({ label, options, value, onPick } = {}) {
-  return h("div", { class: "seg", role: "group", "aria-label": label },
-    ...options.map((o) => h("button", { class: "seg-opt", type: "button", "aria-pressed": String(o.id === value), on: { click: () => { if (o.id !== value && onPick) onPick(o.id); } } },
-      o.icon ? icon(o.icon, 20) : null, scripted("span", o.word))));
+  const glider = h("span", { class: "seg-glider", "aria-hidden": "true" });
+  const opts = options.map((o) => h("button", {
+    class: "seg-opt", type: "button", role: "radio", "aria-checked": String(o.id === value), tabindex: o.id === value ? "0" : "-1",
+    dataset: { id: o.id }, on: { click: () => { if (o.id !== value && onPick) onPick(o.id); } },
+  }, o.icon ? icon(o.icon, 20) : null, scripted("span", o.word)));
+  const el = h("div", { class: "seg", role: "radiogroup", "aria-label": label }, glider, ...opts);
+  const place = () => {
+    const cur = opts.find((b) => b.getAttribute("aria-checked") === "true");
+    if (!cur || !cur.offsetWidth) return;
+    glider.style.width = `${cur.offsetWidth}px`;
+    glider.style.transform = `translateX(${cur.offsetLeft}px)`;
+  };
+  el.addEventListener("keydown", (e) => {
+    const i = opts.indexOf(document.activeElement);
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (i < 0 || !d) return;
+    e.preventDefault();
+    const next = opts[(i + d + opts.length) % opts.length];
+    next.focus();
+    next.click();
+  });
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(place).observe(el);
+  requestAnimationFrame(place);
+  return el;
 }
 
 export function toggle({ label, checked = false, onChange } = {}) {
   const input = h("input", { type: "checkbox", role: "switch" });
   input.checked = checked;
   input.addEventListener("change", () => onChange && onChange(input.checked));
-  return h("label", { class: "toggle" }, input, h("span", { class: "toggle-track", "aria-hidden": "true" }), scripted("span", label || ""));
+  return h("label", { class: "toggle" }, input, h("span", { class: "toggle-track", "aria-hidden": "true" }), scripted("span", label || "", { class: "toggle-text" }));
 }
 
 /** The consent pair: No (outline) left, Yes (pink) right, both 64px; icon + word; long aria labels. */
@@ -199,8 +264,8 @@ export function yesNo({ onYes, onNo, busy = null, yesWord, noWord, yesLabel, noL
   const yw = yesWord || t("ui.yes");
   const nw = noWord || t("ui.no");
   return h("div", { class: "yesno" },
-    button({ word: nw, icon: busy === "no" ? null : "x", kind: "secondary", busy: busy === "no", label: noLabel || nw, onClick: onNo, cls: "yes-no" }),
-    button({ word: yw, icon: busy === "yes" ? null : "check", kind: "primary", busy: busy === "yes", label: yesLabel || yw, onClick: onYes, cls: "yes-yes" }));
+    button({ word: nw, icon: "x", kind: "secondary", size: "lg", busy: busy === "no", disabled: Boolean(busy), label: noLabel || nw, onClick: onNo, cls: "yes-no" }),
+    button({ word: yw, icon: "check", kind: "primary", size: "lg", busy: busy === "yes", disabled: busy === "no", label: yesLabel || yw, onClick: onYes, cls: "yes-yes" }));
 }
 
 /* --------------------------------------------------------- sheet / modal -- */
@@ -212,7 +277,7 @@ const host = () => document.querySelector(".sheet-host") || document.body;
  * A bottom sheet on phones, a centred modal from 768px. Esc, the scrim and Close dismiss; focus stays
  * inside and returns to the opener; swipe down on the grip closes a phone sheet.
  */
-export function openSheet({ title, body, footer, opener, label, onClose, speakKey } = {}) {
+export function openSheet({ title, body, footer, opener, label, onClose, speakKey, scrimCloses = true } = {}) {
   closeSheet(false);
   const tid = `sh${++seq}`;
   const content = h("div", { class: "sheet-body" });
@@ -240,7 +305,7 @@ export function openSheet({ title, body, footer, opener, label, onClose, speakKe
   };
   document.addEventListener("keydown", onKey, true);
   close.addEventListener("click", () => closeSheet());
-  scrim.addEventListener("click", () => closeSheet());
+  if (scrimCloses) scrim.addEventListener("click", () => closeSheet());
   let startY = null;
   grip.addEventListener("pointerdown", (e) => { startY = e.clientY; try { grip.setPointerCapture(e.pointerId); } catch { /* ignore */ } });
   grip.addEventListener("pointerup", (e) => { if (startY !== null && e.clientY - startY > 80) closeSheet(); startY = null; });
@@ -342,7 +407,7 @@ export function setUiLang(code) {
 export function langSwitch({ compact = false } = {}) {
   const name = h("span", { class: "lang-switch-name" });
   const el = h("button", { class: "lang-switch", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
-    icon("globe", 20), name, icon("chevronDown", 16, "lang-switch-caret"));
+    icon("language", 20), name, icon("chevronDown", 16, "lang-switch-caret"));
   el.addEventListener("click", () => openMenu({
     anchor: el, label: t("ui.language"),
     items: LANGS.map((L) => ({ id: L.short, label: LANG_NAMES[L.short], lang: L.short, current: L.short === lang() })),
@@ -350,7 +415,8 @@ export function langSwitch({ compact = false } = {}) {
   }));
   function update() {
     const cur = lang();
-    name.textContent = compact ? cur.toUpperCase() === "EN" ? "English" : LANG_NAMES[cur] : LANG_NAMES[cur] || "English";
+    name.textContent = LANG_NAMES[cur] || "English";
+    name.dataset.short = { en: "Eng", hi: "हिं", kn: "ಕನ್" }[cur] || "Eng";
     name.setAttribute("lang", cur);
     el.setAttribute("aria-label", `${t("ui.language")}: ${LANG_NAMES[cur] || "English"}`);
   }
@@ -361,7 +427,7 @@ export function langSwitch({ compact = false } = {}) {
 
 /* --------------------------------------------------------------- brand -- */
 /** The real Sahay logo (public/assets/brand/), optionally with the word "Sahay". */
-export function brandMark({ word = true, size = 36, href = "#/home" } = {}) {
+export function brandMark({ word = true, size = 32, href = "#/home" } = {}) {
   const w = Math.round(size * 861 / 1078);
   const img = h("img", { src: "/assets/brand/sahay-mark-128.png", srcset: "/assets/brand/sahay-mark-256.png 2x", width: String(w), height: String(size), alt: word ? "" : t("app.name"), decoding: "async" });
   const kids = [img, word ? h("span", { class: "brand-word", text: t("app.name") }) : null];

@@ -30,9 +30,9 @@ const maxOnScreen = () => (phone.matches ? 2 : 3); // spec 6.3: phone max 2, lap
 const SEEN_MS = 2 * 60 * 1000;
 const ICON_FOR = { success: "checkCircle", info: "info", action: "spark", warning: "alert", error: "alert" };
 
-const phone = matchMedia("(max-width: 599px)");
+const phone = matchMedia("(max-width: 767px)");
 const reduce = matchMedia("(prefers-reduced-motion: reduce)");
-const position = () => (phone.matches ? "top-center" : "top-right");
+const position = () => (phone.matches ? "bottom-center" : "bottom-right"); // v5 spec: above the phone tab bar; bottom-right on laptops
 
 let island = null;      // the loaded module
 let loading = null;     // its import() promise
@@ -63,7 +63,7 @@ function load() {
     loading = import(ISLAND).then((mod) => {
       island = mod;
       island.setReducedMotion(reduce.matches);
-      handle = island.mount(host, { position: position(), options: { roundness: 18 } });
+      handle = island.mount(host, { position: position(), options: { roundness: 14 } });
       while (queue.length) show(queue.shift());
       return island;
     }).catch((err) => {
@@ -77,7 +77,7 @@ function load() {
 }
 
 reduce.addEventListener("change", () => { if (island) island.setReducedMotion(reduce.matches); });
-phone.addEventListener("change", () => { if (handle) handle.render({ position: position(), options: { roundness: 18 } }); });
+phone.addEventListener("change", () => { if (handle) handle.render({ position: position(), options: { roundness: 14 } }); });
 
 /** Announce once in the right live region (cleared first so the same words are read again). */
 function announce(text, urgent) {

@@ -1,83 +1,75 @@
-/* Sahay tokens (UI v5, brief 2026-11-20-ui-v5-brief.md): warm black with a creamy pink accent.
-   Professional and calm: solid surfaces, 1px hairlines, one soft shadow, no glow, no neon, no glass on
-   content, no hex grid. Kit contract: public/css/README.md. Fonts (app.html, Google Fonts, display=swap):
-   Manrope (everything), Hind (Hindi), Noto Sans Kannada (Kannada). */
+/* Sahay tokens (UI v5). Binding spec: docs/build/evidence/ux-v5/screens.md section 1.
+   Warm black, creamy pink accent, muted status colours. Forbidden: gradients (except the page dot grid),
+   glows, backdrop-filter, multi-hue anything, coloured shadows. Kit contract: public/css/README.md.
+   Fonts (app.html, Google Fonts, display=swap): Manrope 400-700; Hind (hi); Noto Sans Kannada (kn). */
 
 :root {
   color-scheme: dark;
 
   /* ------------------------------------------------------------- colour -- */
-  --bg: #0F0D0E;            /* page, warm black */
-  --surface: #181416;       /* cards */
-  --surface-2: #211C1E;     /* raised: sheets, menus, inputs, hover */
-  --surface-3: #2A2427;     /* pressed, selected rows */
-  --hairline: rgba(242, 207, 198, .14);
-  --hairline-strong: rgba(242, 207, 198, .28);
-  --edge: rgba(242, 207, 198, .42);          /* boundary of anything pressable, >= 3:1 on --bg */
-
-  --text: #F8ECE8;          /* cream */
-  --text-muted: #BBA8A4;
-  --text-faint: #8E7D7A;    /* decoration only, never sentences */
-
-  --pink: #F2CFC6;          /* the accent: primary buttons, active tab, focus */
+  --bg: #0F0D0E;            /* page */
+  --surface: #181416;       /* card */
+  --surface-2: #211C1E;     /* raised: sheet, modal, input fill, hover row */
+  --line: rgba(242, 207, 198, .14);         /* every hairline border and divider */
+  --line-strong: rgba(242, 207, 198, .32);  /* outline buttons, focused card */
+  --text: #F8ECE8;
+  --muted: #BBA8A4;         /* helper text, labels, inactive tabs (7.9:1 on --bg) */
+  --pink: #F2CFC6;          /* accent: primary fill, active tab, focus ring base */
   --pink-hover: #F7DDD6;
-  --pink-pressed: #E6B9AE;
-  --pink-soft: rgba(242, 207, 198, .12);     /* tinted backgrounds (selected chip, active row) */
-  --on-pink: #2A1A1C;
-
-  --good: #9BD3A8;          /* done, paid (with a check icon) */
-  --warn: #F0C47E;          /* waiting, test mode (with a clock / shield icon) */
-  --needs: #EE8E82;         /* needs you, errors, No (with an alert icon) */
-  --info: #A9C4E8;          /* vendor side, simulated vendor (with a robot icon) */
-  --good-soft: rgba(155, 211, 168, .12);
-  --warn-soft: rgba(240, 196, 126, .12);
-  --needs-soft: rgba(238, 142, 130, .12);
-  --info-soft: rgba(169, 196, 232, .12);
-  --on-status: #1C1416;
-
-  --scrim: rgba(8, 6, 7, .66);
-  --dot: rgba(242, 207, 198, .06);           /* the faint page dot grid */
+  --pink-press: #E6B9AE;
+  --pink-edge: #C99A8F;     /* (unused since the flat buttons; kept for screens that read it) */
+  --on-pink: #2A1A1C;       /* text and icons on pink (12.6:1) */
+  --good: #9BD3A8;
+  --warn: #F0C47E;
+  --needs: #EE8E82;
+  --info: #A9C4E8;
+  --scrim: rgba(8, 6, 7, .72);              /* behind sheet / modal; no blur */
+  --dot: rgba(242, 207, 198, .06);          /* page dot grid */
+  --disabled: #3A3134;
+  --toggle-off: #2A2326;
 
   /* --------------------------------------------------------------- type -- */
   --font: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-hi: "Hind", "Manrope", sans-serif;
   --font-kn: "Noto Sans Kannada", "Manrope", sans-serif;
-  --fs-title: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem);   /* page title 28-40px, 700 */
-  --fs-h2: 1.375rem;        /* section title 22px, 700 */
-  --fs-h3: 1.125rem;        /* card title 18px, 700 */
-  --fs-body: 1.0625rem;     /* 17px / 1.6 */
-  --fs-small: .9375rem;     /* 15px secondary lines */
-  --fs-label: .8125rem;     /* 13px, 600 */
-  --fs-figure: clamp(2rem, 1.5rem + 1.6vw, 2.75rem);    /* big amounts 32-44px, 700 tabular */
-  --fs-amount: 1.25rem;     /* line amounts 20px, 700 tabular */
+  --fs-display: 2.5rem;
+  --fs-amount-xl: 2.75rem;
+  --fs-title: 1.375rem;
+  --fs-body: 1.0625rem;
+  --fs-amount: 1.25rem;
+  --fs-label: .875rem;
+  --fs-meta: .8125rem;
   --lh: 1.6;
-  --lh-tight: 1.2;
   --lh-indic: 1.7;
+  --lh-display: 3rem; --lh-amount-xl: 3.25rem; --lh-title: 1.875rem; --lh-body: 1.6875rem; --lh-amount: 1.75rem; --lh-label: 1.25rem; --lh-meta: 1.125rem;
+  --measure: 60ch;
 
-  /* -------------------------------------------------------------- shape -- */
-  --r-sm: 10px;
-  --r: 16px;                /* cards, inputs */
-  --r-lg: 20px;             /* sheets, modals */
-  --r-pill: 999px;          /* buttons, chips, tabs */
-  --shadow: 0 8px 24px -12px rgba(0, 0, 0, .6);         /* the one soft shadow */
-  --shadow-sheet: 0 -8px 32px -16px rgba(0, 0, 0, .7);
-
-  /* -------------------------------------------------------------- space -- */
+  /* -------------------------------------------------- space, radius, shadow -- */
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
-  --tap: 48px;              /* every target */
-  --tap-primary: 56px;      /* primary buttons */
-  --tap-hero: 64px;         /* Talk to Sahay, Yes / No */
+  --card-pad: 24px;         /* phone 16 */
+  --group-gap: 32px;        /* phone 24 */
+  --r-card: 18px;
+  --r-sheet: 24px;
+  --r-input: 14px;
+  --r-tile: 14px;
+  --r-pill: 999px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);   /* the one shadow */
+  --tap: 48px;
+  --btn: 52px;             /* flat solid pills (owner's choice) */
+  --btn-lg: 60px;
+  --btn-sm: 44px;           /* + a 48px tap area */
   --content-max: 1120px;
-  --gutter: 16px;
-  --topbar-h: 64px;
+  --gutter: 32px;           /* phone 16 */
+  --topbar-h: 64px;         /* phone 56 */
   --tabbar-h: 64px;
 
-  /* ------------------------------------------------------------- motion -- */
+  /* --------------------------------------------------------- focus, motion -- */
+  --focus-color: var(--pink-hover);
   --t-fast: 120ms;
   --t: 200ms;
-  --t-slow: 280ms;
-  --ease: cubic-bezier(.22, 1, .36, 1);
-  --ease-in: cubic-bezier(.55, 0, 1, .45);
+  --t-slow: 320ms;
+  --ease: cubic-bezier(.3, .7, .4, 1);
+  --ease-spring: cubic-bezier(.3, .7, .4, 1);
 
   /* ------------------------------------------------------------- layers -- */
   --z-bar: 40;
@@ -92,12 +84,53 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
 
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--pink);
+  /* -------------------------- names from the first v5 kit (kept; same values) -- */
+  --hairline: var(--line);
+  --hairline-strong: var(--line-strong);
+  --edge: var(--line-strong);
+  --text-muted: var(--muted);
+  --text-faint: #8E7D7A;
+  --surface-3: #2A2427;
+  --pink-pressed: var(--pink-press);
+  --pink-soft: rgba(242, 207, 198, .10);
+  --good-soft: rgba(155, 211, 168, .10);
+  --warn-soft: rgba(240, 196, 126, .10);
+  --needs-soft: rgba(238, 142, 130, .10);
+  --info-soft: rgba(169, 196, 232, .10);
+  --on-status: #1C1416;
+  --fs-h2: var(--fs-title);
+  --fs-h3: 1.125rem;
+  --fs-small: .9375rem;
+  --fs-figure: var(--fs-amount-xl);
+  --lh-tight: 1.2;
+  --r-sm: 10px;
+  --r: var(--r-card);
+  --r-lg: var(--r-sheet);
+  --tap-primary: var(--btn);
+  --tap-hero: var(--btn-lg);
+  --ease-in: cubic-bezier(.55, 0, 1, .45);
 }
 
-@media (min-width: 600px) { :root { --gutter: 24px; } }
-@media (min-width: 1024px) { :root { --gutter: 32px; } }
+@media (max-width: 767px) {
+  :root {
+    --gutter: 16px; --card-pad: 16px; --group-gap: 24px; --topbar-h: 56px;
+    --fs-display: 1.875rem; --lh-display: 2.25rem;       /* 30/36 */
+    --fs-amount-xl: 2.5rem; --lh-amount-xl: 3rem;        /* 40/48 */
+  }
+}
 
+/* Type roles as `font` shorthands (use `font: var(--t-title)` etc.). Sentence case only: no all caps,
+   no letter-spaced eyebrows. Declared on every element so Hindi / Kannada pages get their own face. */
+:root, :lang(hi), :lang(kn) {
+  --t-display: 700 var(--fs-display)/var(--lh-display) var(--font);        /* 40/48 page title (phone 30/36) */
+  --t-amount-xl: 700 var(--fs-amount-xl)/var(--lh-amount-xl) var(--font);  /* 44/52 HOW MUCH (phone 40/48) */
+  --t-title: 700 var(--fs-title)/var(--lh-title) var(--font);              /* 22/30 card titles */
+  --t-body: 500 var(--fs-body)/var(--lh-body) var(--font);                 /* 17/27 sentences, row main line */
+  --t-amount: 700 var(--fs-amount)/var(--lh-amount) var(--font);           /* 20/28 money in a row */
+  --t-label: 600 var(--fs-label)/var(--lh-label) var(--font);              /* 14/20 tab words, labels */
+  --t-meta: 600 var(--fs-meta)/var(--lh-meta) var(--font);                 /* 13/18 muted second line */
+}
 /* Indic text: its own face, taller lines, no tracking, never uppercase. */
-:lang(hi) { font-family: var(--font-hi); letter-spacing: 0; }
-:lang(kn) { font-family: var(--font-kn); letter-spacing: 0; }
+:lang(hi) { --font: "Hind", "Manrope", sans-serif; font-family: var(--font-hi); letter-spacing: 0; }
+:lang(kn) { --font: "Noto Sans Kannada", "Manrope", sans-serif; font-family: var(--font-kn); letter-spacing: 0; }
+:lang(hi), :lang(kn) { --lh-display: 1.35; --lh-amount-xl: 1.3; --lh-title: 1.5; --lh-body: 1.7; --lh-label: 1.5; --lh-meta: 1.5; }

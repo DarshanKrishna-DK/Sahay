@@ -23,7 +23,7 @@ addStrings({
   "app.tabs": ["Main", "मुख्य", "ಮುಖ್ಯ"],
 });
 
-const TAB_ICON = { home: "home", buy: "cart", sell: "receipt", stock: "jar", money: "wallet" };
+const TAB_ICON = { home: "home", buy: "cart", sell: "receipt", stock: "box", money: "wallet" };
 const TAB_KEY = { home: "nav.home", buy: "nav.buy", sell: "nav.sell", stock: "nav.stock", money: "nav.money" };
 
 let route = "home";
@@ -36,11 +36,11 @@ const needsListeners = new Set();
 
 /* ------------------------------------------------------------- top bar -- */
 const lang = langSwitch();
-const needsBtn = h("button", { class: "btn btn-secondary btn-sm needs-btn", type: "button", hidden: true },
+const needsBtn = h("button", { class: "needs-btn", type: "button", hidden: true },
   h("span", { class: "needs-dot", "aria-hidden": "true" }), h("span", { class: "needs-word" }), h("span", { class: "needs-n num" }));
 needsBtn.addEventListener("click", () => openNeeds());
 const account = h("button", { class: "account-btn", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
-  h("span", { class: "account-ini" }), icon("user", 22, "account-ico"));
+  h("span", { class: "account-ini" }), icon("userCircle", 22, "account-ico"));
 account.addEventListener("click", () => openMenu({
   anchor: account, label: t("app.account"),
   items: [
@@ -65,7 +65,7 @@ const tabbar = h("nav", { class: "tabbar" }, ...TABS.map((id) => tab(id, "tabbar
 
 function tab(id, cls) {
   return h("a", { class: cls, href: `#/${id}`, dataset: { route: id } },
-    h("span", { class: `${cls}-ico`, "aria-hidden": "true" }, icon(TAB_ICON[id], 22), h("span", { class: "badge tab-badge", hidden: true })),
+    h("span", { class: `${cls}-ico`, "aria-hidden": "true" }, icon(TAB_ICON[id], cls === "tab" ? 20 : 24), h("span", { class: "badge tab-badge", hidden: true })),
     h("span", { class: `${cls}-word` }));
 }
 
@@ -73,8 +73,8 @@ const topbar = h("header", { class: "topbar" },
   h("div", { class: "topbar-in" },
     brandMark({ word: true }),
     tabsTop,
-    h("div", { class: "topbar-end" }, lang.el, needsBtn, account)),
-  notice);
+    h("div", { class: "topbar-end" }, notice, lang.el, needsBtn, account)));
+// Under 1280px the notice sits on its own thin line under the bar (moved by CSS order, same element).
 
 const main = h("main", { id: "main", tabindex: "-1" });
 const bannerSlot = h("div", { class: "banner-slot", "aria-live": "polite" });
