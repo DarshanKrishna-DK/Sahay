@@ -1,0 +1,115 @@
+/* Sahay app shell (UI v5): a slim top bar; on phones a bottom tab bar. No sidebars, no side columns.
+   Content max 1120px, centred. Tokens: tokens.css; components: components.css; contract: README.md. */
+
+/* ============================================================ top bar -- */
+.topbar {
+  position: fixed; z-index: var(--z-bar); top: 0; left: 0; right: 0;
+  padding-top: var(--safe-t);
+  background: var(--bg); border-bottom: 1px solid var(--hairline);
+}
+.topbar-in {
+  display: flex; align-items: center; gap: 16px;
+  max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: 0 auto;
+  min-height: var(--topbar-h); padding: 0 calc(var(--gutter) + var(--safe-r)) 0 calc(var(--gutter) + var(--safe-l));
+}
+.topbar .brand { min-height: var(--tap); }
+.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* Tabs in the bar (900px and up): icon + word, the active one a pink pill. */
+.tabs-top { display: none; align-items: center; gap: 4px; margin: 0 auto; }
+.tab {
+  display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); padding: 0 16px;
+  border-radius: var(--r-pill); color: var(--text-muted); text-decoration: none; font-weight: 700; font-size: var(--fs-small);
+  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab[aria-current="page"] { background: var(--pink); color: var(--on-pink); }
+.tab-ico { position: relative; display: grid; place-items: center; }
+.tab-badge { position: absolute; top: -8px; right: -12px; }
+
+/* "Needs you (n)": only when something waits for the owner's yes. */
+.needs-btn { border-color: rgba(238, 142, 130, .55); gap: 8px; }
+.needs-btn:hover { border-color: var(--needs); background: var(--needs-soft); }
+.needs-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--needs); flex: none; }
+.needs-n { color: var(--text-muted); }
+
+/* Account: the shop's initials (a person icon without a name). */
+.account-btn {
+  display: grid; place-items: center; flex: none; width: var(--tap); height: var(--tap); padding: 0; border-radius: 50%;
+  border: 1px solid var(--hairline-strong); background: var(--surface); color: var(--text);
+}
+.account-btn:hover { background: var(--surface-2); }
+.account-btn[aria-current="page"], .account-btn[aria-expanded="true"] { border-color: var(--pink); }
+.account-ini { font-weight: 800; font-size: .875rem; letter-spacing: .02em; }
+.account-btn.has-ini .account-ico, .account-btn:not(.has-ini) .account-ini { display: none; }
+
+/* The automated-assistant notice: small, always visible, under the bar's row. */
+.notice {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 28px; padding: 0 var(--gutter) 6px; color: var(--text-muted); font-size: var(--fs-label); font-weight: 600;
+}
+.notice svg { color: var(--info); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); flex: none; margin-left: 4px; }
+.live-dot[data-state="open"] { background: var(--good); }
+.live-dot[data-state="connecting"], .live-dot[data-state="reconnecting"] { background: var(--warn); }
+.live-dot[data-state="closed"] { background: transparent; border: 2px solid var(--needs); }
+
+/* ============================================================== layout -- */
+.page {
+  max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: 0 auto;
+  padding: calc(var(--topbar-h) + 28px + var(--safe-t) + 20px) calc(var(--gutter) + var(--safe-r)) calc(var(--tabbar-h) + 32px + var(--safe-b)) calc(var(--gutter) + var(--safe-l));
+}
+#main { display: block; min-height: 50dvh; }
+#main:focus { box-shadow: none; }
+.screen { min-width: 0; }
+.banner-slot { display: flex; flex-direction: column; gap: 8px; }
+.banner-slot:not(:empty), .live-banner:not(:empty) { margin-bottom: 16px; }
+.boot-view { display: grid; place-items: center; min-height: 50dvh; }
+.boot-loading { width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.boot-line { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-weight: 600; }
+
+/* ======================================================== phone tab bar -- */
+.tabbar {
+  position: fixed; z-index: var(--z-bar); left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  min-height: calc(var(--tabbar-h) + var(--safe-b)); padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
+  background: var(--bg); border-top: 1px solid var(--hairline);
+}
+.tabbar-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0;
+  min-height: var(--tabbar-h); padding: 6px 2px; color: var(--text-muted); text-decoration: none;
+}
+.tabbar-item-ico { position: relative; display: grid; place-items: center; width: 52px; height: 30px; border-radius: var(--r-pill); transition: background-color var(--t-fast) var(--ease); }
+.tabbar-item-word { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-label); font-weight: 700; }
+.tabbar-item[aria-current="page"] { color: var(--text); }
+.tabbar-item[aria-current="page"] .tabbar-item-ico { background: var(--pink); color: var(--on-pink); }
+.tabbar-item:active .tabbar-item-ico { background: var(--surface-2); }
+.tabbar-item .tab-badge { top: -6px; right: 2px; }
+
+/* Phone: logo, language, account in the bar; "Needs you" shows as a count only. */
+@media (max-width: 599px) {
+  .topbar-in { gap: 8px; }
+  .topbar .brand-word { display: none; }
+  .needs-btn { padding: 0 12px; }
+  .needs-word { display: none; }
+  .needs-n { color: var(--text); }
+}
+
+/* Laptop and tablet landscape (900px+): tabs in the bar, no bottom tab bar. */
+@media (min-width: 900px) {
+  .tabs-top { display: flex; }
+  .tabbar { display: none; }
+  .page { padding-bottom: 48px; }
+  .notice { justify-content: flex-end; max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: -4px auto 0; }
+}
+
+/* Short laptop screens (the owner's 1568x701): keep the bar slim. */
+@media (min-width: 900px) and (max-height: 760px) {
+  :root { --topbar-h: 60px; }
+  .page { padding-top: calc(var(--topbar-h) + 22px + var(--safe-t) + 12px); }
+}
+
+/* Before the app is ready: the bar shows only logo, language and the notice. */
+body:not([data-boot="ready"]) .tabs-top, body:not([data-boot="ready"]) .tabbar,
+body:not([data-boot="ready"]) .needs-btn, body:not([data-boot="ready"]) .account-btn { display: none; }
+body:not([data-boot="ready"]) .page { padding-bottom: 48px; }
