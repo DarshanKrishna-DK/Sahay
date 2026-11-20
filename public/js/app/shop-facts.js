@@ -69,6 +69,21 @@ export function statesFor(lang = "en") {
     .sort((a, b) => collate(a.label, b.label));
 }
 
+/**
+ * The state picker's search: rows of statesFor(lang) whose name in any of the three scripts, or
+ * GST code, contains what was typed (case and spaces ignored). An empty query keeps every row.
+ */
+export function findStates(query, lang = "en") {
+  const fold = (s) => String(s ?? "").toLocaleLowerCase("en-IN").replace(/\s+/g, "");
+  const q = fold(query);
+  const rows = statesFor(lang);
+  if (!q) return rows;
+  return rows.filter((r) => {
+    const row = BY_CODE.get(r.code);
+    return r.code === q || row.slice(1).some((name) => name && fold(name).includes(q));
+  });
+}
+
 /** What the owner typed, as a GSTIN is written: capitals and digits only, at most 15. */
 export const cleanGstin = (text) => String(text ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 15);
 
