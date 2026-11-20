@@ -56,23 +56,30 @@ test("landing buttons use the app's button classes", () => {
   assert.doesNotMatch(html, /btn-lime|btn-outline|btn-big|btn-glass/);
 });
 
-test("landing buttons are the owner's flat solid pill: no edge layer, no shadow, no press-down", () => {
+test("landing buttons are KrowdKraft's key-cap: label then a trailing arrow, lip shadow, sheen, sink on press", () => {
   const html = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
   assert.doesNotMatch(html, /btn-edge|btn-front/, "no pushable layers");
+  for (const m of html.matchAll(/<a class="btn [^"]+"[^>]*>([\s\S]*?)<\/a>/g)) {
+    assert.match(m[1], /^<span[^>]*>[^<]+<\/span><svg class="btn-ico"/, "label first, then the trailing icon");
+  }
   const css = fs.readFileSync(path.join(CSS, "landing.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   const rules = [...css.matchAll(/([^{}]*\.btn[^{}]*)\{([^}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
-  const base = rules.find((r) => r.sel === ".btn");
-  assert.ok(base, ".btn rule");
-  assert.match(base.body, /min-height:\s*52px/);
-  assert.match(base.body, /font-weight:\s*600/);
-  assert.match(base.body, /border-radius:\s*var\(--r-pill\)/);
-  for (const r of rules.filter((x) => /\.btn-(primary|secondary)/.test(x.sel))) {
-    assert.doesNotMatch(r.body, /box-shadow|transform/, `${r.sel} stays flat`);
-  }
-  const primary = rules.find((r) => r.sel === ".btn-primary");
-  assert.match(primary.body, /background:\s*var\(--pink\)/);
-  assert.match(primary.body, /color:\s*var\(--on-pink\)/);
-  assert.match(rules.find((r) => r.sel === ".btn-primary:hover").body, /var\(--pink-press\)/);
-  assert.match(css, /--btn-outline:\s*rgba\(248, 236, 232, \.55\)/);
-  assert.match(rules.find((r) => r.sel === ".btn-secondary").body, /border-color:\s*var\(--btn-outline\)/);
+  const rule = (sel) => { const r = rules.find((x) => x.sel === sel); assert.ok(r, `${sel} rule`); return r.body; };
+  const base = rule(".btn");
+  assert.match(base, /min-height:\s*52px/);
+  assert.match(base, /font-weight:\s*600/);
+  assert.match(base, /border-radius:\s*var\(--btn-radius\)/);
+  assert.match(base, /border-bottom-color:\s*var\(--key-border-low\)/);
+  assert.match(base, /box-shadow:\s*var\(--key-depth\)/);
+  assert.match(css, /--btn-radius:\s*14px/);
+  assert.match(css, /--key-depth:[^;]*0 3px 0 #060405/, "a 3px hard lip");
+  assert.match(rule(".btn::before"), /opacity:\s*0/);
+  assert.match(rule(".btn:hover::before"), /opacity:\s*1/, "sheen on hover");
+  const primary = rule(".btn-primary");
+  assert.match(primary, /background:\s*var\(--key-pink-face\)/);
+  assert.match(primary, /color:\s*var\(--on-pink\)/);
+  assert.match(css, /--key-pink-face:\s*linear-gradient\([^;]*var\(--pink\)/);
+  assert.match(rule(".btn-primary:active"), /inset/, "press sinks");
+  assert.match(rule(".btn-secondary:active"), /var\(--key-depth-press\)/);
+  for (const r of rules.filter((x) => /\.btn/.test(x.sel))) assert.doesNotMatch(r.body, /transform/, `${r.sel}: nothing moves`);
 });

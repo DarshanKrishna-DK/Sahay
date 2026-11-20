@@ -245,20 +245,33 @@ const S = {
     kn: "ಭಾರತೀಯ ಅಂಗಡಿಗಳಿಗೆ ಧ್ವನಿ ಸಹಾಯಕ: ಖರೀದಿ, ಬಿಲ್, ಖಾತೆ ಮತ್ತು ದಾಸ್ತಾನು.",
   },
   footNav: { en: "Footer", hi: "नीचे के लिंक", kn: "ಕೆಳಗಿನ ಲಿಂಕ್‌ಗಳು" },
-  footNotice: {
-    en: "Sahay is an automated assistant. It never orders or pays without your yes.",
-    hi: "सहाय एक स्वचालित सहायक है। आपकी हाँ के बिना यह न ऑर्डर देता है, न भुगतान करता है।",
-    kn: "ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ. ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಇದು ಆರ್ಡರ್ ಮಾಡುವುದಿಲ್ಲ, ಹಣ ಪಾವತಿಸುವುದಿಲ್ಲ.",
+  footTagA: { en: "Your shop,", hi: "आपकी दुकान,", kn: "ನಿಮ್ಮ ಅಂಗಡಿ," },
+  footTagB: { en: "your yes.", hi: "आपकी हाँ।", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ." },
+  footNever: {
+    en: "It never orders or pays without your yes.",
+    hi: "आपकी हाँ के बिना यह न ऑर्डर देता है, न भुगतान करता है।",
+    kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಇದು ಆರ್ಡರ್ ಮಾಡುವುದಿಲ್ಲ, ಹಣ ಪಾವತಿಸುವುದಿಲ್ಲ.",
+  },
+  footCode: { en: "Code on GitHub", hi: "GitHub पर कोड", kn: "GitHub ನಲ್ಲಿ ಕೋಡ್" },
+  footArt: {
+    en: "Pixel picture: a shop owner at the counter, Sahay in the middle as a small speaker, and a supplier with a delivery tempo.",
+    hi: "पिक्सेल चित्र: काउंटर पर दुकानदार, बीच में छोटे स्पीकर जैसा सहाय, और डिलीवरी टेम्पो के साथ सप्लायर।",
+    kn: "ಪಿಕ್ಸೆಲ್ ಚಿತ್ರ: ಕೌಂಟರ್ ಬಳಿ ಅಂಗಡಿಯವರು, ನಡುವೆ ಚಿಕ್ಕ ಸ್ಪೀಕರ್‌ನಂತೆ ಸಹಾಯ್, ಮತ್ತು ಡೆಲಿವರಿ ಟೆಂಪೋ ಜೊತೆ ಸರಬರಾಜುದಾರ.",
+  },
+  footDisclose: {
+    en: "Sahay is an automated assistant. Payments are in test mode.",
+    hi: "सहाय एक स्वचालित सहायक है। भुगतान टेस्ट मोड में हैं।",
+    kn: "ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ. ಪಾವತಿಗಳು ಪರೀಕ್ಷಾ ಮೋಡ್‌ನಲ್ಲಿವೆ.",
   },
   footSim: {
     en: "A simulated vendor is always labelled \"simulated vendor\".",
     hi: "सिम्युलेटेड विक्रेता पर हमेशा \"simulated vendor\" लिखा रहता है।",
     kn: "ಅನುಕರಿಸಿದ ಮಾರಾಟಗಾರರ ಮೇಲೆ ಯಾವಾಗಲೂ \"simulated vendor\" ಎಂದು ಬರೆದಿರುತ್ತದೆ.",
   },
-  footTest: {
-    en: "Payments run in Razorpay test mode. Names and numbers in the pictures on this page are examples.",
-    hi: "भुगतान Razorpay टेस्ट मोड में चलते हैं। इस पेज के चित्रों के नाम और अंक उदाहरण हैं।",
-    kn: "ಪಾವತಿಗಳು Razorpay ಪರೀಕ್ಷಾ ಮೋಡ್‌ನಲ್ಲಿ ನಡೆಯುತ್ತವೆ. ಈ ಪುಟದ ಚಿತ್ರಗಳಲ್ಲಿನ ಹೆಸರು, ಅಂಕೆಗಳು ಉದಾಹರಣೆಗಳು.",
+  footExamples: {
+    en: "Names and numbers in the pictures on this page are examples.",
+    hi: "इस पेज के चित्रों के नाम और अंक उदाहरण हैं।",
+    kn: "ಈ ಪುಟದ ಚಿತ್ರಗಳಲ್ಲಿನ ಹೆಸರು, ಅಂಕೆಗಳು ಉದಾಹರಣೆಗಳು.",
   },
 };
 
