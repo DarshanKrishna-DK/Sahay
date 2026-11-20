@@ -344,13 +344,11 @@ function showHost({ forceList = false } = {}) {
   const api2 = openSheet({
     title: content.title, body: content.body, footer: content.footer, speakKey: content.speakKey,
     opener,
+    // Spec 03: on the Yes card a tap on the scrim does nothing; only No, Yes or the close X end it.
+    scrimCloses: plan.mode !== "card",
     onClose: () => { if (sheet && sheet.id === id) { sheet = null; wantedKey = null; settleOnClose(); } },
   });
   sheet = { api: api2, id, ident, sig, hash: location.hash, opener };
-  // Spec 03: on the Yes card a tap on the scrim does nothing; only No, Yes or the close X end it.
-  if (plan.mode === "card" && api2.el && api2.el.parentNode) {
-    api2.el.parentNode.addEventListener("click", (e) => { if (e.target && e.target.classList && e.target.classList.contains("sheet-scrim")) e.stopPropagation(); }, true);
-  }
 }
 
 /** Closing the host clears answered cards (their outcome was seen); waiting ones stay. */

@@ -44,7 +44,8 @@ test("spec 03: simulated vendor as plain warn text under the name, read-back fol
   assert.match(YES, /f\.simulated \? h\("span", \{ class: "yes-sim", text: t\("simulated"\) \}\)/);
   assert.match(CSS, /\.yes-sim \{[^}]*color: var\(--warn\)/);
   assert.match(YES, /h\("details", \{ class: "yes-readout", open: openReadouts\.has\(c\.key\) \? true : undefined \}/, "closed unless the owner opened it");
-  assert.match(YES, /plan\.mode === "card"[\s\S]{0,200}classList\.contains\("sheet-scrim"\)\) e\.stopPropagation\(\)/);
+  assert.match(YES, /scrimCloses: plan\.mode !== "card",/, "W1's openSheet option: the scrim never dismisses the Yes card");
+  assert.doesNotMatch(YES, /sheet-scrim/, "no custom scrim handling");
   assert.doesNotMatch(YES, /wt\.sentence/, "no subtitle under the question (spec 03)");
   assert.match(YES, /yesNo\(\{/, "W1's 64px No / Yes pair");
   assert.match(YES, /t\(`wt\.foot\.\$\{c\.kind\}`\)/, "the footnote under the pair");
