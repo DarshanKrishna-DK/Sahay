@@ -27,7 +27,7 @@ function setLanguage(next, { save = true } = {}) {
   langName.textContent = LANG_NAMES[lang];
   langName.lang = lang;
   langBtn.setAttribute("aria-label", t("langCurrent", lang).replace("{name}", LANG_NAMES[lang]));
-  if (save) store("sahay-lang", lang); // shared with the app: the choice carries into /app
+  if (save) store("sahay-ui-lang", lang); // the app's per-device UI language (README-v3.md): carries into /app
   figures.setLanguage(lang);
   // Labels change width with the script: place the hero trackers again once fonts settle.
   requestAnimationFrame(() => gather?.relayout());
@@ -45,7 +45,7 @@ for (const btn of document.querySelectorAll("button[data-lang]")) {
 const langBtn = document.getElementById("lang-btn");
 const langName = document.getElementById("lang-name");
 const langMenu = document.getElementById("lang-menu");
-const menuItems = [...langMenu.querySelectorAll('[role="menuitemradio"]')];
+const menuItems = [...langMenu.querySelectorAll(".popover-item")];
 function openMenu() {
   langMenu.hidden = false;
   langBtn.setAttribute("aria-expanded", "true");
@@ -71,7 +71,7 @@ langMenu.addEventListener("keydown", (e) => {
   else if (e.key === "Tab") closeMenu();
 });
 document.addEventListener("pointerdown", (e) => {
-  if (!langMenu.hidden && !e.target.closest(".lang-switch")) closeMenu();
+  if (!langMenu.hidden && !e.target.closest(".lang-switch-wrap")) closeMenu();
 });
 
 // ---- Smooth scroll (mouse and trackpad only; never under reduced motion) --------------------
