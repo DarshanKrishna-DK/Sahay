@@ -46,6 +46,9 @@
   --r: var(--r-card);
   --tap-primary: var(--btn);
   --tap-hero: var(--btn-lg);
+  /* Landing only: the flat pill (owner choice, 2026-11-20). */
+  --btn-outline: rgba(248, 236, 232, .55);
+  --btn-pink-active: #DDAEA2;
   /* Landing only. Type (UI v4, kept): display Jaini Purva (Latin + Devanagari; Kannada falls to
      Baloo Tamma 2); UI face Manrope falling back per glyph to Hind and Noto Sans Kannada. */
   --font-display: "Jaini Purva", "Baloo Tamma 2", "Hind", system-ui, sans-serif;
@@ -125,41 +128,25 @@ main, .site-foot { position: relative; z-index: 1; }
   border: 1px solid var(--hairline-strong);
 }
 
-/* Buttons (docs/build/evidence/ux-v5/screens.md section 2; classes as public/css/components.css).
-   Sources: github.com/uiverse-io/galaxy (MIT), Buttons/cssbuttons-io_evil-monkey-41.html and
-   Buttons/adamgiebl_massive-insect-65.html; the "From Uiverse.io by <author>" credit is kept here.
-   Primary: adapted from Uiverse.io by cssbuttons-io ("evil-monkey-41", MIT): a 3-layer pushable pill,
-   solid under-edge, short travel (rest 3px, hover 4px, press 1px). Secondary: keycap idea from
-   Uiverse.io by adamgiebl ("massive-insect-65", MIT): outline with an inset bottom edge. */
+/* Buttons: the owner's flat solid pill (classes as public/css/components.css). Primary = solid creamy
+   pink, dark text, 600, 52px, fully round; no edge layer, no shadow, no press-down. Hover and active
+   are a touch darker; focus is the 2px pink outline. Secondary = transparent with a 1px cream outline. */
 .btn {
   position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  min-height: var(--tap-primary); padding: 0 24px; border-radius: var(--r-pill);
+  min-height: 52px; padding: 0 26px; border-radius: var(--r-pill);
   border: 1px solid transparent; background: transparent; color: var(--text);
-  font-family: var(--font-ui); font-size: var(--fs-body); font-weight: 700; line-height: 1.2; letter-spacing: 0;
+  font-family: var(--font-ui); font-size: var(--fs-body); font-weight: 600; line-height: 1.2; letter-spacing: 0;
   text-decoration: none; white-space: nowrap; user-select: none; -webkit-user-select: none; cursor: pointer;
-  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
 }
 .btn svg { width: 20px; height: 20px; flex: none; }
-.btn-primary { min-height: 0; padding: 0; border: 0; margin-top: 3px; }
-.btn-edge { position: absolute; inset: 0; border-radius: var(--r-pill); background: var(--pink-edge); }
-.btn-front {
-  position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
-  min-height: var(--tap-primary); padding: 0 28px; border-radius: var(--r-pill);
-  background: var(--pink); color: var(--on-pink);
-  transform: translateY(-3px);
-  transition: transform 600ms cubic-bezier(.3, .7, .4, 1), background-color var(--t-fast) var(--ease);
-}
-.btn-primary:hover .btn-front { background: var(--pink-hover); transform: translateY(-4px); transition-duration: 200ms; }
-.btn-primary:active .btn-front { background: var(--pink-pressed); transform: translateY(-1px); transition-duration: 34ms; }
-.btn-secondary {
-  border-color: var(--hairline-strong); background: transparent; color: var(--text); font-weight: 600;
-  box-shadow: inset 0 -3px 0 rgba(242, 207, 198, .10);
-}
+.btn-primary { background: var(--pink); border-color: var(--pink); color: var(--on-pink); }
+.btn-primary:hover { background: var(--pink-press); border-color: var(--pink-press); }
+.btn-primary:active { background: var(--btn-pink-active); border-color: var(--btn-pink-active); }
+.btn-secondary { background: transparent; border-color: var(--btn-outline); color: var(--text); }
 .btn-secondary:hover { background: var(--surface-2); }
-.btn-secondary:active { box-shadow: none; }
-.btn-hero .btn-front { min-height: var(--tap-hero); padding: 0 32px; font-size: 1.1875rem; }
+.btn-secondary:active { background: var(--surface-3); }
 .btn-sm { min-height: var(--tap); padding: 0 18px; font-size: var(--fs-small); }
-.btn-sm .btn-front { min-height: var(--tap); padding: 0 18px; }
 
 .lang-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
 .lang-tiles button {
@@ -702,8 +689,5 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--pink); opacity: 1; }
 /* ---- Reduced motion: no transforms, no transitions; the story is in normal flow (story.js). --- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
-  .btn:active { transform: none; }
-  .btn-front { transition: none; }
-  .btn-primary:hover .btn-front, .btn-primary:active .btn-front { transform: translateY(-3px); }
   .bottom-cta:hover, .bottom-cta.is-hidden { transform: translateX(-50%); }
 }

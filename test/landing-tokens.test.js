@@ -55,3 +55,24 @@ test("landing buttons use the app's button classes", () => {
   for (const c of buttons) assert.match(c, /^btn (btn-primary|btn-secondary)\b/, c);
   assert.doesNotMatch(html, /btn-lime|btn-outline|btn-big|btn-glass/);
 });
+
+test("landing buttons are the owner's flat solid pill: no edge layer, no shadow, no press-down", () => {
+  const html = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
+  assert.doesNotMatch(html, /btn-edge|btn-front/, "no pushable layers");
+  const css = fs.readFileSync(path.join(CSS, "landing.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]*\.btn[^{}]*)\{([^}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] }));
+  const base = rules.find((r) => r.sel === ".btn");
+  assert.ok(base, ".btn rule");
+  assert.match(base.body, /min-height:\s*52px/);
+  assert.match(base.body, /font-weight:\s*600/);
+  assert.match(base.body, /border-radius:\s*var\(--r-pill\)/);
+  for (const r of rules.filter((x) => /\.btn-(primary|secondary)/.test(x.sel))) {
+    assert.doesNotMatch(r.body, /box-shadow|transform/, `${r.sel} stays flat`);
+  }
+  const primary = rules.find((r) => r.sel === ".btn-primary");
+  assert.match(primary.body, /background:\s*var\(--pink\)/);
+  assert.match(primary.body, /color:\s*var\(--on-pink\)/);
+  assert.match(rules.find((r) => r.sel === ".btn-primary:hover").body, /var\(--pink-press\)/);
+  assert.match(css, /--btn-outline:\s*rgba\(248, 236, 232, \.55\)/);
+  assert.match(rules.find((r) => r.sel === ".btn-secondary").body, /border-color:\s*var\(--btn-outline\)/);
+});
