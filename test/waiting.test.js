@@ -78,3 +78,10 @@ test("QA 2026-11-20 fixes stay in: drawer fits the screen, Yes / No in the sheet
   assert.match(CSS, /\.yc-title:focus, \.yc-title:focus-visible \{ outline: none; box-shadow: none; \}/);
   assert.match(WAITING, /location\.hash !== sheetRoute && typeof sheetApi\.close === "function"\) sheetApi\.close\(\)/, "another route closes the tray");
 });
+
+test("the docked card in the agent column pins Yes / No: fixed-height flex column, only the body scrolls (QA recheck 1280x800)", () => {
+  assert.match(CSS, /\.wt-column \{ flex: 1 1 auto; min-height: 0; overflow: hidden; \}/);
+  assert.match(CSS, /\.wt-column \.yc \{ display: flex; flex-direction: column; overflow: hidden; \}/);
+  assert.match(CSS, /\.wt-column \.yc > \.yc-head, \.wt-column \.yc > \.yc-now, \.wt-column \.yc > \.yc-foot \{ flex: none; \}/);
+  assert.match(CSS, /\.wt-column \.yc > \.yc-body \{\s*flex: 1 1 auto; min-height: 96px; overflow-y: auto;/);
+});

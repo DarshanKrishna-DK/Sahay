@@ -184,10 +184,34 @@
 .wt-skel-word { margin: 0; text-align: center; font-size: var(--fs-sm); color: var(--text-lo); }
 
 /* The agent column at 1280+: the tray lives here, no scrim, content never covered (pain 2). */
-.wt-column { flex: 1 1 auto; }
+/* The docked card is a fixed-height flex column (QA recheck 1280x800): the column (W1, sticky, max
+   100dvh minus its insets) hands its height down; head, title and the Yes / No footer stay put and
+   only the card's figures and read-back scroll, so Yes / No are always fully visible at 1280x720,
+   1280x800, 1440x900 and 1920x1080, also when the column is 320 px wide (1280-1439). Collapsed rows
+   keep their height; the expanded card gives way first. */
+.wt-column { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.wt-column .wt-head, .wt-column .wt-state { flex: none; }
 .wt-column .wt-list {
-  overflow-y: auto; overscroll-behavior: contain; min-height: 0;
-  padding: var(--s-1) var(--s-1) var(--s-4); scrollbar-gutter: stable;
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: var(--s-1) var(--s-1) var(--s-2);
+}
+.wt-column .wt-item { flex: none; }
+.wt-column .wt-item.is-open { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.wt-column .wt-item.is-open > .yc { flex: 0 1 auto; min-height: 0; max-height: 100%; }
+.wt-column .yc { display: flex; flex-direction: column; overflow: hidden; }
+.wt-column .yc > .yc-head, .wt-column .yc > .yc-now, .wt-column .yc > .yc-foot { flex: none; }
+.wt-column .yc > .yc-body {
+  flex: 1 1 auto; min-height: 96px; overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 calc(var(--s-2) * -1); padding: 0 var(--s-2); scrollbar-width: thin;
+}
+.wt-column .yc > .yc-foot { padding-top: var(--s-3); border-top: 1px solid var(--hairline); }
+.wt-column .yc.card-pad-lg { padding: 20px 18px 18px; }
+.wt-column .yc-title { font-size: var(--fs-h3); }
+.wt-column .yc-foot .yes-actions { padding-top: 0; }
+/* A short laptop (720 px tall): the Yes button keeps the 88 px minimum so the figures keep room. */
+@media (max-height: 760px) {
+  .wt-column .yc-foot .yesno-lg .yes-btn-yes { width: var(--touch-yes); height: var(--touch-yes); }
 }
 
 /* Inside a sheet / drawer: W1's sheet scrolls; cards keep their own padding. */
