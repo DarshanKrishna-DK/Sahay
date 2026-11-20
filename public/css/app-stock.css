@@ -7,35 +7,8 @@
 .s3-stock { container: s3 / inline-size; width: 100%; display: grid; gap: var(--s-5); min-width: 0; padding-bottom: var(--s-6); }
 .s3-stock > * { min-width: 0; }
 
-/* ----------------------------------------------------------------- header -- */
-.s3-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--s-3) var(--s-4); }
-.s3-head-main { flex: 1 1 240px; min-width: 0; }
-.s3-title { display: flex; align-items: center; gap: var(--s-3); margin: 0; }
-.s3-title svg { flex: none; color: var(--accent-text); }
-.s3-hud { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-3) 0 0; padding: 0; list-style: none; }
-.s3-hud-cell {
-  --b: var(--accent-text);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  background:
-    linear-gradient(var(--b), var(--b)) left top / 8px 1.5px no-repeat,
-    linear-gradient(var(--b), var(--b)) left top / 1.5px 8px no-repeat,
-    linear-gradient(var(--b), var(--b)) right top / 8px 1.5px no-repeat,
-    linear-gradient(var(--b), var(--b)) right top / 1.5px 8px no-repeat,
-    linear-gradient(var(--b), var(--b)) left bottom / 8px 1.5px no-repeat,
-    linear-gradient(var(--b), var(--b)) left bottom / 1.5px 8px no-repeat,
-    linear-gradient(var(--b), var(--b)) right bottom / 8px 1.5px no-repeat,
-    linear-gradient(var(--b), var(--b)) right bottom / 1.5px 8px no-repeat,
-    var(--piano-1);
-  color: var(--text-hi);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-strong);
-}
-.s3-hud-cell.is-low { --b: var(--coral-text); color: var(--coral-text); }
-.s3-hud-cell.is-coming { --b: var(--cyan-text); }
-.s3-hud-cell.is-coming svg { color: var(--cyan-text); }
+/* ------------------------------------------------------------ page head -- */
+.s3-head-box .page-head { margin-bottom: 0; }
 
 /* ----------------------------------------------------------------- shelves -- */
 .s3-body { display: grid; gap: var(--s-6); }

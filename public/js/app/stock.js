@@ -1,4 +1,4 @@
-// Stock (UI v3): every item as a glass jar filled to what is on hand, with its reorder line.
+// Stock (UI v4: page head, then low items, the shelf and what is on the way, each under an h2): every item as a glass jar filled to what is on hand, with its reorder line.
 // Low items come first (coral jar, alert icon and the word "Low"; never colour alone). On hand is
 // a big number with the unit in the owner's script. Each jar: read aloud (item:<id>), "Buy more"
 // (asks Sahay; the buying flow and its yes gate do the rest), an "on the way" chip when an open
@@ -17,9 +17,9 @@ import { notifyReorder, notifyNotNow, notifyNeedSaved } from "./moments.js";
 import { notify } from "./toast.js";
 import { jarLevels, shelves, incomingByItem, stockCounts, isLow } from "./stock-model.js";
 import { orderFacts } from "./buy-model.js";
-import { yesNo } from "./ui.js";
+import { yesNo, pageHead } from "./ui.js";
 import { itemWords } from "./buy-kit.js";
-import { ensureCss, btn, talkChip, talkHere, simPill, stateView, skel, errorWords, errLine } from "./buy-kit.js";
+import { ensureCss, btn, talkHere, simPill, stateView, skel, errorWords, errLine } from "./buy-kit.js";
 
 const qty = (q, unit) => { const n = amount(q); if (n === null) return ""; const u = unitWord(unit); return u ? `${n} ${u}` : n; };
 
@@ -176,7 +176,7 @@ export function createStock() {
   ensureCss("/css/app-buy.css"); // shared loading shape (.x3-loading)
   ensureCss("/css/app-stock.css");
   const el = h("section", { class: "s3-stock", "aria-labelledby": "s3-title" });
-  const head = h("header", { class: "screen-head s3-head" });
+  const head = h("div", { class: "s3-head-box" });
   const body = h("div", { class: "s3-body" });
   el.append(head, body);
   const ui = new Map();   // orderId -> { busy, error, done }
@@ -225,15 +225,19 @@ export function createStock() {
     const ready = stock.status === "ready";
     const empty = ready && !items.length && !pos.length;
 
-    patch(head, JSON.stringify([document.documentElement.lang, ready, counts]), () => [
-      h("div", { class: "s3-head-main" },
-        h("h1", { class: "screen-title s3-title", id: "s3-title" }, icon("jar", 28), h("span", { text: t("nav.stock") })),
-        ready && counts.items ? h("ul", { class: "s3-hud", "aria-label": t("nav.stock") },
-          h("li", { class: "s3-hud-cell" }, h("span", { text: counts.items === 1 ? t("s3.itemsOne") : t("s3.items", { n: counts.items }) })),
-          counts.low ? h("li", { class: "s3-hud-cell is-low" }, icon("alert", 16), h("span", { text: t("s3.lowCount", { n: counts.low }) })) : null,
-          counts.coming ? h("li", { class: "s3-hud-cell is-coming" }, icon("truck", 16), h("span", { text: t("s3.comingCount", { n: counts.coming }) })) : null) : null),
-      h("div", { class: "screen-head-tools" }, talkChip({ word: t("s3.talk"), hint: "s3.hint" })),
-    ]);
+    // v4 page head: "Stock", one plain line (the real counts, or what Stock does), Tell stock on the right.
+    patch(head, JSON.stringify([document.documentElement.lang, ready, counts]), () => {
+      const sub = ready && counts.items
+        ? [counts.items === 1 ? t("s3.itemsOne") : t("s3.items", { n: counts.items }),
+          counts.low ? t("s3.lowCount", { n: counts.low }) : null,
+          counts.coming ? t("s3.comingCount", { n: counts.coming }) : null].filter(Boolean).join(" · ")
+        : t("s3.empty.text");
+      const node = pageHead({ title: t("nav.stock"), sub,
+        actions: [btn({ icon: "mic", word: t("s3.talk"), tone: "lime", size: "lg", onClick: () => talkHere({ hint: "s3.hint" }) })] });
+      const h1 = node.querySelector("h1");
+      if (h1) h1.id = "s3-title";
+      return node;
+    });
 
     if (force) body.__key = null;
     const key = JSON.stringify([document.documentElement.lang, stock.status, stock.error && (stock.error.say || stock.error.status), items, [...stock.proposals.entries()], [...asks.entries()], pos.map((o) => [o.id, o.status, o.amount]), [...ui.entries()], appState.quotes.size, appState.requirements.length, Boolean(waiting)]);
