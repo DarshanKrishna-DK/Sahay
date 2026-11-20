@@ -106,3 +106,19 @@ test("badge text: nothing for zero, 1-9, then 9+", async () => {
   assert.equal(badgeText(9), "9");
   assert.equal(badgeText(12), "9+");
 });
+
+test("the jelly sidebar swells into a clear belly where the items sit, and items follow it", async () => {
+  const { jellyOutline, bellyAt, bellyX } = await load();
+  const body = 76, h = 669, bulge = 36, centre = 360, span = 260;
+  const pts = jellyOutline(body, h, { bulge, centre, span });
+  const right = (y0) => Math.max(...pts.filter(([, y]) => Math.abs(y - y0) < 3).map(([x]) => x));
+  assert.ok(Math.abs(right(centre) - (body + bulge)) < 1, "full bulge at the centre");
+  assert.ok(right(60) <= body + 0.5, "straight near the top");
+  assert.ok(right(h - 60) <= body + 0.5, "straight near the bottom");
+  assert.ok(right(centre - span / 2) > body + bulge * 0.4 && right(centre - span / 2) < body + bulge * 0.6, "a smooth swell, not a step");
+  for (const [x, y] of pts) assert.ok(x >= -0.01 && x <= body + bulge + 0.01 && y >= -0.01 && y <= h + 0.01);
+  assert.equal(bellyAt(centre, centre, span), 1);
+  assert.equal(bellyAt(centre + span, centre, span), 0);
+  const xs = [-0.75, -0.25, 0.25, 0.75].map((u) => bellyX(centre + u * span * 0.8, body, bulge, centre, span));
+  assert.ok(xs[1] - xs[0] > 8 && xs[2] - xs[3] > 8, `items visibly stagger along the belly (${xs.map((x) => x.toFixed(1)).join(", ")})`);
+});

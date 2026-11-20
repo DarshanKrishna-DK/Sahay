@@ -183,7 +183,7 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
-  --nav-w: 104px;
+  --nav-w: 112px;    /* the sidebar at its belly: body 60/72 + bulge 32/40 */
   --nav-inset: 16px;
   --rail-w: 72px;
   --dock-h: 68px;
@@ -216,9 +216,9 @@
   }
 }
 
-@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 88px; } }
+@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 92px; } }
 @media (min-width: 1024px) { :root { --pad-x: 32px; } }
-@media (min-width: 1280px) { :root { --nav-w: 104px; } }
+@media (min-width: 1280px) { :root { --nav-w: 112px; } }
 @media (min-width: 1600px) { :root { --agent-col: 420px; } }
 
 /* Light theme: porcelain with olive ink; lime stays the fill, deep olive is lime-as-text. */

@@ -157,19 +157,38 @@
 :root[data-keyboard="open"] .nav-dock, :root[data-keyboard="open"] .dock-float { display: none; }
 
 /* ========================================================= nav jelly -- */
+/* A column of glass whose right edge swells into a convex belly where the items ride (nav-jelly.js
+   draws the clip-path, rim and shadow for the real height). The container has no glass, filter or
+   transform; the socket sits above the glass layer and breaks its top and right edges. */
 .nav-jelly { display: none; }
 .nav-jelly {
-  --nj-bulge: 32px; --nj-socket: 72px;
+  --nj-body: 60px; --nj-bulge: 32px; --nj-follow: .7; --nj-socket: 72px;
   position: fixed; z-index: var(--z-nav);
   left: calc(var(--nav-inset) + var(--safe-l)); top: calc(var(--nav-inset) + var(--safe-t)); bottom: calc(var(--nav-inset) + var(--safe-b));
-  width: var(--nav-w);
-  flex-direction: column; align-items: flex-start; padding: 12px 0 12px;
-  /* The bow: elliptical right corners spanning the full height. */
-  border-radius: 30px var(--nj-bulge) var(--nj-bulge) 30px / 30px 50% 50% 30px;
+  width: calc(var(--nj-body) + var(--nj-bulge));
+  flex-direction: column; align-items: flex-start; padding: 0 0 12px;
 }
+.nj-shadow, .nj-rim { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.nj-shadow { transform: translate(6px, 12px); opacity: .9; }
+.nj-shadow path { fill: rgba(0, 0, 0, .6); filter: blur(16px); }
+:root[data-theme="light"] .nj-shadow path { fill: rgba(30, 40, 15, .22); }
+.nj-glass {
+  position: absolute; inset: 0;
+  background: var(--glass-tint), var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .nj-glass { background: var(--glass-fill-strong); } }
+.nj-rim path { fill: none; stroke-width: 1.25; }
+.nj-rim .nj-rim-glow { stroke-width: 7; opacity: .22; filter: blur(4px); }
+.nj-rim .rim-a { stop-color: rgba(255, 255, 255, .55); }
+.nj-rim .rim-b { stop-color: rgba(182, 242, 60, .8); }
+.nj-rim .rim-c { stop-color: rgba(255, 255, 255, .12); }
+:root[data-theme="light"] .nj-rim .rim-a { stop-color: rgba(255, 255, 255, 1); }
+:root[data-theme="light"] .nj-rim .rim-b { stop-color: rgba(65, 95, 4, .6); }
+:root[data-theme="light"] .nj-rim .rim-c { stop-color: rgba(18, 22, 13, .2); }
 .nj-orb {
   position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  margin-left: calc(var(--nav-w) / 2 + 4px - var(--nj-socket) / 2); width: var(--nj-socket);
+  margin-top: -14px; margin-left: calc(var(--nj-body) / 2 + 12px - var(--nj-socket) / 2); width: var(--nj-socket);
   text-decoration: none; color: var(--text-lo); border-radius: var(--r-lg); -webkit-tap-highlight-color: transparent;
 }
 .nj-socket {
@@ -192,8 +211,8 @@
 .nj-orb[aria-current="page"] { color: var(--text-hi); }
 
 .nj-items {
-  flex: 1 1 auto; min-height: 0; width: calc(var(--nav-w) - var(--nj-bulge));
-  display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 8px 0;
+  position: static; flex: 1 1 auto; min-height: 0; width: var(--nj-body);
+  display: flex; flex-direction: column; justify-content: space-evenly; gap: 4px; padding: 12px 0;
 }
 .nj-item {
   position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -216,7 +235,7 @@
   opacity: 0; pointer-events: none; transition: opacity var(--t-med) var(--ease-out);
 }
 .nj-marker.is-on { opacity: 1; }
-.nj-foot { width: calc(var(--nav-w) - var(--nj-bulge) / 3); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nj-foot { position: relative; z-index: 1; width: var(--nj-body); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .nj-me { display: flex; flex-direction: column; align-items: center; gap: 3px; text-decoration: none; color: var(--text-lo); border-radius: var(--r-md); padding: 2px; max-width: 100%; }
 .nj-avatar {
   position: relative; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
@@ -258,7 +277,7 @@
   #main { padding: 24px 0 64px; }
 }
 @media (min-width: 1280px) {
-  .nav-jelly { --nj-bulge: 40px; --nj-socket: 80px; }
+  .nav-jelly { --nj-body: 72px; --nj-bulge: 40px; --nj-socket: 80px; }
 }
 @media (min-width: 1280px) and (min-height: 501px) {
   .shell-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: start; }
@@ -280,11 +299,11 @@
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
   .nav-dock { display: none; }
   .nav-jelly {
-    display: flex; --nj-bulge: 0px; --nj-socket: 56px;
-    left: calc(8px + var(--safe-l)); top: 8px; bottom: 8px; width: var(--rail-w);
-    padding: 8px 0; border-radius: var(--r-lg);
+    display: flex; --nj-body: var(--rail-w); --nj-bulge: 0px; --nj-socket: 56px;
+    left: calc(8px + var(--safe-l)); top: 8px; bottom: 8px;
+    padding: 8px 0;
   }
-  .nj-orb { margin-left: calc(var(--rail-w) / 2 - var(--nj-socket) / 2); }
+  .nj-orb { margin-top: 0; margin-left: calc(var(--rail-w) / 2 - var(--nj-socket) / 2); }
   .nj-socket .torb { width: 44px; height: 44px; }
   .nj-orb-word, .nj-me .nj-word, .nj-tools { display: none; }
   .nj-items { width: var(--rail-w); gap: 0; padding: 4px 0; }

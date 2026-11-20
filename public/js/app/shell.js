@@ -8,7 +8,7 @@
 //   setNavAgentState(state)   the nav orb follows the agent
 //   setBadge(key, n)          "sahay" | "buy" | "sell" | "stock" | "money" | "me" | "waiting"
 //   claimBadges()             a package that owns the counts (W3) calls this once; interim counts stop
-//   setTitle(text), setAction(spec | null), navigate(hash), toggleTheme(), setRoute(id)
+//   setTitle(text) ("Sell · Sahay"), setAction(spec | null), navigate(hash), toggleTheme(), setRoute(id)
 
 import { h, icon } from "./dom.js";
 import { t, lang, LANGS, setLang } from "./i18n.js";
@@ -231,8 +231,10 @@ export function setBadge(key, n, source = "owner") {
   render();
 }
 export function claimBadges() { badgesClaimed = true; }
+/** "Sell · सहाय"; just the app name on Sahay home (no "सहाय | सहाय"). */
 export function setTitle(text) {
-  document.title = text ? `${text} | ${t("app.name")}` : t("app.name");
+  const app = t("app.name");
+  document.title = text && text !== app && text !== t("nav.sahay") ? `${text} · ${app}` : app;
 }
 export function setAction(spec) { action = spec || null; render(); }
 export function setShop({ name, stream: s } = {}) {
