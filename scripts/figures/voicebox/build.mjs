@@ -38,7 +38,7 @@ const NEEDLE_LEN = 15.5;
 const SCALE_FROM = -52; // degrees from vertical, clockwise on the face
 const SCALE_TO = 52;
 const KNOB = { x: 17, z: 27, r: 8.5, h: 6 };
-const LAMP = { x: 40.5, z: 32.5, r: 5.6, h: 1.8, lens: 3.9 };
+const LAMP = { x: 41, z: 32, r: 7, h: 2, lens: 5 };
 const KEYS = [{ x: 33.5, w: 6 }, { x: 41.5, w: 6 }];
 const KEY_Z = [13, 19.5];
 
@@ -140,13 +140,14 @@ function recess(id, outline, depth, faceY = FY) {
 function frontFace() {
   const out = [];
   // Panel groove: one closed outline round the whole front.
-  out.push(L(path3(rectFront({ x0: -51, z0: BODY_Z + 9 + 3, x1: 53, z1: BODY_TOP - 9, r: 3 })), { tone: "faint" }));
+  const panel = path3(rectFront({ x0: -51, z0: BODY_Z + 9 + 3, x1: 53, z1: BODY_TOP - 9, r: 3 }));
+  out.push(`<path class="vbx-panel" d="${panel}"/>`, L(panel, { tone: "faint" }));
 
   // Speaker grille: a bezel standing 1.4 proud of the face with four screws, and a round opening
   // cut through it to a mesh floor with rings, a dust cap and three ripple rings.
   const BZ = 1.4;
   const bezelF = Y([GRILLE.cx, FY, GRILLE.cz]);
-  out.push(S(G.disc(0, BZ, GRILLE.bezel, bezelF, P), { tone: "mid", crease: "lo" }));
+  out.push(S(G.disc(0, BZ, GRILLE.bezel, bezelF, P), { tone: "mid", crease: "lo", className: "vbx-bezel" }));
   out.push(D([45, 135, 225, 315].map((a) => {
     const t = (a * Math.PI) / 180;
     const r = (GRILLE.r + GRILLE.bezel) / 2;
@@ -167,7 +168,7 @@ function frontFace() {
   const cap = S(G.disc(0, 1.6, 3.4, capF, P), { tone: "mid", crease: "lo" });
   const capRing = L(G.circleOf(capF, 1.6, 2, P), { tone: "faint" });
   out.push(g.clip, g.wall);
-  out.push(`<g clip-path="url(#vbx-grille)">${g.floor}<g class="vbx-mesh">${L(rings.join(""), { tone: "lo" })}${D(holes, { size: 0.55, tone: "lo" })}</g>${faceGroup(fy, ripples, ' class="vbx-ripples"')}<g class="vbx-cone">${cap}${capRing}</g></g>`);
+  out.push(`<g clip-path="url(#vbx-grille)">${g.floor}<g class="vbx-mesh">${L(rings.join(""), { tone: "lo", className: "vbx-ring" })}${D(holes, { size: 0.55, tone: "lo" })}</g>${faceGroup(fy, ripples, ' class="vbx-ripples"')}<g class="vbx-cone">${cap}${capRing}</g></g>`);
   out.push(g.edge);
 
   // Dial window: a rounded opening with a scale arc, ticks, a stop pin and the needle on a hub.
@@ -308,10 +309,10 @@ const CSS = String.raw`/* Sahay agent figure: the counter voice box (built by sc
    Self-contained: the anatomy kit's classes are restyled here under .vbx, tinted for the v5 look
    (warm black, cream hairlines, one creamy-pink lamp). Every colour lives in these variables. */
 .vbx {
-  --anatomy-paper: #1C1719; --anatomy-face: #262022; --anatomy-top: #2E2628;
-  --anatomy-shade-0: #141012; --anatomy-shade-1: #191416; --anatomy-shade-2: #1F191B; --anatomy-shade-3: #262022;
+  --anatomy-paper: #2A2224; --anatomy-face: #2E2628; --anatomy-top: #3A2F31;
+  --anatomy-shade-0: #221B1D; --anatomy-shade-1: #251E20; --anatomy-shade-2: #282022; --anatomy-shade-3: #2C2426;
   --anatomy-lit-top: #3A2B2A; --anatomy-lit-shade: #2E2223;
-  --anatomy-hi: #F8ECE8; --anatomy-mid: #CDB8B3; --anatomy-lo: #86726D; --anatomy-faint: #4E4240; --anatomy-lit: #F2CFC6;
+  --anatomy-hi: #F8ECE8; --anatomy-mid: rgba(248, 236, 232, .8); --anatomy-lo: rgba(248, 236, 232, .44); --anatomy-faint: rgba(242, 207, 198, .2); --anatomy-lit: #F2CFC6;
   --anatomy-halo: #000; --anatomy-halo-opacity: .55; --anatomy-dot: #F8ECE8;
   --anatomy-weight: .8px;
   --vbx-lamp: #F7DDD6; --vbx-lamp-deep: #E6B3A6; --vbx-level: 0;
@@ -350,10 +351,21 @@ const CSS = String.raw`/* Sahay agent figure: the counter voice box (built by sc
 
 /* Recesses, slots and the dial face. */
 .vbx .vbx-wall { fill: var(--anatomy-shade-0); }
-.vbx .vbx-floor { fill: #141012; }
+.vbx .vbx-floor { fill: #1A1416; }
+.vbx .vbx-panel { fill: rgba(242, 207, 198, .045); }
+.vbx .vbx-bezel > .iso-top, .vbx .vbx-bezel > .iso-fill { fill: color-mix(in srgb, #F2CFC6 14%, #2E2628); }
+.vbx .vbx-bezel > .iso-shade { fill: color-mix(in srgb, #F2CFC6 10%, #241D1F); }
+.vbx .vbx-ring { transition: stroke .5s var(--vbx-ease); }
+.vbx .vbx-floor[data-floor="vbx-dial"] { transition: fill .6s var(--vbx-ease); }
+/* State cues that read even when nothing moves. */
+.vbx[data-state="listening"] .vbx-ring { stroke: #F2CFC6; }
+.vbx[data-state="listening"] .vbx-ripple { stroke: #F2CFC6; }
+.vbx[data-state="speaking"] .vbx-ring { stroke: #F8ECE8; }
+.vbx[data-state="thinking"] .vbx-floor[data-floor="vbx-dial"] { fill: color-mix(in srgb, #F2CFC6 26%, #231C1E); }
+.vbx[data-state="thinking"] .vbx-dial-face .vbx-band { fill: rgba(242, 207, 198, .45); }
 .vbx .vbx-slot { fill: var(--anatomy-shade-0); }
 .vbx .vbx-dial-face .vbx-band { fill: var(--anatomy-faint); }
-.vbx .vbx-floor[data-floor="vbx-dial"] { fill: #1E1819; }
+.vbx .vbx-floor[data-floor="vbx-dial"] { fill: #231C1E; }
 .vbx .vbx-pin { fill: var(--anatomy-mid); }
 .vbx .vbx-hub { fill: var(--anatomy-shade-3); stroke: var(--anatomy-mid); stroke-width: .7px; }
 .vbx .vbx-hub-dot { fill: var(--anatomy-hi); }
@@ -378,7 +390,9 @@ const CSS = String.raw`/* Sahay agent figure: the counter voice box (built by sc
 /* Ripples in the grille, drawn in the grille's own plane: in for listening, out for speaking. */
 .vbx .vbx-ripple { fill: none; stroke: var(--anatomy-hi); stroke-width: .8px; opacity: 0; transform-box: fill-box; transform-origin: center; }
 .vbx .vbx-ripples { opacity: calc(.4 + .6 * var(--vbx-level)); }
-.vbx .vbx-cone { transform-box: fill-box; transform-origin: center; transform: scale(calc(1 + .22 * var(--vbx-level))); }
+.vbx .vbx-cone { transform-box: fill-box; transform-origin: center; transform: scale(calc(1 + .22 * var(--vbx-level))); transition: transform .4s var(--vbx-ease); }
+.vbx[data-state="speaking"] .vbx-cone { transform: scale(calc(1.16 + .2 * var(--vbx-level))); }
+.vbx[data-state="speaking"] .vbx-cone .iso-top, .vbx[data-state="speaking"] .vbx-cone .iso-fill { fill: #4A3C3E; }
 .vbx[data-detail="low"] .iso-dots, .vbx[data-detail="low"] .iso-line[data-tone="faint"], .vbx[data-detail="low"] .vbx-mesh .iso-dots { display: none; }
 .vbx[data-detail="low"] { --anatomy-weight: .8px; }
 
