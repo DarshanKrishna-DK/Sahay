@@ -863,10 +863,11 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
     throw new ToolError("REQUIREMENT_INCOMPLETE", sayFor("invalid", lang), { status: 400, message: "The requirement needs a quantity and a unit." });
   }
   if (supplier && counterpart !== "human") throw new ToolError("INVALID", sayFor("invalid", lang), { status: 400, message: "An own supplier is a real person: counterpart human." });
-  // The owner asks for a simulated vendor while a real one has not opened their link yet: that
-  // invitation is withdrawn first (the "did not join" offer of src/suppliers), never run alongside.
+  // The owner asks for a simulated vendor while their own supplier has not opened the Telegram link
+  // yet: that invitation is withdrawn first (the "did not join" offer of src/suppliers), never run
+  // alongside. Any other running negotiation still blocks the next one.
   for (const rt of [...runtimes.values()]) {
-    if (rt.businessId === businessId && counterpart === "simulated" && rt.counterpart === "human" && !rt.humanJoinedAt && rt.jobId) {
+    if (rt.businessId === businessId && counterpart === "simulated" && rt.counterpart === "human" && rt.supplier && !rt.humanJoinedAt && rt.jobId) {
       try {
         jobs.cancelJob(businessId, rt.jobId);
       } catch {
@@ -978,7 +979,12 @@ function startJobFor(o, releaseSlot) {
   let jobId;
   try {
     jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart, ownSupplier: Boolean(supplier), ceiling: hardCeiling }, (job) => runNegotiation(rt, job), {
-      onSettled: releaseSlot,
+      // A job cancelled before its runner began (e.g. the supplier's Telegram refused the link) never
+      // reaches runNegotiation's finally: it is released here too, so it cannot block the next one.
+      onSettled: () => {
+        releaseSlot();
+        release(rt);
+      },
     });
   } catch (err) {
     runtimes.delete(session.id);
