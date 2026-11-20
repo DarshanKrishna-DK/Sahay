@@ -1,0 +1,99 @@
+/* Sahay agent figure: the counter voice box (built by scripts/figures/voicebox/build.mjs).
+   Self-contained: the anatomy kit's classes are restyled here under .vbx, tinted for the v5 look
+   (warm black, cream hairlines, one creamy-pink lamp). Every colour lives in these variables. */
+.vbx {
+  --anatomy-paper: #1C1719; --anatomy-face: #262022; --anatomy-top: #2E2628;
+  --anatomy-shade-0: #141012; --anatomy-shade-1: #191416; --anatomy-shade-2: #1F191B; --anatomy-shade-3: #262022;
+  --anatomy-lit-top: #3A2B2A; --anatomy-lit-shade: #2E2223;
+  --anatomy-hi: #F8ECE8; --anatomy-mid: #CDB8B3; --anatomy-lo: #86726D; --anatomy-faint: #4E4240; --anatomy-lit: #F2CFC6;
+  --anatomy-halo: #000; --anatomy-halo-opacity: .55; --anatomy-dot: #F8ECE8;
+  --anatomy-weight: .8px;
+  --vbx-lamp: #F7DDD6; --vbx-lamp-deep: #E6B3A6; --vbx-level: 0;
+  --vbx-ease: cubic-bezier(.45, 0, .25, 1);
+  position: relative; display: inline-block; flex: none; line-height: 0; color: var(--anatomy-hi);
+}
+.vbx[data-state="trouble"] { --vbx-lamp: #F5D59E; --vbx-lamp-deep: #E0AE5F; }
+.vbx .vbx-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.vbx path, .vbx circle { vector-effect: non-scaling-stroke; }
+.vbx .iso-fill { fill: var(--anatomy-paper); stroke: none; }
+.vbx .iso-shade, .vbx .iso-top { stroke: none; }
+.vbx .iso-shade[data-shade="0"] { fill: var(--anatomy-shade-0); }
+.vbx .iso-shade[data-shade="1"] { fill: var(--anatomy-shade-1); }
+.vbx .iso-shade[data-shade="2"] { fill: var(--anatomy-shade-2); }
+.vbx .iso-shade[data-shade="3"] { fill: var(--anatomy-shade-3); }
+.vbx .iso-top { fill: var(--anatomy-top); }
+.vbx .iso-solid[data-seamless] > .iso-shade, .vbx .iso-solid[data-seamless] > .iso-top { stroke-width: .4; stroke-linejoin: round; }
+.vbx .iso-solid[data-seamless] > .iso-shade[data-shade="0"] { stroke: var(--anatomy-shade-0); }
+.vbx .iso-solid[data-seamless] > .iso-shade[data-shade="1"] { stroke: var(--anatomy-shade-1); }
+.vbx .iso-solid[data-seamless] > .iso-shade[data-shade="2"] { stroke: var(--anatomy-shade-2); }
+.vbx .iso-solid[data-seamless] > .iso-shade[data-shade="3"] { stroke: var(--anatomy-shade-3); }
+.vbx .iso-halo { fill: var(--anatomy-halo); stroke: none; filter: blur(7px); opacity: var(--anatomy-halo-opacity); transform: translateY(3px); }
+.vbx .vbx-halo-soft { filter: blur(3px); opacity: .5; transform: none; }
+.vbx .iso-line { fill: none; stroke: var(--anatomy-lo); stroke-width: var(--anatomy-weight); stroke-linecap: round; stroke-linejoin: round; }
+.vbx .iso-line[data-tone="hi"] { stroke: var(--anatomy-hi); }
+.vbx .iso-line[data-tone="mid"] { stroke: var(--anatomy-mid); }
+.vbx .iso-line[data-tone="lo"] { stroke: var(--anatomy-lo); }
+.vbx .iso-line[data-tone="faint"] { stroke: var(--anatomy-faint); }
+.vbx .iso-line[data-tone="lit"] { stroke: var(--anatomy-lit); }
+.vbx .iso-dots circle { fill: var(--anatomy-dot); stroke: none; opacity: .32; }
+.vbx .iso-dots[data-tone="hi"] circle { opacity: .85; }
+.vbx .iso-dots[data-tone="mid"] circle { opacity: .45; }
+.vbx .iso-dots[data-tone="lo"] circle { opacity: .24; }
+.vbx .iso-face-text { fill: var(--anatomy-mid); font-family: "Manrope", ui-sans-serif, system-ui, sans-serif; font-weight: 800; letter-spacing: .18em; }
+.vbx .vbx-engrave { fill: var(--anatomy-shade-0); stroke: var(--anatomy-mid); stroke-width: .35px; paint-order: stroke; }
+
+/* Recesses, slots and the dial face. */
+.vbx .vbx-wall { fill: var(--anatomy-shade-0); }
+.vbx .vbx-floor { fill: #141012; }
+.vbx .vbx-slot { fill: var(--anatomy-shade-0); }
+.vbx .vbx-dial-face .vbx-band { fill: var(--anatomy-faint); }
+.vbx .vbx-floor[data-floor="vbx-dial"] { fill: #1E1819; }
+.vbx .vbx-pin { fill: var(--anatomy-mid); }
+.vbx .vbx-hub { fill: var(--anatomy-shade-3); stroke: var(--anatomy-mid); stroke-width: .7px; }
+.vbx .vbx-hub-dot { fill: var(--anatomy-hi); }
+.vbx .vbx-needle-line { stroke-width: 1.15px; }
+
+/* The lamp: a dark glass dome under a lit dome whose opacity is the lamp's brightness. */
+.vbx .vbx-lens > .iso-fill, .vbx .vbx-lens > .iso-shade { fill: #241B1D; stroke: #241B1D; }
+.vbx .vbx-lens > .iso-shade[data-shade="0"] { fill: #191314; stroke: #191314; }
+.vbx .vbx-lens > .iso-shade[data-shade="3"] { fill: #3A2E2F; stroke: #3A2E2F; }
+.vbx .vbx-lamp-lit > .iso-fill, .vbx .vbx-lamp-lit > .iso-shade { fill: var(--vbx-lamp-deep); stroke: var(--vbx-lamp-deep); }
+.vbx .vbx-lamp-lit > .iso-shade[data-shade="0"] { fill: color-mix(in srgb, var(--vbx-lamp-deep) 58%, #0F0D0E); stroke: color-mix(in srgb, var(--vbx-lamp-deep) 58%, #0F0D0E); }
+.vbx .vbx-lamp-lit > .iso-shade[data-shade="1"] { fill: color-mix(in srgb, var(--vbx-lamp-deep) 78%, #0F0D0E); stroke: color-mix(in srgb, var(--vbx-lamp-deep) 78%, #0F0D0E); }
+.vbx .vbx-lamp-lit > .iso-shade[data-shade="3"] { fill: var(--vbx-lamp); stroke: var(--vbx-lamp); }
+.vbx .vbx-lamp-lit > .iso-edge { stroke: color-mix(in srgb, var(--vbx-lamp-deep) 70%, #0F0D0E); }
+.vbx .vbx-lamp-ring { fill: none; stroke: var(--vbx-lamp); stroke-width: .9px; opacity: 0; transition: opacity .6s var(--vbx-ease); }
+.vbx .vbx-lamp { opacity: .4; transition: opacity .6s var(--vbx-ease); }
+.vbx[data-state="listening"] .vbx-lamp, .vbx[data-state="speaking"] .vbx-lamp { opacity: .85; }
+.vbx[data-state="waiting"] .vbx-lamp, .vbx[data-state="trouble"] .vbx-lamp { opacity: 1; }
+.vbx[data-state="waiting"] .vbx-lamp-ring, .vbx[data-state="trouble"] .vbx-lamp-ring { opacity: .75; }
+.vbx[data-state="thinking"] .vbx-lamp { opacity: .6; }
+
+/* Ripples in the grille, drawn in the grille's own plane: in for listening, out for speaking. */
+.vbx .vbx-ripple { fill: none; stroke: var(--anatomy-hi); stroke-width: .8px; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.vbx .vbx-ripples { opacity: calc(.4 + .6 * var(--vbx-level)); }
+.vbx .vbx-cone { transform-box: fill-box; transform-origin: center; transform: scale(calc(1 + .22 * var(--vbx-level))); }
+.vbx[data-detail="low"] .iso-dots, .vbx[data-detail="low"] .iso-line[data-tone="faint"], .vbx[data-detail="low"] .vbx-mesh .iso-dots { display: none; }
+.vbx[data-detail="low"] { --anatomy-weight: .8px; }
+
+/* Motion runs only while data-motion="on" (the module sets it while visible and allowed). */
+.vbx[data-motion="on"][data-state="idle"] .vbx-lamp { animation: vbx-breathe 6s var(--vbx-ease) infinite; }
+.vbx[data-motion="on"][data-state="thinking"] .vbx-lamp { animation: vbx-blink 2.4s var(--vbx-ease) infinite; }
+.vbx[data-motion="on"][data-state="listening"] .vbx-ripple { animation: vbx-in 2.7s var(--vbx-ease) infinite; }
+.vbx[data-motion="on"][data-state="speaking"] .vbx-ripple { animation: vbx-out 2.1s cubic-bezier(.2, .6, .35, 1) infinite; }
+.vbx[data-motion="on"] .vbx-ripple[data-i="1"] { animation-delay: -.9s; }
+.vbx[data-motion="on"] .vbx-ripple[data-i="2"] { animation-delay: -1.8s; }
+.vbx[data-motion="on"][data-state="speaking"] .vbx-ripple[data-i="1"] { animation-delay: -.7s; }
+.vbx[data-motion="on"][data-state="speaking"] .vbx-ripple[data-i="2"] { animation-delay: -1.4s; }
+@keyframes vbx-breathe { 0%, 100% { opacity: .28; } 50% { opacity: .6; } }
+@keyframes vbx-blink { 0%, 100% { opacity: .18; } 45%, 55% { opacity: .95; } }
+@keyframes vbx-in { 0% { transform: scale(1); opacity: 0; } 20% { opacity: .55; } 100% { transform: scale(.18); opacity: 0; } }
+@keyframes vbx-out { 0% { transform: scale(.2); opacity: 0; } 25% { opacity: .6; } 100% { transform: scale(1); opacity: 0; } }
+
+/* Still poses (reduced motion, off screen before the first frame): one ring shows the direction. */
+.vbx:not([data-motion="on"])[data-state="listening"] .vbx-ripple[data-i="0"] { transform: scale(.55); opacity: .45; }
+.vbx:not([data-motion="on"])[data-state="speaking"] .vbx-ripple[data-i="0"] { transform: scale(.8); opacity: .45; }
+@media (prefers-reduced-motion: reduce) {
+  .vbx .vbx-lamp { transition: none; }
+  .vbx .vbx-lamp, .vbx .vbx-ripple { animation: none !important; }
+}
