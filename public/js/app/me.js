@@ -28,6 +28,7 @@ import { stateView } from "./empty.js";
 import { speakButton } from "./speak.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { renderCard } from "./waiting.js";
+import { pageHead } from "./ui.js";
 import { renderSky, renderStarList, renderLegend, starWord, sentenceOf } from "./constellation.js";
 import { createHistoryPanel } from "./history.js";
 import { ME_SECTIONS, sectionFromHash, sectionHash, STYLES, SPEEDS, dialKey, starItems } from "./me-logic.js";
@@ -70,14 +71,13 @@ function agentGate(A) {
 
 export function createMe() {
   const el = h("section", { class: "me", "aria-labelledby": "me-title" });
-  const head = h("header", { class: "screen-head me-head" });
+  const head = h("div", { class: "me-head" });
   const tabs = h("nav", { class: "me-tabs", "aria-label": t("me3.sections") });
   const body = h("div", { class: "me-body" });
   const panels = Object.fromEntries(ME_SECTIONS.map((s) => [s.id, h("div", { class: `me-panel me-panel-${s.id}`, id: `me-panel-${s.id}`, role: "region", "aria-labelledby": `me-tab-${s.id}`, hidden: true })]));
   body.append(...Object.values(panels));
   el.append(head, h("div", { class: "me-layout" }, tabs, body));
 
-  const meOrb = createThinkingOrb({ size: 64, state: "idle" });
   const skyOrb = createThinkingOrb({ size: 56, state: "idle" });
   const history = createHistoryPanel();
   panels.history.append(history.el);
@@ -93,15 +93,19 @@ export function createMe() {
   passkeyAvailable().then((ok) => { acct.finger = ok; renderShop(true); });
 
   /* ------------------------------------------------------------ header -- */
+  // v4 page head: display title, one plain line (the shop and its city), the primary action.
   function renderHead() {
     const b = state.business || {};
-    patch(head, JSON.stringify([b.name, b.city, currentLang()]), () => [
-      h("span", { class: "me-orb", "aria-hidden": "true" }, meOrb.el),
-      h("div", { class: "me-who" },
-        h("h1", { class: "screen-title", id: "me-title", text: t("me.title") }),
-        b.name ? scripted("p", b.name, { class: "me-shop" }) : null,
-        h("p", { class: `me-city${b.city ? "" : " is-missing"}` }, icon("pin", 18), b.city ? scripted("span", cityWord(b.city)) : h("span", { text: t("me3.noCity") }))),
-    ]);
+    patch(head, JSON.stringify([b.name, b.city, currentLang()]), () => {
+      const sub = b.name ? `${b.name}, ${b.city ? cityWord(b.city) : t("me3.noCity")}` : t("me3.pageSub");
+      const node = pageHead({
+        title: t("me.title"), sub,
+        actions: [h("button", { class: "keycap keycap-primary keycap-md", type: "button", on: { click: teach } }, icon("mic", 24), h("span", { text: t("me3.teachNow") }))],
+      });
+      const h1 = node.querySelector("h1");
+      if (h1) h1.id = "me-title";
+      return node;
+    });
   }
 
   /* -------------------------------------------------------------- tabs -- */
@@ -213,8 +217,7 @@ export function createMe() {
       const cta = h("article", { class: "card card-pad-lg me-teach" },
         cardHead(t("me3.teachNow"), "spark"),
         h("p", { class: "me-lead", text: t("me3.teachHow") }),
-        waiting ? h("p", { class: "pill pill-wait me-waiting" }, icon("clock", 18), h("span", { text: t(waiting === 1 ? "me3.waitingRules" : "me3.waitingRulesMany", { n: waiting }) })) : null,
-        h("button", { class: "keycap keycap-primary keycap-lg keycap-block", type: "button", on: { click: teach } }, icon("mic", 26), h("span", { text: t("me3.teach") })));
+        waiting ? h("p", { class: "pill pill-wait me-waiting" }, icon("clock", 18), h("span", { text: t(waiting === 1 ? "me3.waitingRules" : "me3.waitingRulesMany", { n: waiting }) })) : null);
       const gate = agentGate(A);
       if (gate) return [cta, gate];
       const suggested = items.filter((i) => i.type === "rule" && i.data.status === "suggested");

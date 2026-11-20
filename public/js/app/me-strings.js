@@ -15,6 +15,7 @@ addStrings({
   "me3.voice.sub": ["Language, speed, bargaining", "भाषा, रफ़्तार, मोलभाव", "ಭಾಷೆ, ವೇಗ, ಚೌಕಾಸಿ"],
   "me3.shop.sub": ["Shop details, Telegram, account", "दुकान की जानकारी, टेलीग्राम, खाता", "ಅಂಗಡಿ ವಿವರ, ಟೆಲಿಗ್ರಾಮ್, ಖಾತೆ"],
   "me3.history.sub": ["Everything Sahay did", "सहाय ने जो कुछ किया", "ಸಹಾಯ್ ಮಾಡಿದ ಎಲ್ಲವೂ"],
+  "me3.pageSub": ["Teach Sahay your rules, set its voice, and check your shop and history.", "सहाय को अपने नियम सिखाइए, उसकी आवाज़ चुनिए, और दुकान व इतिहास देखिए।", "ಸಹಾಯ್‌ಗೆ ನಿಮ್ಮ ನಿಯಮ ಕಲಿಸಿ, ಅದರ ಧ್ವನಿ ಆಯ್ಕೆಮಾಡಿ, ಅಂಗಡಿ ಮತ್ತು ಇತಿಹಾಸ ನೋಡಿ."],
   "me3.noCity": ["City not added", "शहर नहीं डाला", "ನಗರ ಹಾಕಿಲ್ಲ"],
   "me3.teachNow": ["Teach Sahay", "सहाय को सिखाएँ", "ಸಹಾಯ್‌ಗೆ ಕಲಿಸಿ"],
   "me3.teachHow": ["Press, then say a rule, like: never pay more than 80 rupees a kilo for rice.", "दबाइए, फिर नियम बोलिए, जैसे: चावल के लिए 80 रुपये किलो से ज़्यादा कभी नहीं।", "ಒತ್ತಿ, ನಂತರ ನಿಯಮ ಹೇಳಿ, ಉದಾ: ಅಕ್ಕಿಗೆ ಕಿಲೋಗೆ 80 ರೂಪಾಯಿಗಿಂತ ಹೆಚ್ಚು ಎಂದಿಗೂ ಬೇಡ."],

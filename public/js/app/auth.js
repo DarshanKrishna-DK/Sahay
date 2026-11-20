@@ -15,12 +15,13 @@
 // createAuth({ mode: "choose"|"signup"|"login"|"legacy" }) -> { el, update(), show(mode), destroy() }
 
 import { h, icon, fill } from "./dom.js";
-import { t, LANGS, setLang, lang, cityWord } from "./i18n.js";
+import { t, LANGS, lang, cityWord } from "./i18n.js";
 import * as api from "../api.js";
 import * as store from "./store.js";
 import { state } from "./store.js";
 import { createKeypad } from "./keypad.js";
-import { createThinkingOrb } from "./thinking-orb.js";
+import { brandMark } from "./brand.js";
+import { createLangSwitch, setUiLang } from "./lang-switch.js";
 import { passkeyAvailable, addPasskey, loginWithPasskey, cancelled } from "./passkey.js";
 import {
   NAME_MAX, isMobile, fmtPhone, signupSteps, loginSteps, isTextStep, padOutcome, textProblem,
@@ -73,7 +74,9 @@ export function createAuth({ mode: firstMode } = {}) {
   let hadAccount = false;
   try { hadAccount = localStorage.getItem("sahay-had-account") === "1"; } catch { /* storage blocked */ }
   const el = h("section", { class: "auth", "aria-labelledby": "auth-q" });
-  const orb = createThinkingOrb({ size: 64, state: "idle" });
+  // v4: the brand is the real Sahay logo; the thinking orb belongs to the agent, not to these screens.
+  const orb = { set() {}, destroy() {} };
+  const langSwitch = createLangSwitch({ compact: true });
   const data = { language: null, phone: "", name: "", city: "", cityOther: false, pin: "", accessCode: "" };
   // The hash decides (#/signup, #/login); otherwise a fresh device starts on the chooser and one
   // that had an account on Log in. "legacy" is the device-only start for servers without accounts.
@@ -170,7 +173,6 @@ export function createAuth({ mode: firstMode } = {}) {
     try {
       const res = await authPost("/api/auth/login", { phone: data.phone, pin: data.pin, language: language() });
       orb.set("idle");
-      if (res.business && res.business.language) setLang(res.business.language);
       await finishSignedIn(res);
     } catch (err) {
       busy = false; orb.set("idle"); data.pin = "";
@@ -189,7 +191,6 @@ export function createAuth({ mode: firstMode } = {}) {
     try {
       const res = await loginWithPasskey(isMobile(data.phone) ? data.phone : undefined);
       orb.set("idle");
-      if (res.business && res.business.language) setLang(res.business.language);
       await finishSignedIn(res, { offer: false });
     } catch (err) {
       busy = false; orb.set("idle");
@@ -256,9 +257,11 @@ export function createAuth({ mode: firstMode } = {}) {
     render(true);
   }
 
+  // The sign-up language is the shop's voice language (sent to the server); the words on this
+  // device follow it too, through the same per-device UI language the switcher sets (brief v4 item 3).
   function chooseLang(code) {
     data.language = code;
-    setLang(code);
+    setUiLang(code);
     next();
   }
 
@@ -268,11 +271,15 @@ export function createAuth({ mode: firstMode } = {}) {
     return h("button", { class: "icon-btn auth-hear tip-end", type: "button", "aria-label": t("au.hear"), dataset: { tip: t("au.hear") }, on: { click: () => sayLocal(text) } }, icon("speaker", 24));
   }
 
-  function topBar({ canBack, progress }) {
-    return h("div", { class: "auth-bar" },
+  /** Brand row (the real logo, unless the screen shows it big) and the UI language switch; then back, dots, notice. */
+  function topBar({ canBack, progress, hero = false }) {
+    langSwitch.update();
+    return h("div", { class: "auth-top" },
+      h("div", { class: `auth-brandrow${hero ? " has-hero" : ""}` }, hero ? null : brandMark({ size: 40, word: true }), langSwitch.el),
+      h("div", { class: "auth-bar" },
       canBack ? h("button", { class: "icon-btn auth-back tip-below", type: "button", "aria-label": t("back"), dataset: { tip: t("back") }, disabled: busy ? true : undefined, on: { click: back } }, icon("arrowLeft", 24)) : h("span", { class: "auth-bar-gap", "aria-hidden": "true" }),
       progress || h("span", { class: "auth-bar-fill", "aria-hidden": "true" }),
-      h("p", { class: "pill auth-notice", role: "note" }, icon("robot", 18), h("span", { text: t("notice.short") })));
+      h("p", { class: "pill auth-notice", role: "note" }, icon("robot", 18), h("span", { text: t("notice.short") }))));
   }
 
   function dots(list) {
@@ -457,28 +464,19 @@ export function createAuth({ mode: firstMode } = {}) {
     h("span", { class: "auth-choose-text" }, h("span", { class: "auth-choose-word", text: word }), h("span", { class: "auth-choose-sub", text: sub })),
     h("span", { class: "auth-choose-go", "aria-hidden": "true" }, icon("arrowRight", 24)));
     return [
-      h("div", { class: "auth-orb", "aria-hidden": "true" }, orb.el),
+      h("div", { class: "auth-brand-hero" }, brandMark({ size: 88, word: true })),
       question("lang", t("au.chooseQ"), "auth-q-center"),
-      langChips(),
       h("div", { class: "auth-answer-zone auth-choose" },
         tile("new", "store", t("au.new"), t("au.newSub")),
         tile("have", "key", t("au.have"), t("au.haveSub"))),
     ];
   }
 
-  /** Small three-script switch for the chooser and Log in (errors come back in the language sent). */
-  function langChips() {
-    return h("div", { class: "auth-lang-chips", role: "radiogroup", "aria-label": t("au.langSwitch") },
-      ...LANGS.map((L) => h("button", { class: "chip auth-lang-chip", type: "button", role: "radio", lang: L.short, "aria-checked": String(lang() === L.short),
-        on: { click: () => { data.language = L.code; setLang(L.code); render(); } } }, h("span", { text: L.native }))));
-  }
-
   function fingerFirst() {
     const waiting = fingerState === "waiting";
     return [
-      h("div", { class: "auth-orb", "aria-hidden": "true" }, orb.el),
+      h("div", { class: "auth-brand-hero" }, brandMark({ size: 88, word: true })),
       question("pinEnter", t("au.loginQ"), "auth-q-center"),
-      langChips(),
       h("div", { class: "auth-answer-zone auth-finger-zone" },
         h("button", { class: `auth-finger${waiting ? " is-waiting" : ""}`, type: "button", "aria-label": t("au.fingerLong"), "aria-busy": waiting ? "true" : undefined, disabled: busy ? true : undefined, on: { click: fingerLogin } },
           h("span", { class: "auth-finger-ring", "aria-hidden": "true" }, icon("fingerprint", 64)),
@@ -533,7 +531,7 @@ export function createAuth({ mode: firstMode } = {}) {
     el.dataset.step = kind || mode;
     fill(el,
       h("div", { class: "auth-card" },
-        topBar({ canBack, progress }),
+        topBar({ canBack, progress, hero: mode === "choose" || (mode === "login" && !loginWithPin && finger) }),
         answers(),
         ...body,
         errorBox()),
@@ -552,7 +550,7 @@ export function createAuth({ mode: firstMode } = {}) {
     el,
     update() { render(false); },
     show(nextMode) { if (nextMode && nextMode !== mode && mode !== "offer" && mode !== "added" && mode !== "legacy") setMode(nextMode); else render(false); },
-    destroy() { destroyed = true; orb.destroy(); },
+    destroy() { destroyed = true; orb.destroy(); langSwitch.el.remove(); },
   };
 }
 

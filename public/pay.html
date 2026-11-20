@@ -6,7 +6,9 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#050605">
   <title>Sahay test payment</title>
-  <link rel="icon" type="image/png" href="/assets/sahay-favicon-48.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/brand/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="48x48" href="/assets/brand/favicon-48.png">
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-180.png">
   <!-- The pay page CSP (server.js PAY_CSP) allows styles and fonts from this origin only: the v3
        tokens and the page's own sheet, system fonts with the Noto faces where the device has them. -->
   <link rel="stylesheet" href="/css/tokens-v3.css">
@@ -20,7 +22,14 @@
   <div class="pay-hex" aria-hidden="true"></div>
   <main class="pay-main" id="pay-root" data-state="loading" data-kind="order">
     <header class="pay-top">
-      <p class="pay-brand"><span class="pay-logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"/><path d="M8.5 12h.01M12 8.5h.01M15.5 12h.01M12 15.5h.01M12 12h.01"/></svg></span><span id="brand-text">Sahay, an automated procurement assistant</span></p>
+      <div class="pay-toprow">
+        <p class="pay-brand"><span class="brand-mark"><img class="brand-img" src="/assets/brand/sahay-mark-128.png" srcset="/assets/brand/sahay-mark-256.png 2x" width="32" height="40" alt=""></span><span id="brand-text">Sahay, an automated procurement assistant</span></p>
+        <div class="pay-langs" role="group" aria-label="Language / भाषा / ಭಾಷೆ">
+          <button class="pay-lang" id="lang-en" type="button" lang="en" aria-pressed="true">English</button>
+          <button class="pay-lang" id="lang-hi" type="button" lang="hi" aria-pressed="false">हिन्दी</button>
+          <button class="pay-lang" id="lang-kn" type="button" lang="kn" aria-pressed="false">ಕನ್ನಡ</button>
+        </div>
+      </div>
       <p class="pay-test" id="banner" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span id="banner-text">Razorpay TEST MODE: no real money moves.</span></p>
     </header>
 

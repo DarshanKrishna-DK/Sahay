@@ -64,7 +64,77 @@
     failed: function (why) { return "Payment failed: " + (why || "Razorpay did not say why") + "."; },
   };
 
-  // The customer's copy of a shop's bill, in the shop's language (Devanagari / Kannada script).
+
+  // The owner's purchase-order page in Hindi and Kannada (English stays the default; brief v4 item 3).
+  var PURCHASE_HI = {
+    lang: "hi",
+    title: "खरीद ऑर्डर का भुगतान",
+    ref: function (n) { return "खरीद ऑर्डर " + n; },
+    vendor: "विक्रेता", item: "सामान", buyer: "खरीदार", amount: "चुकाने की रकम",
+    sim: "सिम्युलेटेड विक्रेता (simulated vendor): असली सप्लायर नहीं",
+    brand: function () { return "सहाय, खरीदारी का स्वचालित सहायक"; },
+    banner: "Razorpay टेस्ट मोड: असली पैसा नहीं कटता।",
+    pay: "Razorpay से भुगतान करें (टेस्ट मोड)",
+    back: "सहाय पर वापस", backHref: "/app#/buy",
+    fine: "यह पन्ना ऊपर वाले ऑर्डर के लिए Razorpay चेकआउट टेस्ट मोड में खोलता है। सर्वर के Razorpay का हस्ताक्षर जाँचने के बाद ही ऑर्डर चुका हुआ माना जाता है। सिर्फ़ Razorpay के टेस्ट कार्ड या यूपीआई की जानकारी डालिए।",
+    loading: "ऑर्डर खुल रहा है।",
+    retry: "फिर कोशिश करें",
+    loadFailed: "ऑर्डर नहीं खुल पाया।",
+    unusable: "यह भुगतान लिंक काम नहीं करता।",
+    expiredTitle: "इस भुगतान लिंक का समय निकल गया",
+    expiredText: "इस ऑर्डर के लिए सहाय से नया भुगतान लिंक माँगिए।",
+    invalidTitle: "यह भुगतान लिंक सही नहीं है",
+    invalidText: "सहाय में ऑर्डर पर भुगतान बटन से सही लिंक खोलिए।",
+    limitTitle: "बहुत बार कोशिश हुई",
+    limitText: "कुछ मिनट रुककर लिंक फिर से खोलिए।",
+    errorTitle: "ऑर्डर नहीं खुल पाया",
+    errorText: "इंटरनेट देखकर फिर कोशिश कीजिए।",
+    isPaid: "इस ऑर्डर का भुगतान हो चुका है (Razorpay टेस्ट मोड)।",
+    verifying: "सर्वर भुगतान जाँच रहा है।",
+    verifyFailed: "भुगतान की जाँच नहीं हो पाई।",
+    verified: function (n) { return "भुगतान हो गया और जाँच लिया गया (Razorpay टेस्ट मोड)। ऑर्डर " + n + " चुका दिया गया।"; },
+    recorded: function (n, st) { return "भुगतान दर्ज हुआ, पर ऑर्डर " + n + " की स्थिति " + st + " है।"; },
+    noCheckout: "Razorpay चेकआउट नहीं खुला। इंटरनेट देखकर पन्ना फिर से खोलिए।",
+    opening: "Razorpay चेकआउट खुल रहा है (टेस्ट मोड)।",
+    closed: "चेकआउट बंद हुआ। कोई पैसा नहीं कटा।",
+    failed: function (why) { return "भुगतान नहीं हुआ" + (why ? ": " + why : "") + "।"; },
+  };
+  var PURCHASE_KN = {
+    lang: "kn",
+    title: "ಖರೀದಿ ಆರ್ಡರ್ ಪಾವತಿ",
+    ref: function (n) { return "ಖರೀದಿ ಆರ್ಡರ್ " + n; },
+    vendor: "ಮಾರಾಟಗಾರ", item: "ಸಾಮಾನು", buyer: "ಖರೀದಿದಾರ", amount: "ಪಾವತಿಸಬೇಕಾದ ಮೊತ್ತ",
+    sim: "ಸಿಮ್ಯುಲೇಟೆಡ್ ಮಾರಾಟಗಾರ (simulated vendor): ನಿಜವಾದ ಪೂರೈಕೆದಾರರಲ್ಲ",
+    brand: function () { return "ಸಹಾಯ್, ಖರೀದಿಯ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ"; },
+    banner: "Razorpay ಟೆಸ್ಟ್ ಮೋಡ್: ನಿಜವಾದ ಹಣ ಹೋಗುವುದಿಲ್ಲ.",
+    pay: "Razorpay ಮೂಲಕ ಪಾವತಿಸಿ (ಟೆಸ್ಟ್ ಮೋಡ್)",
+    back: "ಸಹಾಯ್‌ಗೆ ಹಿಂದಿರುಗಿ", backHref: "/app#/buy",
+    fine: "ಈ ಪುಟ ಮೇಲಿನ ಆರ್ಡರ್‌ಗೆ Razorpay ಚೆಕ್‌ಔಟ್ ಅನ್ನು ಟೆಸ್ಟ್ ಮೋಡ್‌ನಲ್ಲಿ ತೆರೆಯುತ್ತದೆ. ಸರ್ವರ್ Razorpay ಸಹಿಯನ್ನು ಪರಿಶೀಲಿಸಿದ ನಂತರವೇ ಆರ್ಡರ್ ಪಾವತಿಯಾಗಿದೆ ಎಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ. Razorpay ಟೆಸ್ಟ್ ಕಾರ್ಡ್ ಅಥವಾ ಯುಪಿಐ ವಿವರಗಳನ್ನು ಮಾತ್ರ ಬಳಸಿ.",
+    loading: "ಆರ್ಡರ್ ತೆರೆಯುತ್ತಿದೆ.",
+    retry: "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
+    loadFailed: "ಆರ್ಡರ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ.",
+    unusable: "ಈ ಪಾವತಿ ಲಿಂಕ್ ಬಳಸಲು ಆಗುವುದಿಲ್ಲ.",
+    expiredTitle: "ಈ ಪಾವತಿ ಲಿಂಕ್‌ನ ಸಮಯ ಮುಗಿದಿದೆ",
+    expiredText: "ಈ ಆರ್ಡರ್‌ಗೆ ಸಹಾಯ್‌ನಿಂದ ಹೊಸ ಪಾವತಿ ಲಿಂಕ್ ಕೇಳಿ.",
+    invalidTitle: "ಈ ಪಾವತಿ ಲಿಂಕ್ ಸರಿಯಿಲ್ಲ",
+    invalidText: "ಸಹಾಯ್‌ನಲ್ಲಿ ಆರ್ಡರ್‌ನ ಪಾವತಿ ಬಟನ್‌ನಿಂದ ಸರಿಯಾದ ಲಿಂಕ್ ತೆರೆಯಿರಿ.",
+    limitTitle: "ತುಂಬಾ ಬಾರಿ ಪ್ರಯತ್ನಿಸಲಾಗಿದೆ",
+    limitText: "ಕೆಲವು ನಿಮಿಷ ಕಾದು ಲಿಂಕ್ ಮತ್ತೆ ತೆರೆಯಿರಿ.",
+    errorTitle: "ಆರ್ಡರ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ",
+    errorText: "ಇಂಟರ್ನೆಟ್ ನೋಡಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+    isPaid: "ಈ ಆರ್ಡರ್ ಪಾವತಿಯಾಗಿದೆ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್).",
+    verifying: "ಸರ್ವರ್ ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸುತ್ತಿದೆ.",
+    verifyFailed: "ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸಲು ಆಗಲಿಲ್ಲ.",
+    verified: function (n) { return "ಪಾವತಿಯಾಗಿದೆ ಮತ್ತು ಪರಿಶೀಲಿಸಲಾಗಿದೆ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್). ಆರ್ಡರ್ " + n + " ಪಾವತಿಯಾಗಿದೆ."; },
+    recorded: function (n, st) { return "ಪಾವತಿ ದಾಖಲಾಗಿದೆ, ಆದರೆ ಆರ್ಡರ್ " + n + " ಸ್ಥಿತಿ " + st + "."; },
+    noCheckout: "Razorpay ಚೆಕ್‌ಔಟ್ ತೆರೆಯಲಿಲ್ಲ. ಇಂಟರ್ನೆಟ್ ನೋಡಿ ಪುಟವನ್ನು ಮತ್ತೆ ತೆರೆಯಿರಿ.",
+    opening: "Razorpay ಚೆಕ್‌ಔಟ್ ತೆರೆಯುತ್ತಿದೆ (ಟೆಸ್ಟ್ ಮೋಡ್).",
+    closed: "ಚೆಕ್‌ಔಟ್ ಮುಚ್ಚಲಾಗಿದೆ. ಯಾವ ಹಣವೂ ಹೋಗಿಲ್ಲ.",
+    failed: function (why) { return "ಪಾವತಿ ಆಗಲಿಲ್ಲ" + (why ? ": " + why : "") + "."; },
+  };
+  var PURCHASE_BY = { "en-IN": PURCHASE, "hi-IN": PURCHASE_HI, "kn-IN": PURCHASE_KN };
+
+  // The customer's copy of a shop's bill (Devanagari / Kannada script for hi / kn).
   var BILL = {
     "en-IN": {
       lang: "en",
@@ -166,20 +236,25 @@
 
   function isInvoice(d) { return Boolean(d && d.kind === "invoice"); }
 
-  /** The page's words for this payment: purchase-order wording, or the shop's bill in its language. */
-  function copyFor(d) {
-    if (!isInvoice(d)) return PURCHASE;
-    return BILL[d.language] || BILL["en-IN"];
+  // Words: English by default; the small switch at the top picks हिन्दी or ಕನ್ನಡ for this device
+  // (the same per-device key the app uses, brief v4 item 3). The shop's language does not decide it.
+  var LANG_KEY = "sahay-ui-lang";
+  var CODE = { en: "en-IN", hi: "hi-IN", kn: "kn-IN" };
+  function savedLang() {
+    var v = null;
+    try { v = window.localStorage ? window.localStorage.getItem(LANG_KEY) : null; } catch (e) { v = null; }
+    return v === "hi" || v === "kn" || v === "en" ? v : "en";
   }
+  var uiLang = savedLang();
 
-  /** Before any data (or when none comes): a bill link speaks the visitor's browser language. */
-  function guessCopy() {
-    if (!billToken) return PURCHASE;
-    var nav = typeof navigator !== "undefined" && navigator ? String(navigator.language || "") : "";
-    if (/^hi/i.test(nav)) return BILL["hi-IN"];
-    if (/^kn/i.test(nav)) return BILL["kn-IN"];
-    return BILL["en-IN"];
+  /** The page's words for this payment: purchase-order or bill wording, in the chosen language. */
+  function copyFor(d) {
+    var code = CODE[uiLang] || "en-IN";
+    var bill = d ? isInvoice(d) : billToken;
+    if (!bill) return PURCHASE_BY[code] || PURCHASE;
+    return BILL[code] || BILL["en-IN"];
   }
+  function guessCopy() { return copyFor(null); }
 
   function el(id) { return document.getElementById(id); }
   function setText(id, text) { var e = el(id); if (e) e.textContent = text; }
@@ -245,7 +320,8 @@
   function applyCopy(c, d) {
     copy = c;
     if (document.documentElement) document.documentElement.lang = c.lang;
-    if (root) root.setAttribute("data-kind", c === PURCHASE ? "order" : "bill");
+    if (root) root.setAttribute("data-kind", c.backHref ? "order" : "bill");
+    syncLangButtons();
     setText("title", c.title);
     setText("label-vendor", c.vendor);
     setText("label-item", c.item);
@@ -271,8 +347,10 @@
     }
   }
 
+  var view = null; // { kind: "data" } | { kind: "problem", which }
   function render(d) {
     order = d;
+    view = { kind: "data" };
     var c = copyFor(d);
     applyCopy(c, d);
     setHidden("problem", true);
@@ -296,7 +374,7 @@
       show(c.isPaid, "ok");
       setState("paid");
       // Reopened after paying: nothing is open (the page says 0), so no amount is repeated.
-      if (isInvoice(d)) showThanks(c, d, null);
+      if (isInvoice(d)) showThanks(c, d, d.paidNow || null);
       else setHidden("amount-block", true);
     } else {
       payBtn.hidden = false;
@@ -308,7 +386,8 @@
 
   /** No usable data: expired, not valid, too many tries, or the server did not answer (Try again). */
   function problem(kind) {
-    var c = copy || guessCopy();
+    view = { kind: "problem", which: kind };
+    var c = guessCopy();
     applyCopy(c, null);
     var words = {
       expired: [c.expiredTitle, c.expiredText],
@@ -384,6 +463,7 @@
         var paid = body.status === "paid";
         show(paid ? c.verified(number) : c.recorded(number, body.status), paid ? "ok" : "bad");
         setState(paid ? "paid" : "partial");
+        if (paid) order = Object.assign({}, order, { paid: true, paidNow: isInvoice(order) ? order.amount : null });
         if (paid && isInvoice(order)) showThanks(c, order, order.amount);
         showBack();
       })
@@ -438,6 +518,28 @@
   });
 
   retryBtn.addEventListener("click", function () { load(); });
+
+  /* ------------------------------------------------------------- language switch -- */
+  function syncLangButtons() {
+    ["en", "hi", "kn"].forEach(function (k) {
+      var b = el("lang-" + k);
+      if (b) b.setAttribute("aria-pressed", String(k === uiLang));
+    });
+  }
+  function pickLang(k) {
+    if (k === uiLang || !CODE[k]) return;
+    var st = root ? root.getAttribute("data-state") : "";
+    if (st === "opening" || st === "verifying") return; // never change words under an open checkout
+    uiLang = k;
+    try { if (window.localStorage) window.localStorage.setItem(LANG_KEY, k); } catch (e) { /* storage blocked: this visit only */ }
+    if (view && view.kind === "data" && order) render(order);
+    else if (view && view.kind === "problem") problem(view.which);
+    else applyCopy(guessCopy(), null);
+  }
+  ["en", "hi", "kn"].forEach(function (k) {
+    var b = el("lang-" + k);
+    if (b) b.addEventListener("click", function () { pickLang(k); });
+  });
 
   load();
 })();

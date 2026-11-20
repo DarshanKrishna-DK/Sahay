@@ -27,7 +27,7 @@ const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(
  * resolves to the elements once rendered. `pay()` presses Pay: the fake Razorpay Checkout succeeds
  * at once and the page posts the signature to the server.
  */
-async function load(data, { verified = null, fail = null, token = null } = {}) {
+async function load(data, { verified = null, fail = null, token = null, uiLang = null } = {}) {
   const elements = {};
   for (const id of IDS) {
     const attrs = {};
@@ -59,7 +59,9 @@ async function load(data, { verified = null, fail = null, token = null } = {}) {
     on() {}
     open() { this.options.handler({ razorpay_payment_id: "pay_TESTONLY1", razorpay_order_id: this.options.order_id, razorpay_signature: "0".repeat(64) }); }
   }
-  const context = { window: { Razorpay }, document, location: { pathname: "/pay/" + (token || ((data.kind === "invoice" ? "inv_" : "") + "A".repeat(22))) }, fetch, Intl, console };
+  const saved = { "sahay-ui-lang": uiLang };
+  const localStorage = { getItem: (k) => saved[k] ?? null, setItem: (k, v) => { saved[k] = v; } };
+  const context = { window: { Razorpay, localStorage }, document, location: { pathname: "/pay/" + (token || ((data.kind === "invoice" ? "inv_" : "") + "A".repeat(22))) }, fetch, Intl, console };
   vm.createContext(context);
   vm.runInContext(SCRIPT, context);
   // fetch -> json -> render run on microtasks.
@@ -67,7 +69,7 @@ async function load(data, { verified = null, fail = null, token = null } = {}) {
   rendered();
   await done;
   const pay = async () => { elements.pay.listeners.click(); await settle(); };
-  return { el: elements, html, document, pay, requests };
+  return { el: elements, html, document, pay, requests, saved };
 }
 
 const PO = { testMode: true, keyId: "rzp_test_x", razorpayOrderId: "order_X", amountPaise: 310000, amount: 3100, currency: "INR", poNumber: "SAHAY/2026/0001", buyer: "Asha Kirana", vendor: "BS Foods", simulated: true, item: "rice", quantity: 50, unit: "kg", description: "d", orderStatus: "confirmed", paid: false };
@@ -85,8 +87,8 @@ test("a purchase-order token keeps the purchase-order wording, the simulated ven
   assert.equal(el.details.hidden, false);
 });
 
-test("an invoice token: the shop is the merchant, the customer the buyer, a bill in the shop's language, no link into the owner's app, no simulated label", async () => {
-  const { el, html } = await load(INVOICE);
+test("an invoice token: the shop is the merchant, the customer the buyer, a bill in the chosen language (Hindi here), no link into the owner's app, no simulated label", async () => {
+  const { el, html } = await load(INVOICE, { uiLang: "hi" });
   assert.equal(html.lang, "hi");
   assert.equal(el.title.textContent, "बिल का भुगतान");
   assert.equal(el.po.textContent, "बिल INV/2026-27/0001");
@@ -104,7 +106,7 @@ test("an invoice token: the shop is the merchant, the customer the buyer, a bill
 });
 
 test("an invoice page in Kannada and English says bill, ಬಿಲ್ and Bill", async () => {
-  const kn = await load({ ...INVOICE, language: "kn-IN" });
+  const kn = await load({ ...INVOICE, language: "kn-IN" }, { uiLang: "kn" });
   assert.equal(kn.el.po.textContent, "ಬಿಲ್ INV/2026-27/0001");
   assert.equal(kn.html.lang, "kn");
   const en = await load({ ...INVOICE, language: "en-IN" });
@@ -129,8 +131,8 @@ test("a purchase order still goes back to Buy after checkout, and never shows th
   assert.equal(page.el.details.hidden, false);
 });
 
-test("an invoice paid and verified ends on 'Paid. Thank you.' with the shop, bill number and amount, in the shop's language", async () => {
-  const page = await load(INVOICE, { verified: { status: "paid", number: "INV/2026-27/0001", already: false } });
+test("an invoice paid and verified ends on 'Paid. Thank you.' with the shop, bill number and amount, in the chosen language", async () => {
+  const page = await load(INVOICE, { uiLang: "hi", verified: { status: "paid", number: "INV/2026-27/0001", already: false } });
   await page.pay();
   assert.deepEqual(page.requests.map((r) => [r.method, r.url.replace(/inv_A+/, "inv_x")]), [["GET", "/api/pay/inv_x"], ["POST", "/api/pay/inv_x/verify"]]);
   const { el } = page;
@@ -157,7 +159,7 @@ test("an invoice thank-you in English and Kannada; a part payment does not say t
   assert.equal(en.el["thanks-label-shop"].textContent, "Shop");
   assert.equal(en.el["thanks-label-bill"].textContent, "Bill");
   assert.equal(en.el["thanks-amount"].textContent, "₹4,725.00");
-  const kn = await load({ ...INVOICE, language: "kn-IN" }, { verified: { status: "paid" } });
+  const kn = await load({ ...INVOICE, language: "kn-IN" }, { uiLang: "kn", verified: { status: "paid" } });
   await kn.pay();
   assert.equal(kn.el["thanks-title"].textContent, "ಪಾವತಿ ಆಯಿತು. ಧನ್ಯವಾದಗಳು.");
   assert.equal(kn.el["thanks-label-shop"].textContent, "ಅಂಗಡಿ");
@@ -245,4 +247,26 @@ test("the pay page uses the v3 tokens and its own sheet: no inline style block, 
   assert.doesNotMatch(HTML, /fonts\.googleapis/, "PAY_CSP has font-src 'self' only");
   assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c/i);
   assert.match(SCRIPT, /theme: \{ color: "#B6F23C" \}/);
+});
+
+test("v4: English by default whatever the shop's language; the small switch changes the words and is kept on the device", async () => {
+  const page = await load(INVOICE); // the shop speaks Hindi
+  assert.equal(page.html.lang, "en");
+  assert.equal(page.el.title.textContent, "Pay your bill");
+  assert.equal(page.el["lang-en"].getAttribute("aria-pressed"), "true");
+  page.el["lang-kn"].listeners.click();
+  assert.equal(page.html.lang, "kn");
+  assert.equal(page.el.title.textContent, "ಬಿಲ್ ಪಾವತಿ");
+  assert.equal(page.el["lang-kn"].getAttribute("aria-pressed"), "true");
+  assert.equal(page.saved["sahay-ui-lang"], "kn");
+  const po = await load(PO, { uiLang: "hi" });
+  assert.equal(po.el.title.textContent, "खरीद ऑर्डर का भुगतान");
+  assert.match(po.el["sim-text"].textContent, /simulated vendor/, "the simulated label keeps the English words in every language");
+  assert.equal(po.el.back.href, "/app#/buy");
+});
+
+test("v4: the real Sahay logo, not an invented mark", () => {
+  assert.match(HTML, /class="brand-mark"><img class="brand-img" src="\/assets\/brand\/sahay-mark-128\.png"/);
+  assert.match(HTML, /href="\/assets\/brand\/favicon-32\.png"/);
+  assert.doesNotMatch(HTML, /pay-logo|sahay-mark-72/);
 });

@@ -66,11 +66,20 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
   font-weight: var(--fw-strong);
   line-height: 1.35;
 }
-.pay-logo {
-  display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 50%;
-  background: var(--btn-surface); color: var(--on-accent); border: 1px solid var(--btn-rim); box-shadow: var(--depth-soft);
+.pay-toprow { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.pay-toprow .pay-brand { flex: 1 1 200px; min-width: 0; }
+/* The real Sahay logo (same markup as brand.js brandMark; this page does not load components-v3.css). */
+.brand-mark { display: inline-flex; align-items: center; flex: none; }
+.brand-mark .brand-img { display: block; width: 32px; height: 40px; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+/* Language: English by default, a small three-script switch for this device. */
+.pay-langs { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--piano-1); border: 1px solid var(--edge); }
+.pay-lang {
+  min-height: var(--touch-min); padding: 0 12px; border: 0; border-radius: var(--r-pill);
+  background: transparent; color: var(--text-md); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
 }
-.pay-logo svg { width: 24px; height: 24px; stroke-width: 2.4; }
+.pay-lang:hover { color: var(--text-hi); }
+.pay-lang[aria-pressed="true"] { background: var(--btn-surface); color: var(--on-accent); }
+.pay-lang:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* Test mode: a compact pill, never a banner that outweighs the bill. */
 .pay-test {
   display: inline-flex; align-items: center; gap: var(--s-2); align-self: flex-start;
@@ -138,12 +147,14 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 }
 .pay-title {
   font-family: var(--font-display);
-  font-weight: var(--fw-display);
-  font-size: var(--fs-h2);
-  line-height: var(--lh-tight);
+  font-weight: 400;
+  font-size: var(--t-h2);
+  line-height: 1.05;
+  letter-spacing: var(--track-display);
   outline: none;
 }
-:lang(hi) .pay-title, :lang(kn) .pay-title { font-family: inherit; line-height: 1.3; }
+:lang(hi) .pay-title, :lang(kn) .pay-title { line-height: 1.3; }
+:lang(kn) .pay-title { font-weight: 700; }
 
 .pay-sim {
   display: inline-flex; align-items: center; gap: var(--s-2);
@@ -165,10 +176,10 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 .pay-amount-label { color: var(--text-md); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
 .pay-amount-value {
   font-family: var(--font-num);
-  font-size: var(--fs-total);
-  font-weight: var(--fw-display);
+  font-size: var(--t-figure);
+  font-weight: 700;
   line-height: 1.05;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   color: var(--text-hi);
   overflow-wrap: anywhere;
@@ -295,8 +306,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 [data-state="expired"] .pay-problem-mark { color: var(--amber-text); background: color-mix(in srgb, var(--amber) 14%, var(--piano-1)); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
 [data-state="expired"] .pay-ico-clock, [data-state="limit"] .pay-ico-clock { display: block; }
 [data-state="expired"] .pay-ico-alert, [data-state="limit"] .pay-ico-alert { display: none; }
-.pay-problem-title { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: var(--fw-display); line-height: 1.25; outline: none; }
-:lang(hi) .pay-problem-title, :lang(kn) .pay-problem-title { font-family: inherit; }
+.pay-problem-title { font-family: var(--font-body); font-size: var(--t-h3); font-weight: 700; letter-spacing: var(--track-h3); line-height: 1.25; outline: none; }
 .pay-problem-text { color: var(--text-md); }
 
 /* ------------------------------------------------------------- bill: thank you -- */
@@ -314,8 +324,9 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 }
 .pay-thanks-mark svg { width: 52px; height: 52px; stroke-width: 2.6; }
 @keyframes pay-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.pay-thanks-title { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: var(--fw-display); color: var(--ok-text); outline: none; }
-:lang(hi) .pay-thanks-title, :lang(kn) .pay-thanks-title { font-family: inherit; line-height: 1.35; }
+.pay-thanks-title { font-family: var(--font-display); font-size: var(--t-h2); font-weight: 400; letter-spacing: var(--track-display); line-height: 1.1; color: var(--ok-text); outline: none; }
+:lang(hi) .pay-thanks-title, :lang(kn) .pay-thanks-title { line-height: 1.35; }
+:lang(kn) .pay-thanks-title { font-weight: 700; }
 .pay-thanks-facts { width: 100%; text-align: left; }
 .pay-fact-amount dd { font-family: var(--font-num); font-size: var(--fs-amount); font-variant-numeric: tabular-nums; }
 

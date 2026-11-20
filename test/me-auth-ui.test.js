@@ -94,3 +94,17 @@ test("the simulated vendor label and the automated-assistant notice stay on thes
   assert.match(read("public/js/app/auth.js"), /notice\.short/);
   assert.match(read("public/js/app/boot-screens.js"), /notice\.long/);
 });
+
+test("v4: the UI language is the device's choice (English by default), never the shop's; the real logo leads auth and boot; My Sahay starts with the page head", () => {
+  const auth = read("public/js/app/auth.js");
+  assert.doesNotMatch(auth, /\bsetLang\(/, "log in never switches the words to the shop's language");
+  assert.match(auth, /createLangSwitch\(/);
+  assert.match(auth, /setUiLang\(code\)/);
+  assert.match(auth, /brandMark\(/);
+  assert.doesNotMatch(auth, /createThinkingOrb/, "the orb is the agent, not the brand");
+  const boot = read("public/js/app/boot-screens.js");
+  assert.match(boot, /brandMark\(/);
+  const me = read("public/js/app/me.js");
+  assert.match(me, /pageHead\(\{/);
+  assert.ok(me.indexOf("el.append(head,") > -1, "the head comes before the tabs");
+});
