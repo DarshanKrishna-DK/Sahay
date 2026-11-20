@@ -1,9 +1,11 @@
-// Buy (UI v5, screens.md 04 Buy): the page pattern, three groups at most.
+// Buy (UI v5 page pattern, v7 look): title, then what needs the owner, then the work, then orders.
 //   1. Title "Buy", one sentence, ONE primary button "Ask Sahay to buy" (starts a voice call here).
-//   2. "Needs you" (only when a deal waits for the owner's yes): W3's rows (yes.js needsRows), a row
-//      opens W3's Yes card.
-//   3. "Your orders": the current need while Sahay works on it (Asking vendors / Waiting for you),
-//      every purchase order (Ordered / Cancelled), earlier needs (Asked before). Row: item + quantity,
+//   2. "Needs you": W3's buy rows (yes.js needsRows) that the discovery board does not already show
+//      (its best deal carries the pending yes for the current need); a row opens W3's Yes card.
+//   3. The discovery board (discovery.js): the current need, sellers found (View on IndiaMART,
+//      Bargain with this seller), bargaining round by round with Listen in, and the best deal.
+//   4. "Your orders": every purchase order (Ordered / Cancelled), then earlier needs (Asked
+//      before); the current need itself lives on the board. Row: item + quantity,
 //      vendor + day, amount, status word with a dot. Five rows, then "Show all". A row opens a
 //      sheet: what was said (every vendor line marked "simulated vendor" when it is one), Listen
 //      in while live, and the order's actions (Pay with test mode, Arrived, Order paper) or Remove.
@@ -18,6 +20,8 @@ import { markDelivered } from "./store-sell.js";
 import { NegotiationListener } from "../voice.js";
 import { stationsFor, ladderRows, progressOf, bestPrice, buyRows, orderShelf, orderFacts, remindersOf } from "./buy-model.js";
 import { talkHere, errorWords, dateTime, itemWords } from "./buy-kit.js";
+import { createDiscoveryBoard } from "./discovery.js";
+import { bestDeal } from "./discovery-model.js";
 
 const STATUS = {
   asking: ["b5.st.asking", "info"], waiting: ["b5.st.waiting", "needs"], ordered: ["b5.st.ordered", "good"],
@@ -46,7 +50,8 @@ export function createBuy() {
   const headBox = h("div");
   const needsBox = h("div");
   const ordersBox = h("div");
-  el.append(headBox, needsBox, ordersBox);
+  const board = createDiscoveryBoard();
+  el.append(headBox, needsBox, board.el, ordersBox);
 
   const listen = { status: "idle", error: null, route: null };
   const listener = new NegotiationListener((s) => { Object.assign(listen, s); refreshSheet(); });
@@ -62,7 +67,13 @@ export function createBuy() {
 
   /* ------------------------------------------------------- needs you -- */
   function renderNeeds() {
-    const rows = needs.filter((r) => r.kind === "buy");
+    // The board's best deal already offers the pending yes for the current need; list the rest.
+    const req = state.requirement;
+    const m = req ? stationsFor(state, req) : null;
+    const lad = m ? ladderRows(m.negotiation) : null;
+    const deal = req ? bestDeal({ quotes: state.quotes, approvals: state.approvals, negotiation: m.negotiation, agreed: lad.agreed, unit: lad.unit }, req) : null;
+    const onBoard = deal && deal.approvalId ? `approval:${deal.approvalId}` : null;
+    const rows = needs.filter((r) => r.kind === "buy" && r.key !== onBoard);
     patch(needsBox, JSON.stringify([langKey(), rows.map((r) => [r.key, r.phase, r.line, r.amountText, r.meta, r.simulated])]), () => (rows.length
       ? card({ title: t("b5.needsYou"), needs: true, cls: "b5-needs",
         body: list(rows.map((r) => ({
@@ -262,7 +273,8 @@ export function createBuy() {
   }
 
   function renderOrders() {
-    const rows = state.boot === "ready" ? buyRows(state, state.requirement) : [];
+    // The current need is on the discovery board; this list is the orders and the earlier needs.
+    const rows = state.boot === "ready" ? buyRows(state, state.requirement).filter((r) => r.kind !== "need") : [];
     const key = JSON.stringify([langKey(), state.boot, rows.map((r) => [r.kind, r.status, r.amount, r.order && [r.order.id, r.order.status], r.need && r.need.id]), state.quotes.size, state.vendors.size]);
     patch(ordersBox, key, () => {
       if (state.boot !== "ready") return card({ title: t("b5.yourOrders"), body: skeleton("rows", 3) });
@@ -286,7 +298,7 @@ export function createBuy() {
   return {
     el,
     update: (_s, parts) => render(parts),
-    leave() { if (listen.status !== "idle") listener.stop(); if (sheet && sheet.api.isOpen()) sheet.api.close(); },
-    destroy() { offNeeds(); },
+    leave() { if (listen.status !== "idle") listener.stop(); if (sheet && sheet.api.isOpen()) sheet.api.close(); board.pause(); },
+    destroy() { offNeeds(); board.destroy(); },
   };
 }

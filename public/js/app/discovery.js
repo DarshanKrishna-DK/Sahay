@@ -14,13 +14,15 @@
 // "simulated vendor" shows on the seller card, on every bargaining round and on the best deal.
 // Data shaping is discovery-model.js (tested); every figure comes from the store.
 //
-//   const board = createDiscoveryBoard();   // -> { el, update(), destroy() }
+//   const board = createDiscoveryBoard();   // -> { el, update(), pause(), destroy() }  pause() stops Listen in
 //   panel.append(board.el);                 // it follows the store by itself; destroy() when unmounted
+// The Bargaining card also carries Listen in (receive-only) while a talk is live.
 
 import { h, icon, patch, scripted, rupees, amount, button, card, chip, emptyState, loader, errorLine } from "./ui.js";
 import { t, unitWord, cityWord, addStrings } from "./i18n.js";
 import { state, subscribe } from "./store.js";
 import { sendText } from "./call.js";
+import { NegotiationListener } from "../voice.js";
 import { stationsFor, ladderRows } from "./buy-model.js";
 import { needCard, sellerCards, bargainRounds, bestDeal } from "./discovery-model.js";
 import { itemWords } from "./buy-kit.js";
@@ -86,6 +88,9 @@ async function openYes(key) {
 
 export function createDiscoveryBoard() {
   ensureCss("/css/discovery.css");
+  // Listen in (receive-only) to the live bargaining, in the Bargaining card.
+  const listen = { status: "idle", error: null, route: null };
+  const listener = new NegotiationListener((st) => { Object.assign(listen, st); render(true); });
   const el = h("section", { class: "dsc", "aria-label": t("dsc.label") });
   const ask = new Map(); // vendorId | "readout" -> { busy, sent, error }
   let showAll = false;
@@ -171,7 +176,18 @@ export function createDiscoveryBoard() {
       b.agreed !== null ? h("p", { class: "dsc-agreed" }, icon("check", 20), h("span", { text: t("ladder.agreed", { p: perUnit(b.agreed, b.unit) }) }))
         : b.best !== null ? h("p", { class: "dsc-lowest", text: t("dsc.lowest", { p: perUnit(b.best, b.unit) }) }) : null,
       b.noDeal ? errorLine(t("ladder.noDeal")) : null,
+      listenControl(m),
     ].filter(Boolean) });
+  }
+
+  function listenControl(m) {
+    const n = m.runningNegotiation;
+    if (!n && listen.status === "idle") return null;
+    if (listen.status === "joining") return button({ word: t(listen.route === "proxy" ? "talk.saferRoute" : "b3.listen.connecting"), kind: "secondary", busy: true, cls: "btn-noarrow" });
+    if (listen.status === "listening") return button({ word: t("b5.listenStop"), icon: "stop", kind: "secondary", cls: "btn-noarrow", onClick: () => listener.stop() });
+    return h("div", { class: "dsc-listen" },
+      n ? button({ word: t("work.listen"), icon: "headphones", kind: "secondary", cls: "btn-noarrow", onClick: () => listener.start(n.id) }) : null,
+      listen.status === "error" ? errorLine(`${t("work.listenFail")} ${(listen.error && listen.error.message) || ""}`.trim()) : null);
   }
 
   function dealView(d) {
@@ -206,7 +222,7 @@ export function createDiscoveryBoard() {
     const b = lad ? bargainRounds(lad) : null;
     const deal = req ? bestDeal({ quotes: state.quotes, approvals: state.approvals, negotiation: m.negotiation, agreed: lad.agreed, unit: lad.unit }, req) : null;
     const searching = Boolean(m && m.stations[1].status === "active");
-    const key = JSON.stringify([langKey(), req, sellers, b, deal, searching, Boolean(m && m.runningNegotiation), [...ask.entries()], showAll, state.vendors.size]);
+    const key = JSON.stringify([langKey(), req, sellers, b, deal, searching, Boolean(m && m.runningNegotiation), [...ask.entries()], showAll, state.vendors.size, listen.status, listen.route, listen.error && listen.error.message]);
     patch(el, key, () => {
       if (!req) return emptyState({ icon: "search", title: t("dsc.empty.title"), text: t("dsc.empty.text") });
       return [
@@ -221,5 +237,6 @@ export function createDiscoveryBoard() {
   const PARTS = ["all", "lang", "work", "approvals", "orders", "stream"];
   const off = subscribe((_s, parts) => { if (PARTS.some((p) => parts.has(p))) render(); });
   render();
-  return { el, update: () => render(), destroy: () => off() };
+  const pause = () => { if (listen.status !== "idle") listener.stop(); };
+  return { el, update: () => render(), pause, destroy: () => { off(); pause(); } };
 }
