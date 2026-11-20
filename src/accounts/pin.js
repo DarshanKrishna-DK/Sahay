@@ -4,7 +4,8 @@
  * 4-digit PINs, hashed with scrypt (random 16-byte salt) and compared with timingSafeEqual.
  * Stored form: scrypt$N$r$p$<salt base64url>$<hash base64url>.
  * A 4-digit PIN has 10,000 values, so the hash alone cannot protect it offline; the online
- * guard is src/accounts/lockout.js (5 tries per phone+IP, then 15 minutes).
+ * guard is src/accounts/lockout.js (5 tries per phone+address, then 15 minutes; 10 per phone from
+ * anywhere in an hour, then an hour).
  */
 
 const crypto = require("node:crypto");

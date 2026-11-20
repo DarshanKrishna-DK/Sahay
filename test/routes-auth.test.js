@@ -27,6 +27,7 @@ const events = require("../src/events");
 const limits = require("../src/limits");
 const lockout = require("../src/accounts/lockout");
 const store = require("../src/accounts/store");
+const telegram = require("../src/notify/telegram");
 
 const CODE = "open-sesame-2026";
 const ORIGIN = "https://sahay.test";
@@ -299,6 +300,50 @@ test("five wrong PINs from one IP lock that phone there for 15 minutes, even for
 
     const elsewhere = await call(base, "POST", "/api/auth/login", { ip: "198.51.100.78", body: { phone: reg.body.phone, pin: "4821" } });
     assert.equal(elsewhere.status, 200, "the lock is per phone+IP");
+  });
+});
+
+test("ten wrong PINs for one phone from ten addresses lock it for an hour everywhere; passkey login stays open; the owner hears about it", async (t) => {
+  const sent = [];
+  telegram.setFetch(async (url, init) => {
+    sent.push({ method: String(url).split("/").pop(), body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: sent.length } }), { status: 200 });
+  });
+  t.after(() => telegram.setFetch(null));
+  await withApp(async (base) => {
+    const reg = await register(base, { language: "kn-IN" });
+    repo.setTelegramLink(reg.json.business.id, 4242);
+    for (let i = 0; i < 10; i++) {
+      const out = await call(base, "POST", "/api/auth/login", { ip: `198.51.100.${120 + i}`, body: { phone: reg.body.phone, pin: "1111" } });
+      assert.equal(out.status, i < 9 ? 401 : 429, `guess ${i + 1} from its own address`);
+    }
+    const right = await call(base, "POST", "/api/auth/login", { ip: "192.0.2.200", body: { phone: reg.body.phone, pin: "4821" } });
+    assert.equal(right.status, 429, "a never-seen address with the right PIN is still locked out");
+    assert.equal(right.json.code, "PIN_LOCKED");
+    assert.ok(Number(right.res.headers.get("retry-after")) > 59 * 60);
+
+    const passkey = await call(base, "POST", "/api/auth/passkey/login/options", { ip: "192.0.2.200", body: { phone: reg.body.phone } });
+    assert.equal(passkey.status, 200, "passkey login is not locked");
+
+    const audit = repo.listAudit(reg.json.business.id, { type: "account.pin_locked" });
+    assert.equal(audit.length, 1, "one audit row for the lock");
+    assert.equal(audit[0].detail.accountId, reg.json.account.id);
+    assert.equal(JSON.stringify(audit[0].detail).includes(reg.body.phone), false, "the audit row carries no phone number");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(sent.length, 1, "one Telegram notice");
+    assert.equal(sent[0].method, "sendMessage");
+    assert.equal(String(sent[0].body.chat_id), "4242");
+    assert.match(sent[0].body.text, /[ಀ-೿]/, "in the shop's language, native script");
+  });
+});
+
+test("a phone lock for a phone with no account answers exactly like one with an account, and notifies nobody", async () => {
+  await withApp(async (base) => {
+    const phone = freshPhone();
+    let last;
+    for (let i = 0; i < 10; i++) last = await call(base, "POST", "/api/auth/login", { ip: `198.51.100.${140 + i}`, body: { phone, pin: "1111" } });
+    assert.equal(last.status, 429);
+    assert.equal(last.json.code, "PIN_LOCKED");
   });
 });
 

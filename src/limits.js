@@ -37,19 +37,34 @@ function usage() {
   return Object.fromEntries([...inUse].map(([k, n]) => [k, { inUse: n, cap: CAPS[k]() }]));
 }
 
-/** Fixed-window counter: allow(key, max, windowMs) -> true while under max in the window. */
-const windows = new Map();
+/**
+ * Fixed-window counter: allow(key, max, windowMs) -> true while under max in the window.
+ * At most MAX_KEYS windows are kept (security review r2 #8): every use moves a key to the recent
+ * end, and past the cap ended windows go first, then the least recently used ones.
+ */
+const MAX_KEYS = 20000;
+const LOW_WATER = Math.floor(MAX_KEYS * 0.9); // evict in batches, not one full scan per request
+const windows = new Map(); // key -> { start, count, windowMs }, least recently used first
 function allow(key, max, windowMs, now = Date.now()) {
-  const w = windows.get(key);
-  if (!w || now - w.start >= windowMs) {
-    windows.set(key, { start: now, count: 1 });
-    if (windows.size > 10000) for (const [k, v] of windows) if (now - v.start >= windowMs) windows.delete(k);
-    return true;
-  }
+  let w = windows.get(key);
+  windows.delete(key);
+  if (!w || now - w.start >= windowMs) w = { start: now, count: 0, windowMs };
+  windows.set(key, w);
+  if (windows.size > MAX_KEYS) evict(now);
   if (w.count >= max) return false;
   w.count += 1;
   return true;
 }
+
+function evict(now) {
+  for (const [k, v] of windows) if (now - v.start >= v.windowMs) windows.delete(k);
+  for (const k of windows.keys()) {
+    if (windows.size <= LOW_WATER) return;
+    windows.delete(k);
+  }
+}
+
+const size = () => windows.size;
 
 /** Tests only. */
 function reset() {
@@ -57,4 +72,4 @@ function reset() {
   windows.clear();
 }
 
-module.exports = { tryAcquire, usage, allow, reset };
+module.exports = { tryAcquire, usage, allow, reset, size, MAX_KEYS };

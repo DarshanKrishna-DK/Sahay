@@ -64,42 +64,78 @@ test("hashPin refuses something that is not a PIN", async () => {
 
 beforeEach(() => lockout.reset());
 
-test("five wrong PINs lock the phone+IP key for fifteen minutes; the fifth failure reports the lock", () => {
+const PHONE = "+919800000100";
+const at = (address, phone = PHONE) => ({ phone, address });
+
+test("five wrong PINs lock the phone+address pair for fifteen minutes; the fifth failure reports the lock", () => {
   const t0 = 1_000_000;
   for (let i = 1; i <= 4; i++) {
-    const done = lockout.attempt("k", t0);
+    const done = lockout.attempt(at("a"), t0);
     assert.equal(done.locked, false);
-    assert.deepEqual(done.finish(false, t0), { locked: false, retryAfterSeconds: 0 }, `failure ${i}`);
+    assert.deepEqual(done.finish(false, t0), { locked: false, retryAfterSeconds: 0, lockedNow: null }, `failure ${i}`);
   }
-  const fifth = lockout.attempt("k", t0);
-  assert.deepEqual(fifth.finish(false, t0), { locked: true, retryAfterSeconds: 15 * 60 });
-  const blocked = lockout.attempt("k", t0 + 60_000);
+  const fifth = lockout.attempt(at("a"), t0);
+  assert.deepEqual(fifth.finish(false, t0), { locked: true, retryAfterSeconds: 15 * 60, lockedNow: "pair" });
+  const blocked = lockout.attempt(at("a"), t0 + 60_000);
   assert.equal(blocked.locked, true);
   assert.equal(blocked.retryAfterSeconds, 14 * 60);
-  assert.equal(lockout.attempt("other", t0).locked, false, "another key is not locked");
-  assert.equal(lockout.attempt("k", t0 + 15 * 60_000).locked, false, "the lock ends after fifteen minutes");
+  assert.equal(lockout.attempt(at("b"), t0).locked, false, "the same phone from another address is not pair-locked");
+  assert.equal(lockout.attempt(at("a", "+919800000101"), t0).locked, false, "another phone is not locked");
+  assert.equal(lockout.attempt(at("a"), t0 + 15 * 60_000).locked, false, "the pair lock ends after fifteen minutes");
 });
 
-test("attempts still in flight count against the limit, so parallel guesses cannot exceed five", () => {
+test("ten wrong PINs for one phone within an hour lock it for an hour from EVERY address", () => {
+  const t0 = 5_000_000;
+  let last;
+  for (let i = 0; i < 10; i++) {
+    // A new address for every guess: the per-pair lock never triggers, the per-phone one does.
+    const attempt = lockout.attempt(at(`203.0.113.${i}`), t0 + i * 1000);
+    assert.equal(attempt.locked, false, `guess ${i + 1}`);
+    last = attempt.finish(false, t0 + i * 1000);
+  }
+  assert.deepEqual(last, { locked: true, retryAfterSeconds: 60 * 60, lockedNow: "phone" });
+  const fresh = lockout.attempt(at("198.51.100.200"), t0 + 10_000);
+  assert.equal(fresh.locked, true, "a never-seen address is locked out of this phone too");
+  assert.ok(fresh.retryAfterSeconds > 59 * 60);
+  assert.equal(lockout.attempt(at("198.51.100.200", "+919800000102"), t0 + 10_000).locked, false, "other phones are untouched");
+  assert.equal(lockout.attempt(at("198.51.100.200"), t0 + 9_000 + 60 * 60_000 + 1).locked, false, "the phone lock ends after an hour");
+});
+
+test("a right PIN clears the pair's failures but not the phone's hourly count", () => {
+  for (let i = 0; i < 4; i++) lockout.attempt(at("a"), 0).finish(false, 0);
+  lockout.attempt(at("a"), 0).finish(true, 0);
+  for (let i = 0; i < 4; i++) assert.equal(lockout.attempt(at("a"), 0).finish(false, 0).locked, false, "pair count restarted");
+  // 8 failures so far on the phone; two more from anywhere reach ten.
+  lockout.attempt(at("z"), 0).finish(false, 0);
+  assert.equal(lockout.attempt(at("y"), 0).finish(false, 0).lockedNow, "phone");
+});
+
+test("attempts still in flight count against the limit, so parallel guesses cannot exceed five per pair", () => {
   const inFlight = [];
   for (let i = 0; i < 5; i++) {
-    const a = lockout.attempt("k", 0);
+    const a = lockout.attempt(at("a"), 0);
     assert.equal(a.locked, false);
     inFlight.push(a);
   }
-  assert.equal(lockout.attempt("k", 0).locked, true, "a sixth parallel attempt is refused before any result");
+  assert.equal(lockout.attempt(at("a"), 0).locked, true, "a sixth parallel attempt is refused before any result");
 });
 
-test("a right PIN clears earlier failures", () => {
-  for (let i = 0; i < 4; i++) lockout.attempt("k", 0).finish(false, 0);
-  lockout.attempt("k", 0).finish(true, 0);
-  for (let i = 0; i < 4; i++) assert.equal(lockout.attempt("k", 0).finish(false, 0).locked, false);
+test("parallel guesses from many addresses cannot exceed ten per phone", () => {
+  const admitted = Array.from({ length: 20 }, (_, i) => lockout.attempt(at(`a${i}`), 0)).filter((a) => !a.locked);
+  assert.equal(admitted.length, 10);
 });
 
 test("failures older than the window are forgotten", () => {
-  for (let i = 0; i < 4; i++) lockout.attempt("k", 0).finish(false, 0);
+  for (let i = 0; i < 4; i++) lockout.attempt(at("a"), 0).finish(false, 0);
   const later = 15 * 60_000 + 1;
-  assert.equal(lockout.attempt("k", later).finish(false, later).locked, false);
+  assert.equal(lockout.attempt(at("a"), later).finish(false, later).locked, false);
+});
+
+test("lockout keys are capped: the oldest unlocked entries are evicted first, live locks are kept", () => {
+  for (let i = 0; i < 10; i++) lockout.attempt(at(`x${i}`), 0).finish(false, 0); // PHONE locked
+  for (let i = 0; i < lockout.MAX_KEYS + 50; i++) lockout.attempt(at("a", `+91980${String(i).padStart(7, "0")}`), 1).finish(false, 1);
+  assert.ok(lockout.size() <= lockout.MAX_KEYS, `size ${lockout.size()}`);
+  assert.equal(lockout.attempt(at("q"), 2).locked, true, "a phone lock survives a flood of new keys");
 });
 
 /* ------------------------------------------------------------- store --- */

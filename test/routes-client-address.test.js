@@ -77,3 +77,22 @@ test("an unknown pay token counts against the caller's (here: the shared untrust
     assert.equal(res.status, 429);
   });
 });
+
+test("PIN lockout with untrusted addresses: one phone's lock never locks another phone's owner", async () => {
+  const lockout = require("../src/accounts/lockout");
+  lockout.reset();
+  const post = (base, path, body, headers = {}) =>
+    fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+  await withApp(async (base) => {
+    const owner = { phone: "9812345670", pin: "4821", name: "Asha Kirana", city: "Bengaluru", language: "en-IN", accessCode: CODE };
+    assert.equal((await post(base, "/api/auth/register", owner)).status, 201);
+    for (let i = 0; i < 5; i++) {
+      const out = await post(base, "/api/auth/login", { phone: "9876500001", pin: "1111" }, { "CF-Connecting-IP": `203.0.113.${i}` });
+      assert.equal(out.status, i < 4 ? 401 : 429, `guess ${i + 1} at someone else's phone`);
+    }
+    const forged = await post(base, "/api/auth/login", { phone: "9876500001", pin: "1111" }, { "X-Forwarded-For": "192.0.2.9" });
+    assert.equal(forged.status, 429, "a forged address does not reopen the attacked phone");
+    const honest = await post(base, "/api/auth/login", { phone: owner.phone, pin: owner.pin });
+    assert.equal(honest.status, 200, "the owner of another phone, behind the same tunnel, still logs in");
+  });
+});

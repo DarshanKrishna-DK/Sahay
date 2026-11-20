@@ -65,9 +65,10 @@ const SAY = {
     "kn-IN": "ಈ ಫೋನ್ ನಂಬರ್ ಮತ್ತು ಪಿನ್ ಹೊಂದುತ್ತಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
   },
   PIN_LOCKED: {
-    "en-IN": "Too many wrong PINs. Please wait fifteen minutes, or log in with your fingerprint.",
-    "hi-IN": "बहुत बार गलत पिन डाला गया। कृपया पंद्रह मिनट रुकिए, या फ़िंगरप्रिंट से लॉग इन कीजिए।",
-    "kn-IN": "ತುಂಬಾ ಬಾರಿ ತಪ್ಪು ಪಿನ್ ಹಾಕಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಹದಿನೈದು ನಿಮಿಷ ಕಾಯಿರಿ, ಅಥವಾ ಬೆರಳಚ್ಚಿನಿಂದ ಲಾಗ್ ಇನ್ ಮಾಡಿ.",
+    // No duration here: a pair lock is 15 minutes, a whole-phone lock an hour (Retry-After says which).
+    "en-IN": "Too many wrong PINs. PIN login is paused for a while; please try later, or log in with your fingerprint.",
+    "hi-IN": "बहुत बार गलत पिन डाला गया। पिन से लॉग इन कुछ समय के लिए रुका है; कृपया बाद में कोशिश कीजिए, या फ़िंगरप्रिंट से लॉग इन कीजिए।",
+    "kn-IN": "ತುಂಬಾ ಬಾರಿ ತಪ್ಪು ಪಿನ್ ಹಾಕಲಾಗಿದೆ. ಪಿನ್ ಲಾಗ್ ಇನ್ ಸ್ವಲ್ಪ ಸಮಯ ನಿಂತಿದೆ; ದಯವಿಟ್ಟು ನಂತರ ಪ್ರಯತ್ನಿಸಿ, ಅಥವಾ ಬೆರಳಚ್ಚಿನಿಂದ ಲಾಗ್ ಇನ್ ಮಾಡಿ.",
   },
   PASSKEY_REJECTED: {
     "en-IN": "The fingerprint login did not work. Please try again, or use your PIN.",
@@ -216,7 +217,7 @@ function createAuthRouter() {
         if (!accounts.isPin(body.pin)) throw new AccountError("INVALID_PIN", "The PIN is 4 digits.");
         limit(rateCheck(req, "login", LIMITS.pinLogin), language);
         const who = clientAddress(req);
-        const { account, businessId } = await accounts.loginWithPin({ phone, pin: body.pin, lockKey: `${phone}|${who.trusted ? who.ip : "untrusted"}` });
+        const { account, businessId } = await accounts.loginWithPin({ phone, pin: body.pin, address: who.trusted ? who.ip : "untrusted" });
         signIn(req, res, { account, businessId, via: "pin" });
       } catch (err) {
         throw asHttp(err, language);
