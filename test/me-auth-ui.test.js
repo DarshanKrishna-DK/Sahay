@@ -108,3 +108,15 @@ test("v4: the UI language is the device's choice (English by default), never the
   assert.match(me, /pageHead\(\{/);
   assert.ok(me.indexOf("el.append(head,") > -1, "the head comes before the tabs");
 });
+
+test("v4 Stitch 10 log in: one screen with the mobile number, PIN boxes over the keypad, Log in; no invented Forgot PIN", () => {
+  const auth = read("public/js/app/auth.js");
+  assert.match(auth, /function loginForm\(\)/);
+  assert.match(auth, /id: "auth-phone"/);
+  assert.match(auth, /au\.welcomeBack/);
+  assert.match(auth, /au\.pinLabel/);
+  assert.match(auth, /pad\.setError\(fieldError\)/, "PIN errors sit between the boxes and the keys");
+  assert.doesNotMatch(auth, /forgot/i, "there is no PIN reset on the server, so no link to one");
+  const css = read("public/css/app-auth.css");
+  assert.match(css, /\.auth \.pad-key \{ width: 100%; height: var\(--touch-lg\)/, "keys stay 64px");
+});

@@ -6,8 +6,9 @@
 //
 //   Chooser  new shop / I have Sahay (each tile says its words on tap)
 //   Sign up  language -> phone -> shop -> city -> PIN -> PIN again (-> access code) -> POST /api/auth/register
-//   Log in   fingerprint first when this device has a platform passkey, else phone -> PIN
-//            -> POST /api/auth/login; PIN_LOCKED shows the minutes left (Retry-After)
+//   Log in   fingerprint first when this device has a platform passkey; then one screen (Stitch 10):
+//            mobile number field + PIN boxes + keypad + Log in -> POST /api/auth/login;
+//            PIN_LOCKED shows the minutes left (Retry-After)
 //   Offer    "fingerprint next time?" once after sign-up / PIN log-in
 //   Legacy   servers without /api/auth: language -> shop -> city (-> code) -> POST /api/session
 // The phone is not verified (no OTP yet) and the screen says so.
@@ -31,7 +32,6 @@ import "./me-strings.js";
 
 const LANG_CODE = { hi: "hi-IN", kn: "kn-IN", en: "en-IN" };
 const QUESTION = { lang: "au.lang", phone: "au.phone", name: "au.name", city: "au.city", pin: "au.pin", pin2: "au.pin2", pinEnter: "au.pinEnter", code: "au.code" };
-const Q_ICON = { lang: "languages", phone: "phone", name: "store", city: "pin", pin: "lock", pin2: "lock", pinEnter: "lock", code: "key" };
 
 /** The device's own voice for a question (no session yet). Silent where the browser has none. */
 const canSay = () => typeof window !== "undefined" && "speechSynthesis" in window && typeof window.SpeechSynthesisUtterance === "function";
@@ -84,7 +84,8 @@ export function createAuth({ mode: firstMode } = {}) {
   let step = 0;
   let busy = false;
   let error = null;       // { text, action? } card-level
-  let fieldError = null;  // one line under the field
+  let fieldError = null;  // one line under the field (PIN errors: between the boxes and the keys)
+  let phoneError = null;  // log-in screen: the mobile number field's own line
   let finger = null;      // null unknown, then true / false
   let fingerState = null; // null | "waiting" | "cancelled"
   let loginWithPin = false;
@@ -101,7 +102,7 @@ export function createAuth({ mode: firstMode } = {}) {
   const textOf = (err, key) => (err && err.status === 0 ? t("err.network") : (err && err.say) || t(key));
 
   function setMode(next) {
-    mode = next; step = 0; error = null; fieldError = null; busy = false; loginWithPin = false; locked = null; fingerState = null;
+    mode = next; step = 0; error = null; fieldError = null; phoneError = null; busy = false; loginWithPin = false; locked = null; fingerState = null;
     if (next === "login") data.pin = "";
     if (next === "signup" || next === "login") history.replaceState(null, "", `#/${next}`);
     render(true);
@@ -272,10 +273,10 @@ export function createAuth({ mode: firstMode } = {}) {
   }
 
   /** Brand row (the real logo, unless the screen shows it big) and the UI language switch; then back, dots, notice. */
-  function topBar({ canBack, progress, hero = false }) {
+  function topBar({ canBack, progress }) {
     langSwitch.update();
     return h("div", { class: "auth-top" },
-      h("div", { class: `auth-brandrow${hero ? " has-hero" : ""}` }, hero ? null : brandMark({ size: 40, word: true }), langSwitch.el),
+      h("div", { class: "auth-brandrow" }, brandMark({ size: 40, word: true }), langSwitch.el),
       h("div", { class: "auth-bar" },
       canBack ? h("button", { class: "icon-btn auth-back tip-below", type: "button", "aria-label": t("back"), dataset: { tip: t("back") }, disabled: busy ? true : undefined, on: { click: back } }, icon("arrowLeft", 24)) : h("span", { class: "auth-bar-gap", "aria-hidden": "true" }),
       progress || h("span", { class: "auth-bar-fill", "aria-hidden": "true" }),
@@ -287,12 +288,14 @@ export function createAuth({ mode: firstMode } = {}) {
       ...list.map((_, i) => h("li", { class: i < step ? "is-done" : i === step ? "is-now" : "", "aria-current": i === step ? "step" : undefined })));
   }
 
-  function question(kind, text, extraClass = "") {
-    return h("div", { class: "auth-qrow" },
-      h("h1", { id: "auth-q", class: `auth-q ${extraClass}`, tabindex: "-1" },
-        h("span", { class: "auth-q-ico", "aria-hidden": "true" }, icon(Q_ICON[kind] || "spark", 28)),
-        h("span", { text })),
-      hearButton(text));
+  /** Stitch 10 head: an eyebrow line, then the question as the display title, with its speaker. */
+  function question(kind, text, extraClass = "", eyebrow = null) {
+    const ey = eyebrow === null ? (mode === "signup" || mode === "legacy" ? t("au.step", { n: step + 1, total: steps().length }) : t("au.eyebrow")) : eyebrow;
+    return h("div", { class: "auth-head" },
+      ey ? h("p", { class: "t-label auth-eyebrow", text: ey }) : null,
+      h("div", { class: "auth-qrow" },
+        h("h1", { id: "auth-q", class: `auth-q ${extraClass}`, tabindex: "-1", dataset: { kind } }, h("span", { text })),
+        hearButton(text)));
   }
 
   /** Answers so far as chips the owner can tap to change. */
@@ -339,6 +342,66 @@ export function createAuth({ mode: firstMode } = {}) {
     ];
   }
 
+  /** PIN_LOCKED: the minutes left, and the fingerprint way in when this device has one. */
+  function lockedView() {
+    return h("div", { class: "auth-locked", role: "alert" },
+      h("span", { class: "auth-locked-mark", "aria-hidden": "true" }, icon("lock", 30)),
+      h("p", { class: "auth-locked-title", text: locked.minutes ? t("au.locked", { n: locked.minutes }) : t("au.lockedSoon") }),
+      h("p", { class: "auth-locked-why", text: finger ? t("au.lockedWhy") : t("au.lockedWhyNoFinger") }),
+      finger ? h("button", { class: "keycap keycap-primary keycap-md keycap-block", type: "button", on: { click: () => { loginWithPin = false; locked = null; render(true); fingerLogin(); } } }, icon("fingerprint", 24), h("span", { text: t("au.finger") })) : null);
+  }
+
+  /* Log in (Stitch 10): mobile number, PIN boxes over the keypad (64px keys, the error between the
+     boxes and the keys), Log in. The keypad moves on by itself at 4 digits. */
+  function submitLogin() {
+    if (busy) return;
+    const v = pad ? pad.value : data.pin;
+    if (!isMobile(data.phone)) {
+      phoneError = t("au.badPhone"); fieldError = null; render();
+      const i = el.querySelector("#auth-phone"); if (i) i.focus();
+      return;
+    }
+    if (!v || v.length !== 4) { fieldError = t("au.pinNeed"); render(); if (pad) pad.shake(); return; }
+    data.pin = v;
+    login();
+  }
+
+  function loginForm() {
+    const ok = h("span", { class: "auth-phone-ok", "aria-hidden": "true", hidden: isMobile(data.phone) ? undefined : true }, icon("checkCircle", 24));
+    const input = h("input", {
+      id: "auth-phone", class: "auth-phone-input", type: "tel", inputmode: "numeric", autocomplete: "tel-national", maxlength: "13",
+      "aria-invalid": phoneError ? "true" : undefined, "aria-describedby": phoneError ? "auth-phone-err" : undefined, disabled: busy ? true : undefined,
+    });
+    input.value = fmtPhone(data.phone);
+    const errSlot = h("span", { class: "auth-field-slot" },
+      phoneError ? h("p", { class: "field-error", id: "auth-phone-err", role: "alert" }, icon("alert", 20), h("span", { text: phoneError })) : null);
+    input.addEventListener("input", () => {
+      const d = input.value.replace(/\D/g, "").replace(/^(?:91|0)(?=\d{10}$)/, "").slice(0, 10);
+      data.phone = d;
+      if (isMobile(d)) ok.removeAttribute("hidden"); else ok.setAttribute("hidden", "");
+      if (phoneError) { phoneError = null; input.removeAttribute("aria-invalid"); fill(errSlot); }
+    });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (pad) pad.focus(); } });
+    pad = createKeypad({ length: 4, mask: true, label: t("au.pinLabel"), onDone: (v) => { data.pin = v; submitLogin(); } });
+    if (busy) pad.setBusy(true);
+    if (fieldError && typeof pad.setError === "function") pad.setError(fieldError);
+    return [
+      question("pinEnter", t("au.welcomeBack")),
+      h("div", { class: "auth-form" },
+        h("label", { class: "auth-field-label t-label", for: "auth-phone", text: t("au.mobileLabel") }),
+        h("div", { class: `auth-phone${phoneError ? " is-invalid" : ""}` },
+          h("span", { class: "auth-phone-prefix", "aria-hidden": "true", text: "+91" }), input, ok),
+        errSlot,
+        h("p", { class: "auth-field-label t-label", id: "auth-pin-label", text: t("au.pinLabel") }),
+        locked ? lockedView() : pad.el,
+        typeof pad.setError === "function" || locked ? null : fieldErrorLine(),
+        locked ? null : h("button", { class: "keycap keycap-primary keycap-lg keycap-block auth-primary", type: "button", "aria-busy": busy ? "true" : undefined, disabled: busy ? true : undefined, on: { click: submitLogin } },
+          busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : null,
+          h("span", { text: busy ? t("au.checking") : t("au.login") }),
+          busy ? null : icon("arrowRight", 22))),
+    ];
+  }
+
   function padStep(kind) {
     const pinKind = kind !== "phone";
     const label = t(QUESTION[kind]);
@@ -360,11 +423,7 @@ export function createAuth({ mode: firstMode } = {}) {
     // one gets the line under the pad.
     const padHasError = typeof pad.setError === "function";
     if (padHasError && fieldError) pad.setError(fieldError);
-    const lockedBox = kind === "pinEnter" && locked ? h("div", { class: "auth-locked", role: "alert" },
-      h("span", { class: "auth-locked-mark", "aria-hidden": "true" }, icon("lock", 30)),
-      h("p", { class: "auth-locked-title", text: locked.minutes ? t("au.locked", { n: locked.minutes }) : t("au.lockedSoon") }),
-      h("p", { class: "auth-locked-why", text: finger ? t("au.lockedWhy") : t("au.lockedWhyNoFinger") }),
-      finger ? h("button", { class: "keycap keycap-primary keycap-md keycap-block", type: "button", on: { click: () => { loginWithPin = false; locked = null; render(true); fingerLogin(); } } }, icon("fingerprint", 24), h("span", { text: t("au.finger") })) : null) : null;
+    const lockedBox = kind === "pinEnter" && locked ? lockedView() : null;
     return [
       question(kind, label),
       kind === "pin" ? h("p", { class: "auth-why", text: t("au.pinWhy") }) : null,
@@ -464,8 +523,7 @@ export function createAuth({ mode: firstMode } = {}) {
     h("span", { class: "auth-choose-text" }, h("span", { class: "auth-choose-word", text: word }), h("span", { class: "auth-choose-sub", text: sub })),
     h("span", { class: "auth-choose-go", "aria-hidden": "true" }, icon("arrowRight", 24)));
     return [
-      h("div", { class: "auth-brand-hero" }, brandMark({ size: 88, word: true })),
-      question("lang", t("au.chooseQ"), "auth-q-center"),
+      question("lang", t("au.chooseQ"), "", t("au.eyebrow")),
       h("div", { class: "auth-answer-zone auth-choose" },
         tile("new", "store", t("au.new"), t("au.newSub")),
         tile("have", "key", t("au.have"), t("au.haveSub"))),
@@ -475,8 +533,7 @@ export function createAuth({ mode: firstMode } = {}) {
   function fingerFirst() {
     const waiting = fingerState === "waiting";
     return [
-      h("div", { class: "auth-brand-hero" }, brandMark({ size: 88, word: true })),
-      question("pinEnter", t("au.loginQ"), "auth-q-center"),
+      question("pinEnter", t("au.welcomeBack"), "", t("au.eyebrow")),
       h("div", { class: "auth-answer-zone auth-finger-zone" },
         h("button", { class: `auth-finger${waiting ? " is-waiting" : ""}`, type: "button", "aria-label": t("au.fingerLong"), "aria-busy": waiting ? "true" : undefined, disabled: busy ? true : undefined, on: { click: fingerLogin } },
           h("span", { class: "auth-finger-ring", "aria-hidden": "true" }, icon("fingerprint", 64)),
@@ -489,7 +546,7 @@ export function createAuth({ mode: firstMode } = {}) {
 
   function offer() {
     return [
-      h("div", { class: "auth-qrow" }, h("h1", { id: "auth-q", class: "auth-q auth-q-center", tabindex: "-1" }, h("span", { text: t("au.offerQ") })), hearButton(t("au.offerQ"))),
+      question("pinEnter", t("au.offerQ"), "", ""),
       h("p", { class: "auth-why auth-why-center", text: t("au.offerWhy") }),
       h("div", { class: "auth-answer-zone auth-finger-zone" },
         h("span", { class: "auth-finger-ring is-still", "aria-hidden": "true" }, icon("fingerprint", 64)),
@@ -520,6 +577,7 @@ export function createAuth({ mode: firstMode } = {}) {
     else if (mode === "offer") body = offer();
     else if (mode === "added") body = added();
     else if (mode === "login" && !loginWithPin && finger) { body = fingerFirst(); canBack = true; }
+    else if (mode === "login") { kind = "login"; body = loginForm(); canBack = true; }
     else {
       const list = steps();
       kind = list[step];
@@ -531,16 +589,20 @@ export function createAuth({ mode: firstMode } = {}) {
     el.dataset.step = kind || mode;
     fill(el,
       h("div", { class: "auth-card" },
-        topBar({ canBack, progress, hero: mode === "choose" || (mode === "login" && !loginWithPin && finger) }),
+        topBar({ canBack, progress }),
         answers(),
         ...body,
         errorBox()),
-      mode === "signup" || mode === "login" ? h("button", { class: "auth-switch", type: "button", disabled: busy ? true : undefined, on: { click: () => setMode(mode === "signup" ? "login" : "signup") } },
-        icon(mode === "signup" ? "key" : "store", 20), h("span", { text: t(mode === "signup" ? "au.toLogin" : "au.toSignup") })) : null);
+      mode === "signup" || mode === "login" ? h("p", { class: "auth-switch-line" },
+        h("span", { class: "auth-switch-q", text: t(mode === "signup" ? "au.haveQ" : "au.newQ") }),
+        h("button", { class: "auth-switch", type: "button", disabled: busy ? true : undefined, on: { click: () => setMode(mode === "signup" ? "login" : "signup") } },
+          h("span", { text: t(mode === "signup" ? "au.login" : "au.signUp") }))) : null);
     if (moveFocus || kind) {
       requestAnimationFrame(() => {
         if (destroyed) return;
-        const target = pad && !locked ? pad.el : el.querySelector(kind === "lang" ? ".auth-lang" : isTextStep(kind) ? "#auth-input" : "#auth-q");
+        const target = kind === "login"
+          ? (isMobile(data.phone) && pad && !locked ? pad.el : el.querySelector("#auth-phone"))
+          : pad && !locked ? pad.el : el.querySelector(kind === "lang" ? ".auth-lang" : isTextStep(kind) ? "#auth-input" : "#auth-q");
         if (target && (moveFocus || document.activeElement === document.body || !el.contains(document.activeElement))) target.focus({ preventScroll: true });
       });
     }

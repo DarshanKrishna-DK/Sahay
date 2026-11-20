@@ -131,6 +131,14 @@ addStrings({
   "hx.error.title": ["Could not load History", "इतिहास नहीं खुला", "ಇತಿಹಾಸ ತೆರೆಯಲಿಲ್ಲ"],
 
   /* ------------------------------------------------- Sign up / Log in (au) -- */
+  "au.eyebrow": ["Your shop's voice assistant", "आपकी दुकान का आवाज़ सहायक", "ನಿಮ್ಮ ಅಂಗಡಿಯ ಧ್ವನಿ ಸಹಾಯಕ"],
+  "au.welcomeBack": ["Welcome back", "फिर से स्वागत है", "ಮತ್ತೆ ಸ್ವಾಗತ"],
+  "au.mobileLabel": ["Mobile number", "मोबाइल नंबर", "ಮೊಬೈಲ್ ನಂಬರ್"],
+  "au.pinLabel": ["Enter your 4-digit PIN", "अपना 4 अंकों का पिन डालें", "ನಿಮ್ಮ 4 ಅಂಕಿಯ ಪಿನ್ ಹಾಕಿ"],
+  "au.pinNeed": ["Enter all 4 numbers of your PIN", "पिन के चारों अंक डालें", "ಪಿನ್‌ನ ನಾಲ್ಕೂ ಅಂಕಿ ಹಾಕಿ"],
+  "au.newQ": ["New shop?", "नई दुकान?", "ಹೊಸ ಅಂಗಡಿ?"],
+  "au.haveQ": ["Already have Sahay?", "पहले से सहाय है?", "ಈಗಾಗಲೇ ಸಹಾಯ್ ಇದೆಯೇ?"],
+  "au.signUp": ["Sign up", "खाता बनाएँ", "ಖಾತೆ ಮಾಡಿ"],
   "au.chooseQ": ["Is this a new shop?", "क्या यह नई दुकान है?", "ಇದು ಹೊಸ ಅಂಗಡಿಯೇ?"],
   "au.new": ["New shop", "नई दुकान", "ಹೊಸ ಅಂಗಡಿ"],
   "au.newSub": ["Make my Sahay", "मेरा सहाय बनाएँ", "ನನ್ನ ಸಹಾಯ್ ಮಾಡಿ"],

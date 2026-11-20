@@ -1,25 +1,28 @@
-/* Sign up, Log in, the chooser and the device-only start (auth.js, welcome.js). UI v3, owner W5.
-   One question per screen. Phone: full height, the answer (keypad, tiles, field) in the bottom
-   half within thumb reach. Phone landscape: question left, answer right. 600px and up: a centred
-   piano card 480px wide over the hex field. Tokens only. */
+/* Sign up, Log in, the chooser and the device-only start (auth.js, welcome.js). UI v4, owner W5.
+   Stitch 10 (login phone, screens.md section 3): brand row (the real logo + "Sahay", language switch),
+   eyebrow + display title, labelled fields, PIN boxes over a full-width keypad with 64px keys, a lime
+   56px primary, "New shop? Sign up". Sign-up keeps one question per screen in the same layout.
+   Phone: full height. Phone landscape: question left, answer right. 600px and up: a centred piano
+   card 480px wide over the hex field. Tokens only. */
 
 .auth {
   position: relative; z-index: var(--z-content);
   display: flex; flex-direction: column; align-items: center; gap: var(--s-3);
   min-height: 100dvh;
-  padding: calc(var(--s-3) + var(--safe-t)) calc(var(--pad-x) + var(--safe-r)) calc(var(--s-4) + var(--safe-b)) calc(var(--pad-x) + var(--safe-l));
+  padding: calc(var(--s-4) + var(--safe-t)) calc(var(--pad-x) + var(--safe-r)) calc(var(--s-4) + var(--safe-b)) calc(var(--pad-x) + var(--safe-l));
 }
 .auth-card {
   position: relative; display: flex; flex-direction: column; gap: var(--s-4);
   width: 100%; max-width: 480px; flex: 1 1 auto; min-width: 0;
 }
 
-/* ------------------------------------------------------------- top bar -- */
+/* ------------------------------------------------------------- top rows -- */
 .auth-top { display: flex; flex-direction: column; gap: var(--s-2); }
 .auth-brandrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: var(--touch-min); }
-.auth-brandrow.has-hero { justify-content: flex-end; }
+.auth-brandrow .brand-img { width: 32px; height: 40px; }
+.auth-brandrow .brand-word { font-size: 2rem; }
 .auth-bar { display: flex; align-items: center; gap: var(--s-3); min-height: var(--touch-min); }
-.auth-bar-gap { width: var(--touch-min); flex: none; }
+.auth-bar-gap { width: 0; flex: none; }
 .auth-bar-fill { flex: 1 1 auto; }
 .auth-back { flex: none; }
 .auth-notice { flex: none; min-height: 32px; font-size: var(--fs-sm); color: var(--text-md); }
@@ -29,26 +32,23 @@
 .auth-dots li.is-done { background: var(--lime-600); border-color: var(--lime-600); }
 .auth-dots li.is-now { width: 28px; background: var(--lime); border-color: var(--lime); box-shadow: var(--glow-lime); }
 
-/* --------------------------------------------------------------- question -- */
+/* --------------------------------------------------- eyebrow + display title -- */
+.auth-head { display: flex; flex-direction: column; gap: 6px; }
+.auth-eyebrow { color: var(--text-md); }
 .auth-qrow { display: flex; align-items: flex-start; gap: var(--s-3); }
 .auth-q {
-  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--s-3);
-  font-family: var(--font-display); font-weight: 400; font-size: var(--t-h2); line-height: 1.05; letter-spacing: var(--track-display); overflow-wrap: anywhere;
+  flex: 1 1 auto; min-width: 0; margin: 0;
+  font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 2vw + 28px, 44px); line-height: 1.04;
+  letter-spacing: var(--track-display); overflow-wrap: anywhere; outline: none;
 }
-:lang(hi) .auth-q, :lang(kn) .auth-q { line-height: 1.3; }
+:lang(hi) .auth-q, :lang(kn) .auth-q { line-height: 1.3; font-size: clamp(30px, 1.6vw + 24px, 38px); }
 :lang(kn) .auth-q { font-weight: 700; }
-.auth-q-ico {
-  display: grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 50%;
-  color: var(--accent-text); border: 1px solid transparent;
-  background: var(--piano-surface) padding-box, var(--piano-rim) border-box; box-shadow: var(--depth-soft);
-}
-.auth-q-center { justify-content: center; text-align: center; }
-.auth-q-tri { flex-direction: column; align-items: flex-start; gap: 2px; font-size: clamp(1.4rem, 1.1rem + 1.4vw, 1.9rem); }
+.auth-q-tri { display: flex; flex-direction: column; gap: 2px; font-size: clamp(28px, 1.4vw + 22px, 36px); }
 .auth-q-tri span:lang(en) { color: var(--text-md); font-size: .8em; }
 .auth-hear { flex: none; }
 .auth-why { color: var(--text-md); }
 .auth-why-center { text-align: center; }
-.auth-busy { display: inline-flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-md); font-weight: var(--fw-strong); }
+.auth-busy { display: inline-flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-md); font-weight: 600; }
 
 /* Answers so far, tap to change. */
 .auth-answers { display: flex; flex-wrap: wrap; gap: var(--s-2); }
@@ -57,19 +57,66 @@
 .auth-answer svg { color: var(--accent-text); }
 
 /* The answer lives in the bottom half on a phone. */
-.auth-answer-zone { display: flex; flex-direction: column; gap: var(--s-4); margin-top: auto; padding-top: var(--s-3); }
-.auth-pad-zone { align-items: center; }
-.auth-pad-zone .field-error { align-self: stretch; justify-content: center; }
+.auth-answer-zone { display: flex; flex-direction: column; gap: var(--s-4); margin-top: auto; padding-top: var(--s-2); }
+.auth-pad-zone { align-items: stretch; }
+.auth-pad-zone .field-error { justify-content: center; }
 
 /* Honest note: the phone is not verified. */
 .auth-honest { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .auth-honest-why { color: var(--text-md); font-size: var(--fs-sm); }
 
+/* ------------------------------------------------------------ log-in form -- */
+.auth-form { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-2); }
+.auth-field-label { color: var(--text-md); margin-top: var(--s-2); }
+.auth-phone {
+  display: flex; align-items: center; gap: var(--s-3);
+  min-height: 64px; padding: 6px 16px 6px 6px; border-radius: 16px;
+  background: var(--piano-1); border: 1px solid var(--edge);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .4);
+  transition: border-color var(--t-micro) var(--ease-out), box-shadow var(--t-micro) var(--ease-out);
+}
+.auth-phone:focus-within { border-color: var(--lime); box-shadow: inset 0 2px 6px rgba(0, 0, 0, .4), 0 0 0 4px rgba(var(--hex-rgb), .2); }
+.auth-phone.is-invalid { border-color: var(--coral); }
+.auth-phone-prefix {
+  display: grid; place-items: center; flex: none; min-height: 50px; padding: 0 16px; border-radius: 12px;
+  background: var(--piano-3); border: 1px solid var(--hairline);
+  font-family: var(--font-num); font-size: 1.125rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.auth-phone-input {
+  flex: 1 1 auto; min-width: 0; min-height: var(--touch-min); padding: 0; border: 0; background: transparent; color: var(--text-hi);
+  font-family: var(--font-num); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+}
+.auth-phone-input:focus, .auth-phone-input:focus-visible { outline: none; box-shadow: none; }
+.auth-phone-ok { display: grid; place-items: center; color: var(--ok-text); flex: none; }
+
+/* The keypad in auth screens (keypad.js markup): full width, 64px keys, PIN boxes, the message slot
+   between the boxes and the keys (QA #11). */
+.auth .pad { width: 100%; align-items: stretch; gap: 14px; padding: 0; }
+.auth .pad-keys { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.auth .pad-key { width: 100%; height: var(--touch-lg); border-radius: 16px; font-size: 1.6rem; }
+.auth .pad-cells-pin { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; min-height: 56px; }
+.auth .pad-cells-pin .pad-cell {
+  width: auto; height: 56px; border-radius: 16px; transform: none;
+  border: 1px solid var(--edge);
+  background: radial-gradient(circle, var(--piano-5) 0 6px, transparent 7px), var(--piano-1);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, .4);
+}
+.auth .pad-cells-pin .pad-cell.is-next { border-color: var(--edge-strong); }
+.auth .pad-cells-pin .pad-cell.is-on {
+  border-color: var(--edge-accent);
+  background: radial-gradient(circle, var(--lime) 0 8px, transparent 9px), rgba(var(--hex-rgb), .08);
+  box-shadow: var(--glow-lime);
+}
+.auth .pad[data-state="error"] .pad-cells-pin .pad-cell:not(.is-on) { border-color: var(--coral); }
+.auth .pad-msg { text-align: left; }
+.auth .pad-msg:empty { display: none; }
+.auth .pad-cells-text { width: 100%; }
+
 /* ---------------------------------------------------------- languages -- */
 .auth-langs { grid-template-columns: 1fr; }
 .auth-lang { flex-direction: row; align-items: center; justify-content: space-between; min-height: 80px; padding: 14px 22px; }
-.auth-lang-script { font-size: 1.75rem; font-weight: var(--fw-strong); line-height: 1.3; }
-.auth-lang-en .auth-lang-script { font-family: var(--font-body); font-weight: 600; }
+.auth-lang-script { font-size: 1.75rem; font-weight: 600; line-height: 1.3; }
+.auth-lang-en .auth-lang-script { font-family: var(--font-body); }
 .auth-lang-go { color: var(--accent-text); }
 .auth-lang[aria-checked="true"]::after { display: none; }
 
@@ -80,12 +127,12 @@
 
 /* --------------------------------------------------------------- fields -- */
 .auth-field-row { gap: var(--s-2); }
-.auth-input { flex: 1 1 auto; min-width: 0; min-height: 64px; font-size: var(--fs-lead); }
+.auth-input { flex: 1 1 auto; min-width: 0; min-height: 64px; font-size: 1.25rem; border-radius: 16px; }
 .auth-mic { flex: none; }
 .auth-mic[aria-pressed="true"] { background: var(--btn-surface); color: var(--on-accent); border-color: var(--btn-rim); animation: auth-listen 1.2s var(--ease-out) infinite; }
 @keyframes auth-listen { 50% { box-shadow: 0 0 0 10px rgba(var(--hex-rgb), .18); } }
 .auth-field-slot:empty { display: none; }
-.auth-primary { margin-top: var(--s-2); }
+.auth-primary { min-height: var(--touch); border-radius: 16px; margin-top: var(--s-2); box-shadow: var(--depth), 0 0 24px rgba(var(--hex-rgb), .25); }
 
 /* ---------------------------------------------------------- PIN locked -- */
 .auth-locked {
@@ -99,12 +146,9 @@
 
 /* ----------------------------------------------------------- fingerprint -- */
 .auth-finger-zone { align-items: center; }
-.auth-finger {
-  display: flex; flex-direction: column; align-items: center; gap: var(--s-3);
-  padding: 0; border: 0; background: none; color: var(--text-hi);
-}
+.auth-finger { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); padding: 0; border: 0; background: none; color: var(--text-hi); }
 .auth-finger-ring {
-  display: grid; place-items: center; width: 168px; height: 168px; border-radius: 50%;
+  display: grid; place-items: center; width: 160px; height: 160px; border-radius: 50%;
   color: var(--accent-text); border: 1px solid transparent;
   background: radial-gradient(circle at 50% 35%, var(--piano-3), var(--piano-0) 75%) padding-box, linear-gradient(160deg, var(--lime-200), var(--lime-700) 60%, rgba(var(--hex-rgb), .2)) border-box;
   box-shadow: inset 0 2px 10px rgba(0, 0, 0, .6), var(--shadow-3), 0 0 0 12px rgba(var(--hex-rgb), .06);
@@ -116,28 +160,25 @@
 .auth-finger:focus-visible .auth-finger-ring { box-shadow: var(--focus-ring), var(--shadow-3); }
 .auth-finger.is-waiting .auth-finger-ring { animation: auth-finger 1.6s var(--ease-out) infinite; }
 @keyframes auth-finger { 50% { box-shadow: inset 0 2px 10px rgba(0, 0, 0, .6), var(--shadow-3), 0 0 0 22px rgba(var(--hex-rgb), .12); } }
-.auth-finger-ring.is-still { width: 140px; height: 140px; }
-.auth-finger-word { font-size: var(--fs-lead); font-weight: var(--fw-display); }
+.auth-finger-ring.is-still { width: 136px; height: 136px; }
+.auth-finger-word { font-size: var(--t-h3); font-weight: 700; }
 .auth-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-3); width: 100%; }
-.auth-actions > .keycap { flex: 1 1 160px; }
+.auth-actions > .keycap { flex: 1 1 160px; border-radius: 16px; }
 
 /* -------------------------------------------------------------- chooser -- */
-/* v4 brand: the real Sahay logo leads the chooser and log-in (the thinking orb is the agent only). */
-.auth-brand-hero { display: flex; justify-content: center; }
-.auth-brand-hero .brand-word { font-size: 2.5rem; }
 .auth-choose { gap: var(--s-3); }
 .auth-choose-tile {
   position: relative; display: flex; align-items: center; gap: var(--s-4); width: 100%;
-  min-height: 104px; padding: 18px 20px; border-radius: var(--r-card); text-align: left;
+  min-height: 96px; padding: 16px 20px; border-radius: 22px; text-align: left;
   border: 1px solid transparent; color: var(--text-hi);
   background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--shadow-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--shadow-2);
   transition: transform var(--t-micro) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
 }
 .auth-choose-tile:hover { background: var(--piano-surface-hover) padding-box, var(--piano-rim) border-box; transform: translateY(-1px); }
 .auth-choose-tile:active { transform: translateY(1px) scale(.99); box-shadow: var(--press); }
 .auth-choose-new { background: var(--piano-surface) padding-box, linear-gradient(160deg, var(--lime-200), var(--lime-700) 60%, rgba(var(--hex-rgb), .25)) border-box; }
-.auth-choose-ico { display: grid; place-items: center; width: 64px; height: 64px; flex: none; border-radius: 50%; background: var(--btn-surface); color: var(--on-accent); box-shadow: var(--depth-soft); }
+.auth-choose-ico { display: grid; place-items: center; width: 56px; height: 56px; flex: none; border-radius: 16px; background: var(--btn-surface); color: var(--on-accent); box-shadow: var(--depth-soft); }
 .auth-choose-have .auth-choose-ico { background: var(--piano-3); color: var(--accent-text); border: 1px solid var(--hairline); }
 .auth-choose-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .auth-choose-word { font-family: var(--font-body); font-size: var(--t-h3); font-weight: 700; letter-spacing: var(--track-h3); line-height: 1.25; }
@@ -149,12 +190,12 @@
 .auth-done-mark { display: grid; place-items: center; width: 104px; height: 104px; border-radius: 50%; background: var(--btn-surface); color: var(--on-accent); border: 1px solid var(--btn-rim); box-shadow: var(--depth), var(--glow-lime); animation: auth-pop var(--t-enter) var(--ease-spring) both; }
 @keyframes auth-pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
 .auth-error { display: flex; flex-direction: column; gap: var(--s-3); }
+.auth-switch-line { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0 6px; color: var(--text-md); }
 .auth-switch {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: var(--touch-min); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill);
-  background: none; color: var(--accent-text); font-weight: var(--fw-strong); text-decoration: underline; text-underline-offset: 4px;
+  display: inline-flex; align-items: center; min-height: var(--touch-min); padding: 0 8px; border: 0; border-radius: 12px;
+  background: none; color: var(--text-hi); font-weight: 700;
 }
-.auth-switch:hover { background: rgba(238, 242, 230, .05); }
+.auth-switch:hover { color: var(--accent-text); }
 .auth-switch[disabled] { opacity: .5; }
 
 /* ---------------------------------------------------------------- sizes -- */
@@ -162,7 +203,7 @@
 @media (min-width: 600px) {
   .auth { justify-content: center; padding-top: calc(var(--s-6) + var(--safe-t)); padding-bottom: calc(var(--s-6) + var(--safe-b)); }
   .auth-card {
-    flex: 0 0 auto; padding: 24px 28px 30px; border-radius: var(--r-xl);
+    flex: 0 0 auto; padding: 24px 28px 28px; border-radius: var(--r-xl);
     border: 1px solid transparent;
     background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--shadow-3);
@@ -170,51 +211,52 @@
   .auth-answer-zone { margin-top: var(--s-2); }
   .auth-cities { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-/* Laptops 720-820px tall (1024x768, 1280x800): the whole step fits without a scroll (QA #16). */
+/* Laptops 720-820px tall (1024x768, 1280x800): the whole screen fits without a scroll (QA #16). */
 @media (min-width: 600px) and (max-height: 820px) {
   .auth { gap: var(--s-2); padding-top: calc(var(--s-3) + var(--safe-t)); padding-bottom: calc(var(--s-3) + var(--safe-b)); }
   .auth-card { gap: var(--s-3); padding: 16px 24px 20px; }
-  .auth-brand-hero .brand-img { width: 56px; height: 70px; }
-  .auth-brand-hero .brand-word { font-size: 2rem; }
-  .auth-q { font-size: clamp(1.5rem, 1.1rem + 1.2vw, 1.9rem); }
-  .auth-q-ico { width: 44px; height: 44px; }
+  .auth-top { gap: 0; }
+  .auth-form { gap: var(--s-2); margin-top: 0; }
+  .auth-field-label { margin-top: 4px; }
+  .auth-q { font-size: clamp(32px, 1.6vw + 22px, 38px); }
   .auth-finger-ring { width: 128px; height: 128px; }
   .auth-finger { gap: var(--s-2); }
   .auth-answer-zone { gap: var(--s-3); padding-top: var(--s-1); }
-  .auth-choose-tile { min-height: 88px; padding: 14px 18px; }
-  .auth-switch { min-height: var(--touch-min); }
-  .pad { gap: 12px; }
-  .pad-keys { grid-template-columns: repeat(3, var(--touch-lg)); gap: 10px 18px; }
-  .pad-key { width: var(--touch-lg); height: var(--touch-lg); font-size: 1.55rem; }
+  .auth-choose-tile { min-height: 84px; padding: 12px 18px; }
+  .auth .pad { gap: 10px; }
+  .auth .pad-keys { gap: 8px; }
+  .auth .pad-cells-pin, .auth .pad-cells-pin .pad-cell { min-height: 48px; height: 48px; }
 }
 /* Phone landscape: question left, answer right. */
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
   .auth { justify-content: flex-start; padding-top: calc(var(--s-2) + var(--safe-t)); }
   .auth-card {
     max-width: 900px; padding: 0; background: none; border: 0; box-shadow: none;
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--s-6); row-gap: var(--s-3); align-items: start;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--s-6); row-gap: var(--s-2); align-items: start;
   }
   .auth-card > * { grid-column: 1; }
-  .auth-card > .auth-answer-zone { grid-column: 2; grid-row: 1 / span 6; margin-top: 0; padding-top: 0; }
-  .auth-card > .auth-brand-hero { display: none; }
-  .auth-q { font-size: clamp(1.4rem, 1rem + 2vw, 1.9rem); }
-  .auth-q-ico { width: 44px; height: 44px; }
+  .auth-card > .auth-answer-zone, .auth-card > .auth-form { grid-column: 2; grid-row: 1 / span 6; margin-top: 0; padding-top: 0; }
+  .auth-q { font-size: clamp(28px, 2vw + 16px, 34px); }
   .auth-langs .auth-lang { min-height: 64px; }
-  .auth-finger-ring { width: 128px; height: 128px; }
-  .pad-keys { grid-template-columns: repeat(3, var(--touch-lg)); gap: 8px 16px; }
-  .pad-key { width: var(--touch-lg); height: var(--touch-lg); font-size: 1.5rem; }
-  .pad-cells { min-height: 44px; }
-  .pad { gap: 10px; }
+  .auth-finger-ring { width: 120px; height: 120px; }
+  .auth .pad { gap: 8px; }
+  .auth .pad-keys { gap: 8px; }
+  .auth .pad-cells-pin, .auth .pad-cells-pin .pad-cell { min-height: 44px; height: 44px; }
 }
-/* Short phones (360x640): smaller orb and question so the keypad stays on screen. */
+/* Short phones (360x640): tighter so the keypad stays on screen; keys stay 64px. */
 @media (max-width: 599px) and (max-height: 700px) {
-  .auth-brand-hero .brand-img { width: 56px; height: 70px; }
-  .auth-q { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 1.8rem); }
-  .auth-q-ico { width: 44px; height: 44px; }
+  .auth { padding-top: calc(var(--s-2) + var(--safe-t)); }
+  .auth-card { gap: var(--s-3); }
+  .auth-q { font-size: clamp(30px, 1.4vw + 24px, 34px); }
+  .auth-form { gap: var(--s-2); margin-top: 0; }
+  .auth-phone { min-height: 56px; }
+  .auth .pad { gap: 8px; }
+  .auth .pad-keys { gap: 8px; }
+  .auth .pad-cells-pin, .auth .pad-cells-pin .pad-cell { min-height: 48px; height: 48px; }
   .auth-answer-zone { gap: var(--s-3); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .auth-finger.is-waiting .auth-finger-ring, .auth-mic[aria-pressed="true"], .auth-done-mark { animation: none; }
-  .auth-dots li, .auth-finger-ring, .auth-choose-tile { transition: none; }
+  .auth-dots li, .auth-finger-ring, .auth-choose-tile, .auth-phone { transition: none; }
 }

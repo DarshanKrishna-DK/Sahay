@@ -113,7 +113,7 @@
 /* ------------------------------------------------- Rules and Memory lists -- */
 /* Main list left, Sahay's promise and "speak to add rules" right from 1024px; one column below. */
 .me-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); align-items: start; }
-@media (min-width: 1024px) { .me-split { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--s-6); } }
+@media (min-width: 1024px) { .me-split { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: var(--s-6); } }
 .me-main { display: flex; flex-direction: column; gap: var(--s-5); min-width: 0; }
 .me-list { display: flex; flex-direction: column; gap: var(--s-3); }
 .me-list-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s-3); }
