@@ -1,14 +1,20 @@
 "use strict";
 
 /**
- * Telegram as an owner follow-up notifier only (decisions.md D1): order
- * confirmed, PO PDF, payment link, delivery due. Messages go only to a chat the
- * owner linked with a one-time code; the bot answers nothing but `/start <code>`.
+ * Telegram as an owner follow-up notifier (decisions.md D1): order confirmed, PO PDF, payment
+ * link, delivery due; and the way Sahay reaches the owner's own suppliers (decisions.md, "Real
+ * supplier leg"; src/suppliers). Messages go only to a chat that was linked with a one-time code;
+ * the bot answers nothing but `/start <code>`. An owner code is 16 characters; a supplier code
+ * starts with "sup_" (src/db/suppliers.js) and links the chat to that supplier instead. One chat
+ * may be both.
  *
  * Bot API (core.telegram.org/bots/api, read 2026-11-19): sendMessage {chat_id, text,
  * link_preview_options: LinkPreviewOptions {is_disabled: true}} (re-read 2026-11-20: every message goes
  * without a link preview; a pay link made a huge card, E2E regress bug 6),
  * sendDocument multipart {chat_id, document}, getUpdates {offset, timeout, allowed_updates}.
+ * sendMessage reply_markup (re-read 2026-11-20): InlineKeyboardMarkup {inline_keyboard: Array of
+ * button rows, each an Array of InlineKeyboardButton}; InlineKeyboardButton {text: "Label text on
+ * the button", url: "HTTP or tg:// URL to be opened when the button is pressed"}.
  * The bot token is part of every URL, so a URL is never logged.
  */
 
@@ -92,6 +98,17 @@ async function sendToOwner(businessId, text, { documentPath } = {}) {
   return { sent: true, messageId: message?.message_id ?? null, documentMessageId: document?.message_id ?? null };
 }
 
+/**
+ * Send a text to any linked chat (a supplier's), optionally with one link button under it.
+ * Throws TelegramError when Telegram is not set up or refuses.
+ */
+async function sendToChat(chatId, text, { button } = {}) {
+  const body = textMessage(chatId, String(text).slice(0, 4096));
+  if (button?.text && button?.url) body.reply_markup = { inline_keyboard: [[{ text: String(button.text).slice(0, 64), url: String(button.url) }]] };
+  const message = await api("sendMessage", { json: body });
+  return { sent: true, messageId: message?.message_id ?? null };
+}
+
 /** POST /api/telegram/link-code: a one-time code and the deep link that carries it. */
 function createLinkCode(businessId, { now = Date.now() } = {}) {
   const code = crypto.randomBytes(12).toString("base64url"); // 16 chars of [A-Za-z0-9_-], allowed in a start parameter
@@ -106,6 +123,7 @@ const LINKED = {
   "en-IN": (name) => `This chat now receives Sahay notifications for ${name}.`,
 };
 const BAD_CODE = "This link code is not valid or has expired. Create a new one in the Sahay console.";
+const BAD_SUPPLIER_CODE = "This is Sahay, an automated assistant. This supplier link is not valid or has expired; please ask the shop for a new one.";
 
 /**
  * Handle one Telegram update. Only a private-chat `/start <code>` does anything:
@@ -117,6 +135,13 @@ async function handleUpdate(update) {
   const text = typeof message?.text === "string" ? message.text.trim() : "";
   const match = /^\/start(?:@\w+)?\s+([A-Za-z0-9_-]{1,64})$/.exec(text);
   if (!match || message?.chat?.type !== "private" || message.chat.id == null) return { handled: false };
+
+  const suppliers = require("../db/suppliers");
+  if (suppliers.isSupplierCode(match[1])) {
+    const out = await require("../suppliers").linkChat(match[1], String(message.chat.id));
+    await api("sendMessage", { json: textMessage(message.chat.id, out.linked ? out.reply : BAD_SUPPLIER_CODE) });
+    return out.linked ? { handled: true, linked: true, supplier: true, businessId: out.businessId, supplierId: out.supplierId } : { handled: true, linked: false, supplier: true };
+  }
 
   const businessId = repo.system.redeemLinkCode(match[1]);
   if (!businessId) {
@@ -165,4 +190,4 @@ async function startPolling({ signal, retryMs = 5000 } = {}) {
   }
 }
 
-module.exports = { TelegramError, BOT_USERNAME, setFetch, isConfigured, sendToOwner, createLinkCode, handleUpdate, startPolling };
+module.exports = { TelegramError, BOT_USERNAME, setFetch, isConfigured, sendToOwner, sendToChat, createLinkCode, handleUpdate, startPolling };

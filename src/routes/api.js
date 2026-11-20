@@ -40,6 +40,8 @@ const agentMemories = require("../agent/memories");
 const agentPolicy = require("../agent/policy");
 const speakIt = require("../agent/speak");
 const { rateCheck } = require("../client-address");
+const suppliers = require("../suppliers");
+const supplierStore = require("../db/suppliers");
 
 const USER_UID = 1002;
 const AGENT_UID = 1001;
@@ -277,7 +279,9 @@ function orderSubject(businessId, order) {
  * one as #1. A vendor the owner's rule avoids is listed last, unranked and marked `avoided`.
  */
 function rankedForState(businessId, requirement) {
-  const ranked = agentPolicy.rankedVendors(businessId, requirement).map((v, i) => ({ ...v, rank: i + 1, avoided: false }));
+  // The owner's own, real suppliers first, as get_shortlist ranks them (src/suppliers).
+  const own = supplierStore.supplierVendorIds(businessId, requirement.id);
+  const ranked = suppliers.ownFirst(businessId, requirement.id, agentPolicy.rankedVendors(businessId, requirement)).map((v, i) => ({ ...v, rank: i + 1, avoided: false, ownSupplier: own.has(v.id) }));
   const seen = new Set(ranked.map((v) => v.id));
   const avoided = repo.listVendors(businessId, { requirement_id: requirement.id }).filter((v) => !seen.has(v.id)).map((v) => ({ ...v, rank: null, avoided: true }));
   return [...ranked, ...avoided];
@@ -294,26 +298,31 @@ const RTC_SDK = Object.freeze({
   integrity: "sha384-nw2NeZrSeNHx9ARgmXyDt/wyJfls4Wyt8YHR+4Rts9Fpqjucz+B+Qf5kxkxfXCJm",
 });
 
-/** Minimal page for a human vendor joining a negotiation. No data in the HTML; the code is read from the URL. */
+/**
+ * The page a real supplier opens from Telegram to talk to Sahay (public/js/vendor-join.js,
+ * public/css/vendor-join.css). Phone first. No data in the HTML; the one-time code is read from
+ * the URL. The automated-assistant notice is always on screen (CLAUDE.md rule 2).
+ */
 const VENDOR_PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sahay negotiation</title>
-<style>
-:root{color-scheme:light dark;--bg:#fbfaf7;--fg:#1d1b16;--muted:#5d5a52;--accent:#1f6f5c}
-@media (prefers-color-scheme:dark){:root{--bg:#15140f;--fg:#f1efe8;--muted:#a9a59a;--accent:#6fcfb4}}
-body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-main{max-width:34rem;margin:0 auto;padding:2rem 1rem}
-.notice{border-left:4px solid var(--accent);padding:.5rem .75rem;margin:1rem 0}
-button{font:inherit;padding:.6rem 1.2rem;border-radius:.5rem;border:0;background:var(--accent);color:var(--bg);cursor:pointer}
-button:disabled{opacity:.5;cursor:default}
-#status{color:var(--muted)}
-</style></head>
-<body><main>
-<h1>Price discussion</h1>
-<p class="notice" id="notice">You will speak with Sahay, an automated assistant acting for a buyer. आप सहाय से बात करेंगे, जो एक स्वचालित सहायक है।</p>
-<p id="what"></p>
-<button id="join" disabled>Join the call</button> <button id="leave" hidden>Leave</button>
-<p id="status" role="status">Loading.</p>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F0D0E"><meta name="referrer" content="no-referrer">
+<title>Talk to Sahay</title>
+<link rel="icon" href="/assets/brand/favicon-48.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Hind:wght@400;500;700&family=Noto+Sans+Kannada:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/css/vendor-join.css">
+</head>
+<body><main class="vj">
+<header class="vj-top"><img src="/assets/brand/sahay-mark-128.png" alt="" width="32" height="32"><span class="vj-brand">Sahay</span><span class="vj-pill" id="state" data-state="loading">Loading</span></header>
+<p class="vj-notice" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span id="notice">You will speak with Sahay, an automated assistant acting for a buyer. आप सहाय से बात करेंगे, जो एक स्वचालित सहायक है।</span></p>
+<section class="vj-card" aria-labelledby="shop"><p class="vj-label" id="buyer">Buyer</p><h1 class="vj-shop" id="shop"></h1><p class="vj-what" id="what"></p></section>
+<p class="vj-status" id="status" role="status" aria-live="polite">Loading.</p>
+<div class="vj-actions">
+<button class="vj-btn vj-primary" id="join" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span>Join the call</span></button>
+<button class="vj-btn vj-ghost" id="mute" aria-pressed="false" hidden><span>Mute</span></button>
+<button class="vj-btn vj-end" id="leave" hidden><span>End</span></button>
+</div>
+<section class="vj-log" aria-labelledby="log-title"><h2 id="log-title">What was said</h2><ol class="vj-turns" id="turns"></ol><p class="vj-empty" id="empty">The conversation will appear here.</p></section>
+<p class="vj-foot" id="foot">Only the shop owner can confirm an order.</p>
 </main>
 <script src="${RTC_SDK.src}" integrity="${RTC_SDK.integrity}" crossorigin="anonymous"></script>
 <script src="/js/vendor-join.js"></script>
@@ -632,6 +641,18 @@ function createVendorRouter() {
       res.json({ ok: true });
     }),
   );
+  // The page polls this for the call state and what both sides said; only the page that took the token (renew key).
+  router.get("/api/vendor/:code/state", (req, res) => {
+    const state = negotiation.humanCallState(req.params.code, { renewKey: req.get(RENEW_KEY_HEADER) });
+    if (!state) return res.status(404).json({ code: "LINK_INVALID", message: "This link is not valid or has expired." });
+    res.set("Cache-Control", "no-store").json(state);
+  });
+  // The vendor pressed End: the negotiation stops at its current state (never a deal made up for them).
+  router.post("/api/vendor/:code/left", (req, res) => {
+    const ok = negotiation.humanLeft(req.params.code, { renewKey: req.get(RENEW_KEY_HEADER) });
+    if (!ok) return res.status(404).json({ code: "LINK_INVALID", message: "This link is not valid or has expired." });
+    res.json({ ok: true });
+  });
   return router;
 }
 

@@ -278,12 +278,16 @@ async function humanRun(t, { terms }) {
   assert.match(renewed.token, /^007/);
   assert.equal(renewed.renewKey, undefined, "the renew key is handed out once");
 
+  // The negotiator joins only once the person is in the channel (no agent minutes on an empty channel).
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(!calls.some((c) => c.url.endsWith("/join")), "no agent before the vendor joined");
+  assert.equal(await session.humanJoined(code), true);
   await until(() => repo.listSessions(businessId, { kind: "negotiation" })[0]?.agent_id);
   const negSession = repo.listSessions(businessId, { kind: "negotiation" })[0];
   const ctx = { businessId, sessionId: negSession.id, agentId: negSession.agent_id, actor: "agent", toolScope: "negotiation" };
-
-  assert.equal(await session.humanJoined(code), true);
-  assert.ok(calls.some((c) => c.url.endsWith("/think")), "negotiator told to begin");
+  await until(() => calls.some((c) => c.url.endsWith("/think")));
+  const firstSpoken = calls.find((c) => c.url.endsWith("/speak"));
+  assert.match(firstSpoken.body.text, /स्वचालित सहायक/, "the disclosure is the first thing the vendor hears");
 
   const brief = await registry.callTool(ctx, "get_negotiation_brief", {});
   // E2E r4: the item is said in Devanagari (registry.spokenItem). The city is still Latin: see session.js brief (not changed here).

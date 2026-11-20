@@ -56,7 +56,7 @@ const timing = {
   stallMs: 45000, // simulated agents mode: no vendor turn by then -> loop mode
   turnStallMs: 40000, // simulated agents mode: no new turn for this long after the first vendor turn -> loop mode
   humanTurnStallMs: 120000, // human: silence this long after joining ends the negotiation honestly
-  humanJoinMs: 5 * 60 * 1000,
+  humanJoinMs: HUMAN_LINK_SECONDS * 1000, // as long as the link the supplier was sent says it works
   maxMs: 6 * 60 * 1000,
   closingGraceMs: 4000,
   msPerChar: 75, // loop mode: wait for a line to be spoken before the next one
@@ -68,6 +68,8 @@ const timing = {
 const runtimes = new Map();
 /** one-time human join code -> { businessId, sessionId, expiresAt } */
 const joinCodes = new Map();
+/** join code of a negotiation that has ended -> what its page may still show (status, turns), until expiresAt */
+const endedCodes = new Map();
 
 const sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
@@ -338,9 +340,16 @@ function progress(rt, message, data) {
 
 /* ------------------------------------------------------------- turns --- */
 
+/** Who said a turn, as the owner's app and the vendor's page show it. */
+function speakerName(rt, speaker) {
+  if (speaker !== "vendor") return "Sahay";
+  return rt.counterpart === "simulated" ? `${rt.vendor.name} (simulated vendor)` : rt.vendor.name;
+}
+
 function recordTurn(rt, { speaker, text, offer = null }) {
   const turn = {
     speaker,
+    name: speakerName(rt, speaker),
     text,
     round: Math.min(rt.round, MAX_ROUNDS),
     ts: new Date().toISOString(),
@@ -352,7 +361,16 @@ function recordTurn(rt, { speaker, text, offer = null }) {
   events.emit(
     rt.businessId,
     "negotiation.turn",
-    { negotiationId: rt.negotiationId, vendorId: rt.vendor.id, counterpart: rt.counterpart, ...turn },
+    {
+      negotiationId: rt.negotiationId,
+      vendorId: rt.vendor.id,
+      vendorName: rt.vendor.name,
+      counterpart: rt.counterpart,
+      simulated: rt.counterpart === "simulated",
+      real: rt.counterpart === "human",
+      ownSupplier: Boolean(rt.supplier),
+      ...turn,
+    },
     { sessionId: rt.sessionId, actor: speaker === "vendor" ? "vendor" : "agent" },
   );
 }
@@ -490,6 +508,9 @@ const lineMs = (text) => Math.max(timing.minLineMs, String(text).length * timing
 /** Mode "agents": two Agora agents talk; turns come from the negotiator's /history. */
 async function runAgents(rt, job) {
   const counterpartUid = rt.counterpart === "human" ? UIDS.human : UIDS.vendor;
+  // A person may take minutes to open the link: the negotiator joins only once they are in the
+  // channel (no agent minutes spent on an empty channel, no idle_timeout before they arrive).
+  if (rt.counterpart === "human" && !(await humanArrived(rt, job))) return "left";
   const negotiatorId = await startNegotiatorAgent(rt, { remoteUid: counterpartUid, withTools: true });
   const disclosure = buyerLine("disclosure", rt.language, { business: rt.business.name });
   await retryOnce("negotiator /speak", () => agent.speak(negotiatorId, disclosure, { priority: "INTERRUPT", interruptable: false }), job.signal);
@@ -505,7 +526,7 @@ async function runAgents(rt, job) {
     rt.introduced = true;
     await kickOff(rt);
   } else {
-    job.progress("Waiting for the vendor to open the join link.", { joinUrl: rt.joinUrl });
+    await kickOff(rt);
   }
 
   const started = Date.now();
@@ -516,9 +537,7 @@ async function runAgents(rt, job) {
     vendorTurns += ingestHistory(rt, await agent.history(negotiatorId));
     const now = Date.now();
     if (rt.state !== "open" && (rt.closingSpokenAt ? now - rt.closingSpokenAt >= timing.closingGraceMs : now - rt.decidedAt > 20000)) return "agents";
-    if (rt.counterpart === "human" && !rt.humanJoinedAt && now - started > timing.humanJoinMs) {
-      throw new Error("The vendor did not open the join link in time.");
-    }
+    if (rt.counterpart === "human" && rt.humanLeftAt && rt.state === "open") return "left";
     if (rt.state === "open" && rt.counterpart === "simulated") {
       // E2E r2: one run sat 4 m 53 s between an agent counter and the next vendor turn.
       if (vendorTurns === 0 && now - started > timing.stallMs) return "stalled";
@@ -530,6 +549,32 @@ async function runAgents(rt, job) {
     if (rt.state === "open" && rt.counterpart === "human" && rt.humanJoinedAt && now - Math.max(rt.lastTurnAt, rt.humanJoinedAt) > timing.humanTurnStallMs) return "timeout";
     if (now - (rt.humanJoinedAt ?? started) > timing.maxMs) return "timeout";
   }
+}
+
+/**
+ * Wait until the human vendor has joined the channel (POST /api/vendor/:code/joined). True when
+ * they joined; false when they ended the call first. Throws VENDOR_DID_NOT_JOIN after
+ * timing.humanJoinMs: a person who never came is never replaced by anyone.
+ */
+async function humanArrived(rt, job) {
+  const who = rt.supplier ? `${rt.vendor.name} (your own supplier, real)` : "the vendor";
+  job.progress(`Waiting for ${who} to open the join link${rt.supplier ? " sent on Telegram" : ""}.`, { joinUrl: rt.joinUrl, real: true });
+  const started = Date.now();
+  while (!rt.humanJoinedAt) {
+    if (rt.humanLeftAt) return false;
+    if (Date.now() - started > timing.humanJoinMs) {
+      const err = new Error(
+        rt.supplier
+          ? `${rt.vendor.name} did not open the Telegram link within ${Math.round(timing.humanJoinMs / 60000)} minutes. Nothing was agreed; a labelled simulated vendor can be tried instead.`
+          : "The vendor did not open the join link in time.",
+      );
+      err.code = "VENDOR_DID_NOT_JOIN";
+      throw err;
+    }
+    await sleep(timing.pollMs, job.signal);
+  }
+  job.progress(`${rt.supplier ? rt.vendor.name : "The vendor"} joined the call.`, { real: true });
+  return true;
 }
 
 /** Ask the negotiator's model to begin (it then calls get_negotiation_brief). */
@@ -738,7 +783,12 @@ function release(rt) {
   rt.released = true;
   repo.updateSession(rt.businessId, rt.sessionId, { status: "ended", ended_at: new Date().toISOString() });
   runtimes.delete(rt.sessionId);
-  if (rt.joinCode) joinCodes.delete(rt.joinCode);
+  if (rt.joinCode) {
+    const entry = joinCodes.get(rt.joinCode);
+    joinCodes.delete(rt.joinCode);
+    // The vendor's page may still show how the call ended, to the page that joined (its renewKey).
+    if (entry?.renewKey) endedCodes.set(rt.joinCode, { renewKey: entry.renewKey, rt, expiresAt: Date.now() + HUMAN_LINK_SECONDS * 1000 });
+  }
   // Its agents are stopped by now, so its global negotiation slot is free (the job's onSettled
   // gives it back too, for a job that never got here; the release is idempotent).
   rt.releaseSlot?.();
@@ -784,6 +834,7 @@ async function runNegotiation(rt, job) {
       ended = await runLoop(rt, job);
     }
     if (ended === "timeout") job.progress("The negotiation ran out of time.");
+    if (ended === "left") job.progress(`${rt.supplier ? rt.vendor.name : "The vendor"} ended the call.`);
     await stopAgents(rt);
     release(rt);
     return await finish(rt, mode, job.signal);
@@ -799,7 +850,7 @@ async function runNegotiation(rt, job) {
  * `language` is the language of the negotiation itself; refusals are said in
  * `sayLanguage` (the owner's reply language), defaulting to it.
  */
-async function startNegotiation({ businessId, ownerSessionId = null, requirementId, vendorId, counterpart, language, sayLanguage }) {
+async function startNegotiation({ businessId, ownerSessionId = null, requirementId, vendorId, counterpart, language, sayLanguage, supplier = null }) {
   const negotiationLanguage = langKey(language);
   const lang = langKey(sayLanguage ?? language);
   const requirement = repo.getRequirement(businessId, requirementId);
@@ -810,6 +861,19 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   if (counterpart !== "simulated" && counterpart !== "human") throw new ToolError("INVALID", sayFor("invalid", lang));
   if (!requirement.quantity || !requirement.unit) {
     throw new ToolError("REQUIREMENT_INCOMPLETE", sayFor("invalid", lang), { status: 400, message: "The requirement needs a quantity and a unit." });
+  }
+  if (supplier && counterpart !== "human") throw new ToolError("INVALID", sayFor("invalid", lang), { status: 400, message: "An own supplier is a real person: counterpart human." });
+  // The owner asks for a simulated vendor while a real one has not opened their link yet: that
+  // invitation is withdrawn first (the "did not join" offer of src/suppliers), never run alongside.
+  for (const rt of [...runtimes.values()]) {
+    if (rt.businessId === businessId && counterpart === "simulated" && rt.counterpart === "human" && !rt.humanJoinedAt && rt.jobId) {
+      try {
+        jobs.cancelJob(businessId, rt.jobId);
+      } catch {
+        /* it has just ended */
+      }
+      await jobs.whenSettled(rt.jobId);
+    }
   }
   for (const rt of runtimes.values()) {
     if (rt.businessId === businessId) {
@@ -856,7 +920,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
   // The hard ceiling and where it came from, on record in the job input and the outcome (final-2 D).
   const hardCeiling = { price: reservation, unit: requirement.unit, byRule: limit.byRule, ownerMax: limit.ownerMax, ruleId: limit.ruleId };
   try {
-    const started = startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling }, releaseSlot);
+    const started = startJobFor({ businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling, supplier }, releaseSlot);
     return { ...started, ceiling: { price: reservation, unit: requirement.unit, byRule: limit.byRule, ownerMax: limit.ownerMax } };
   } catch (err) {
     releaseSlot();
@@ -866,7 +930,7 @@ async function startNegotiation({ businessId, ownerSessionId = null, requirement
 
 /** Create the session, negotiation row and runtime, and start the job that owns `releaseSlot`. */
 function startJobFor(o, releaseSlot) {
-  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling } = o;
+  const { businessId, ownerSessionId, requirementId, vendorId, counterpart, negotiationLanguage, business, requirement, vendor, reservation, ceiling, tick, open, beta, vendorPolicy, hardCeiling, supplier = null } = o;
   const channel = `neg-${crypto.randomBytes(6).toString("hex")}`;
   const session = repo.createSession(businessId, { kind: "negotiation", channel, status: "starting" });
   const negotiation = repo.createNegotiation(businessId, { requirement_id: requirementId, vendor_id: vendorId, session_id: session.id, counterpart });
@@ -880,6 +944,7 @@ function startJobFor(o, releaseSlot) {
     business,
     requirement,
     vendor,
+    supplier: supplier ? { id: supplier.id, name: supplier.name } : null,
     counterpart,
     language: negotiationLanguage,
     reservation,
@@ -912,7 +977,7 @@ function startJobFor(o, releaseSlot) {
 
   let jobId;
   try {
-    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart, ceiling: hardCeiling }, (job) => runNegotiation(rt, job), {
+    jobId = jobs.startJob(businessId, "negotiation", { requirementId, vendorId, negotiationId: negotiation.id, counterpart, ownSupplier: Boolean(supplier), ceiling: hardCeiling }, (job) => runNegotiation(rt, job), {
       onSettled: releaseSlot,
     });
   } catch (err) {
@@ -988,6 +1053,12 @@ function humanJoinInfo(code, { renewKey } = {}) {
     ...(issuedKey ? { renewKey: issuedKey } : {}),
     businessName: rt.business.name,
     item: rt.requirement.item,
+    // What the page shows the vendor, in the negotiation's language.
+    language: rt.language,
+    itemSpoken: itemSpoken(rt),
+    quantity: rt.requirement.quantity,
+    unitSpoken: unitSpoken(rt, rt.requirement.quantity !== 1),
+    vendorName: rt.vendor.name,
     disclosure: buyerLine("disclosure", rt.language, { business: rt.business.name }),
   };
 }
@@ -1000,6 +1071,46 @@ async function humanJoined(code) {
   if (!rt.humanJoinedAt) rt.humanJoinedAt = Date.now();
   await kickOff(rt);
   return true;
+}
+
+/** The vendor's page ended the call (End): the negotiation stops honestly at its current state. */
+function humanLeft(code, { renewKey } = {}) {
+  const live = liveJoinEntry(code);
+  if (!live || !live.entry.renewKey || !sameSecret(renewKey, live.entry.renewKey)) return false;
+  if (!live.rt.humanLeftAt) live.rt.humanLeftAt = Date.now();
+  return true;
+}
+
+/**
+ * What the vendor's page shows while it polls (GET /api/vendor/:code/state): the call's state and
+ * the transcript of both sides. Only for the page that took the token (its renewKey); null else.
+ * A negotiation that has ended is still shown, as ended, while its link would have lived.
+ */
+function humanCallState(code, { renewKey } = {}) {
+  const key = String(code ?? "");
+  let rt = null;
+  let ended = false;
+  const live = liveJoinEntry(key);
+  if (live) {
+    if (!live.entry.renewKey || !sameSecret(renewKey, live.entry.renewKey)) return null;
+    rt = live.rt;
+  } else {
+    const done = endedCodes.get(key);
+    if (!done || !(done.expiresAt > Date.now())) {
+      endedCodes.delete(key);
+      return null;
+    }
+    if (!sameSecret(renewKey, done.renewKey)) return null;
+    rt = done.rt;
+    ended = true;
+  }
+  const status = ended || rt.state !== "open" ? "ended" : rt.agents.negotiator ? "live" : rt.humanJoinedAt ? "connecting" : "waiting";
+  return {
+    status,
+    agreed: rt.state === "agreed",
+    businessName: rt.business.name,
+    turns: rt.turns.map((t) => ({ speaker: t.speaker, name: t.name, text: t.text, ts: t.ts })),
+  };
 }
 
 /** A listen-only token for the owner's console (uid not listed by any agent, so it is never heard). */
@@ -1042,6 +1153,8 @@ module.exports = {
   recordVendorOffer,
   humanJoinInfo,
   humanJoined,
+  humanLeft,
+  humanCallState,
   listenerToken,
   stopAll,
   configureTiming,
