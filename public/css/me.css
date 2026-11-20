@@ -1,4 +1,4 @@
-/* My Sahay (me.js, history.js; screens.md 08). UI v5, owner W5. Page pattern: head, "Needs you"
+/* My Sahay (me.js, history.js; screens.md 08). UI v7 look (tokens), owner W5. Page pattern: head, "Needs you"
    (only when a suggested rule waits), ONE card of setting rows: label + one sentence + one control.
    Sheets hold the details (voice, bargaining, shop, what Sahay remembers, history). Tokens only. */
 
@@ -52,6 +52,15 @@
 .me-code { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s4); border-radius: var(--r); background: var(--surface); border: 1px solid var(--hairline); }
 .me-code-value { font-size: var(--fs-amount); font-weight: 700; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
 .me-ok { color: var(--good); }
+
+/* What Sahay remembers: full sentences, wrapped to up to 3 lines, never cut with an ellipsis. */
+.me-remember .row { align-items: flex-start; flex-wrap: wrap; }
+.me-remember .row-main { flex: 1 1 220px; }
+.me-remember .row-title, .me-remember .row-sub {
+  white-space: normal; overflow: hidden; text-overflow: clip;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow-wrap: anywhere;
+}
+.me-remember .row-end { flex-wrap: wrap; }
 
 /* ---------------------------------------------------------- history -- */
 .me-history { display: flex; flex-direction: column; gap: var(--s5); }

@@ -240,16 +240,19 @@ test("an unknown order link is 'not valid' with the way back to Buy; a network f
   assert.equal(stateOf(limited), "limit");
 });
 
-test("the pay page uses the v5 tokens and its own sheet: no inline style block, no lime, marigold or saffron", () => {
+test("the pay page uses the v7 tokens and its own sheet: no inline style block, no old marigold, saffron or piano black", () => {
   assert.doesNotMatch(HTML, /<style/i, "styles live in /css/pay.css (self only under PAY_CSP)");
   assert.match(HTML, /href="\/css\/tokens\.css"/);
   assert.doesNotMatch(HTML, /tokens-v3/);
   assert.match(HTML, /href="\/css\/pay\.css"/);
-  assert.match(HTML, /https:\/\/fonts\.googleapis\.com\/css2\?family=Manrope/, "v5 fonts load from Google Fonts (allowed in PAY_CSP)");
-  assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c|#B6F23C|--lime|--piano/i);
-  assert.match(SCRIPT, /theme: \{ color: "#F2CFC6" \}/);
+  assert.match(HTML, /https:\/\/fonts\.googleapis\.com\/css2\?family=Jersey\+10&family=Amarna/, "v7 fonts load from Google Fonts (allowed in PAY_CSP)");
+  assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c|#B6F23C|--piano/i);
+  assert.match(SCRIPT, /theme: \{ color: "#A8E27C" \}/);
   assert.match(HTML, /<span class="pay-btn-front">/, "the pink pill Pay button");
-  assert.doesNotMatch(HTML + CSS, /pay-btn-edge|translateY/, "the owner's flat pill: no edge, no press-down");
+  assert.doesNotMatch(HTML + CSS, /pay-btn-edge|border-radius: (?!0)/, "v7: square everything, no pushable edge");
+  assert.match(CSS, /\.pay-btn-front \{[^}]*box-shadow: 0 0 0 2px var\(--border\), 2px 2px 0 0 var\(--deep\)/, "the lime pixel button");
+  assert.match(CSS, /\.pay-amount-value \{[^}]*var\(--font-display\)/, "the amount in Jersey 10");
+  assert.match(CSS, /text-transform: var\(--hud-case\); letter-spacing: var\(--hud-track\)/, "HUD caps labels (none on hi / kn)");
   assert.match(CSS, /\.pay-btn-front \{[^}]*white-space: nowrap/, "the Pay word never wraps");
   for (const s of ["Pay with Razorpay", "Razorpay से भुगतान करें", "Razorpay ಮೂಲಕ ಪಾವತಿಸಿ"]) assert.ok(SCRIPT.includes(`pay: "${s}"`), s);
 });

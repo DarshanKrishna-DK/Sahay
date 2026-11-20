@@ -46,8 +46,8 @@ addStrings({
   "me5.voiceSentence": ["Speaks at {speed} speed.", "{speed} रफ़्तार से बोलती है।", "{speed} ವೇಗದಲ್ಲಿ ಮಾತನಾಡುತ್ತದೆ."],
   "me5.styleLabel": ["Bargaining", "मोलभाव", "ಚೌಕಾಸಿ"],
   "me5.styleSentence": ["{style}: how hard Sahay bargains with sellers.", "{style}: सहाय विक्रेताओं से कितना मोलभाव करे।", "{style}: ಸಹಾಯ್ ಮಾರಾಟಗಾರರೊಂದಿಗೆ ಎಷ್ಟು ಚೌಕಾಸಿ ಮಾಡಲಿ."],
-  "me5.langLabel": ["Language", "भाषा", "ಭಾಷೆ"],
-  "me5.langSentence": ["The language Sahay speaks on calls.", "कॉल पर सहाय की भाषा।", "ಕರೆಗಳಲ್ಲಿ ಸಹಾಯ್ ಮಾತನಾಡುವ ಭಾಷೆ."],
+  "me5.langLabel": ["Language Sahay speaks on calls", "कॉल पर सहाय की भाषा", "ಕರೆಗಳಲ್ಲಿ ಸಹಾಯ್ ಮಾತನಾಡುವ ಭಾಷೆ"],
+  "me5.langSentence": ["The words on this screen follow the language button at the top.", "इस स्क्रीन के शब्द ऊपर वाले भाषा बटन से बदलते हैं।", "ಈ ಪರದೆಯ ಪದಗಳು ಮೇಲಿನ ಭಾಷೆ ಬಟನ್‌ನಿಂದ ಬದಲಾಗುತ್ತವೆ."],
   "me5.rememberLabel": ["What Sahay remembers", "सहाय को क्या याद है", "ಸಹಾಯ್‌ಗೆ ನೆನಪಿರುವುದು"],
   "me5.rememberSentence": ["{n} rules and notes from your work.", "आपके काम से {n} नियम और बातें।", "ನಿಮ್ಮ ಕೆಲಸದಿಂದ {n} ನಿಯಮಗಳು ಮತ್ತು ಟಿಪ್ಪಣಿಗಳು."],
   "me5.rememberNone": ["Nothing yet. Teach Sahay by talking.", "अभी कुछ नहीं। बात करके सिखाइए।", "ಇನ್ನೂ ಏನೂ ಇಲ್ಲ. ಮಾತನಾಡಿ ಕಲಿಸಿ."],
@@ -283,7 +283,8 @@ export function createMe() {
     const A = state.agent;
     const items = A.status === "ready" ? starItems([...A.rules.values()], [...A.memories.values()]).filter((i) => i.type === "memory" || i.data.status === "active") : [];
     if (!items.length) return emptyState({ icon: "star", title: t("me5.rememberNone") });
-    return list(items.map((it) => {
+    // Sentences wrap to 2-3 lines here (QA v7 #16): the wrapper lifts the list's one-line title.
+    return h("div", { class: "me-remember" }, list(items.map((it) => {
       const d = it.data;
       const b = ruleBusy.get(String(d.id));
       const why = d.why ? sentenceOf({ sentence: d.why }, code()) : "";
@@ -296,7 +297,7 @@ export function createMe() {
           it.type === "rule" ? button({ word: t("me.forget"), icon: b === "forget" ? null : "x", kind: "secondary", size: "sm", busy: b === "forget", label: `${t("me3.forgetLong")}: ${sentenceOf(d, code())}`, onClick: () => decide(d, "forget") }) : null,
         ].filter(Boolean),
       };
-    }), { label: t("me5.rememberLabel"), limit: 20 });
+    }), { label: t("me5.rememberLabel"), limit: 20 }));
   }
   function openRemember(opener) {
     openSub = "teach";

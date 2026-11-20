@@ -91,3 +91,15 @@ test("v5 My Sahay (screens.md 08): Talk to Sahay opens a sheet first; the ask-be
   assert.match(read("public/js/app/screens.js"), /me: createMe,/);
 });
 
+
+test("v7 QA: log in says the 4th number starts it; short screens keep Log in in view; no logged-out POST /api/session; the call language is named as such", () => {
+  const auth = read("public/js/app/auth.js");
+  assert.match(auth, /"au5\.autoLogin": \["Log in starts when you enter the 4th number\."/);
+  const css = read("public/css/auth.css");
+  assert.match(css, /@media \(max-height: 760px\) \{[\s\S]*\.auth \.pad-key \{ height: 52px; \}/);
+  const store = read("public/js/app/store.js");
+  const boot = store.slice(store.indexOf("export async function boot"), store.indexOf("export async function resync"));
+  assert.ok(boot.indexOf('state.accounts === "ready" && !state.account && !deviceShop') < boot.indexOf("api.openSession()"), "logged out with accounts: straight to auth, no 400 from /api/session");
+  assert.match(read("public/js/app/me.js"), /"me5\.langLabel": \["Language Sahay speaks on calls"/);
+  assert.match(read("public/css/me.css"), /\.me-remember \.row-title, \.me-remember \.row-sub \{[^}]*white-space: normal/);
+});

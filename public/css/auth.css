@@ -1,4 +1,4 @@
-/* Log in, sign up, the chooser and the fingerprint offer (auth.js). UI v5, owner W5.
+/* Log in, sign up and the fingerprint offer (auth.js). UI v7 (yugaantar.org look), owner W5.
    One calm centred column under the shell's top bar (which carries the real logo, the language switch
    and the automated-assistant line): title, one plain sentence, the answer, one pink button.
    Phone: full width with the 16px gutter. 600px and up: a 440px column, centred. Tokens only. */
@@ -6,16 +6,20 @@
 .auth { display: flex; justify-content: center; padding: var(--s5) 0 var(--s7); }
 .auth-col { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: var(--s5); }
 
+/* Brand (screens.md 09): logo + "Sahay", the tagline under it. Hidden on short screens (top bar has it). */
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center; }
+.auth-tagline { margin: 0; }
+
 /* ---------------------------------------------------------------- head -- */
 .auth-head { display: flex; flex-direction: column; gap: var(--s2); }
 .auth-nav { display: flex; align-items: center; gap: var(--s3); min-height: var(--tap); }
 .auth-back { flex: none; margin-left: calc(var(--s2) * -1); }
 .auth-step { flex: 1 1 auto; display: flex; align-items: center; gap: var(--s3); min-width: 0; }
-.auth-step-text { flex: none; color: var(--text-muted); font-size: var(--fs-label); font-weight: 600; font-variant-numeric: tabular-nums; }
+.auth-step-text { flex: none; color: var(--text-muted); font: 600 var(--fs-label) / 1.4 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track); font-variant-numeric: tabular-nums; }
 .auth-step-bar { flex: 1 1 auto; height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .auth-step-fill { display: block; height: 100%; border-radius: inherit; background: var(--pink); transition: width var(--t) var(--ease); }
 .auth-title-row { display: flex; align-items: flex-start; gap: var(--s2); }
-.auth-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--fs-title); font-weight: 700; line-height: var(--lh-tight); overflow-wrap: anywhere; outline: none; }
+.auth-title { flex: 1 1 auto; min-width: 0; margin: 0; font: var(--fw-display, 400) var(--fs-title) / 1.1 var(--font-display); letter-spacing: var(--display-track); overflow-wrap: anywhere; outline: none; }
 .auth-title:lang(hi), .auth-title:lang(kn) { line-height: 1.35; }
 .auth-hear { flex: none; }
 .auth-sentence { color: var(--text-muted); font-size: var(--fs-body); line-height: var(--lh); }
@@ -23,6 +27,7 @@
 /* ---------------------------------------------------------------- form -- */
 .auth-form { display: flex; flex-direction: column; gap: var(--s4); }
 .auth-pin-label { margin-bottom: calc(var(--s2) * -1); }
+.auth-note { margin: 0; color: var(--text-muted); font-size: var(--fs-meta); line-height: 1.5; }
 .auth-slot:empty, .auth-phone-slot:empty { display: none; }
 .auth-field-mic { position: relative; }
 .auth-field-mic .input { padding-right: 60px; }
@@ -99,13 +104,20 @@
 .auth-switch { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0 var(--s1); color: var(--text-muted); }
 .auth-switch .link-btn { font-weight: 700; color: var(--text); }
 
-/* Short phones (360x640): tighter so the keypad and Log in stay in view; keys stay 64px. */
-@media (max-height: 700px) {
-  .auth { padding-top: var(--s3); }
-  .auth-col { gap: var(--s4); }
-  .auth-form { gap: var(--s3); }
-  .auth .pad { gap: 10px; }
-  .auth .pad-keys { gap: 8px 12px; }
+/* Short screens (laptops 1568x701, phones 360x640; anything under 760px tall): the top bar already
+   carries the logo, so the big brand row folds away and the keypad tightens (keys 52px, still above
+   the 48px target) so the Log in button stays in view without scrolling (QA v7 #5). */
+@media (max-height: 760px) {
+  .auth { padding: var(--s2) 0 var(--s5); }
+  .auth-col { gap: var(--s2); }
+  .auth-brand { display: none; }
+  .auth-form { gap: var(--s2); }
+  .auth-pin-label { margin: var(--s1) 0 0; }
+  .auth .pad { gap: 6px; }
+  .auth .pad-cells { min-height: 36px; }
+  .auth .pad-keys { gap: 6px 10px; }
+  .auth .pad-key { height: 52px; }
+  .auth .phone-field .input, .auth .phone-field { min-height: 48px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

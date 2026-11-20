@@ -522,9 +522,23 @@ export async function boot({ session } = {}) {
           else throw err;
         }
       }
+      // Logged out on a server with accounts and no device-only shop on this device: go straight to
+      // Log in / Sign up. POST /api/session without shop details would only answer 400 (and the
+      // browser logs every 400 as a console error on each logged-out load, QA v7 #1).
+      let deviceShop = false;
+      try { deviceShop = localStorage.getItem("sahay-device-shop") === "1"; } catch { /* storage blocked */ }
+      if (!s && state.accounts === "ready" && !state.account && !deviceShop) {
+        try { state.config.accessCodeRequired = Boolean((await api.getConfig()).accessCodeRequired); } catch { /* the register answer reveals it */ }
+        state.boot = "auth";
+        state.stream = "closed";
+        touch("boot");
+        return;
+      }
       if (!s) {
         try {
           s = await api.openSession();
+          // A shop that lives only on this device (no account): remember it, so a later load still opens it.
+          if (s && s.business && !state.account) { try { localStorage.setItem("sahay-device-shop", "1"); } catch { /* storage blocked */ } }
         } catch (err) {
           if (err.code === "BUSINESS_DETAILS_REQUIRED") {
             try { state.config.accessCodeRequired = Boolean((await api.getConfig()).accessCodeRequired); } catch { /* the server's ACCESS_CODE_REQUIRED answer reveals it */ }

@@ -41,6 +41,7 @@ addStrings({
   "au5.phoneNumber": ["Phone number", "फ़ोन नंबर", "ಫೋನ್ ನಂಬರ್"],
   "au5.or": ["or", "या", "ಅಥವಾ"],
   "au5.passkey": ["Use passkey", "पासकी से खोलें", "ಪಾಸ್‌ಕೀ ಬಳಸಿ"],
+  "au5.autoLogin": ["Log in starts when you enter the 4th number.", "चौथा अंक डालते ही लॉग इन शुरू हो जाएगा।", "4ನೇ ಅಂಕಿ ಹಾಕಿದ ತಕ್ಷಣ ಲಾಗಿನ್ ಶುರುವಾಗುತ್ತದೆ."],
   "au5.footer": ["Sahay is an automated assistant. Payments are in test mode.", "सहाय एक स्वचालित सहायक है। भुगतान टेस्ट मोड में हैं।", "ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ. ಪಾವತಿಗಳು ಟೆಸ್ಟ್ ಮೋಡ್‌ನಲ್ಲಿವೆ."],
 });
 
@@ -368,6 +369,7 @@ export function createAuth({ mode: firstMode } = {}) {
         phone.el,
         h("span", { class: "auth-phone-slot" }, phoneError ? h("p", { class: "error-line", role: "alert" }, icon("alert", 18), scripted("span", phoneError)) : null),
         h("p", { class: "field-label auth-pin-label", id: "auth-pin-label", text: t("au.pinLabel") }),
+        locked ? null : scripted("p", t("au5.autoLogin"), { class: "auth-note", id: "auth-pin-note" }),
         locked ? lockedView() : makePad({ length: 4, label: t("au.pinLabel"), kind: "pinEnter", onDone: (v) => { data.pin = v; submitLogin(); } }),
         locked ? null : button({ word: busy && !waiting ? t("au.checking") : t("au.login"), icon: busy ? null : "arrowRight", kind: "primary", block: true, busy: busy && !waiting, onClick: submitLogin })),
       finger ? h("div", { class: "auth-or", role: "separator" }, h("span", { text: t("au5.or") })) : null,

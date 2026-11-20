@@ -498,7 +498,7 @@
       notes: invoice
         ? { invoice_number: order.invoiceNumber || order.poNumber }
         : { po_number: order.poNumber, simulated_vendor: order.simulated ? "yes" : "no" },
-      theme: { color: "#F2CFC6" },
+      theme: { color: "#A8E27C" },
       handler: verify,
       modal: {
         ondismiss: function () {

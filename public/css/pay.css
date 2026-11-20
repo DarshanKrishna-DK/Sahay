@@ -1,8 +1,8 @@
-/* Pay page (/pay/<token>, public/pay.html + public/js/pay.js), Sahay UI v5 (warm black + creamy pink).
-   Tokens: /css/tokens.css. The page runs under PAY_CSP (server.js): styles and fonts from this origin
-   only, so text uses system faces (Manrope / Hind / Noto where the device has them). One card: the
-   bill, the big amount, a test-mode note, ONE pink Pay button (the owner's flat solid pill) that never
-   wraps; English by default with a small language switch.
+/* Pay page (/pay/<token>, public/pay.html + public/js/pay.js), Sahay UI v7 (yugaantar.org look,
+   Sahay's own art): navy night page, ONE square pixel-bordered card with a hard shadow, the title and
+   the amount in Jersey 10, HUD caps labels (Amarna 600, .14em; none on Hindi / Kannada pages), a
+   test-mode note, ONE square lime pixel button that never wraps. English by default with a small
+   language switch. Tokens: /css/tokens.css; fonts from Google Fonts (allowed by PAY_CSP).
    Every state is a data-state on #pay-root. */
 
 [hidden] { display: none !important; }
@@ -31,95 +31,102 @@ body.pay:lang(hi), body.pay:lang(kn) { line-height: var(--lh-indic); }
 svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 :focus-visible { outline: 2px solid var(--pink-hover); outline-offset: 3px; }
 
+/* HUD caps label (Latin pages only: the tokens set --hud-case none and --hud-track 0 on hi / kn). */
+.pay-hud { font: 600 var(--fs-label) / 1.4 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
+
 /* ------------------------------------------------------------- top -- */
 .pay-top { display: flex; flex-direction: column; gap: var(--s3); }
 .pay-toprow { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
 .pay-brand { display: flex; align-items: center; gap: 10px; margin: 0; flex: 1 1 200px; min-width: 0; font-size: var(--fs-label); font-weight: 600; line-height: 1.4; }
 .brand-mark { display: inline-flex; flex: none; }
 .brand-mark .brand-img { display: block; width: 32px; height: 40px; }
-.pay-langs { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); }
+.pay-langs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 0; background: var(--deep); box-shadow: var(--pixel-edge); }
 .pay-lang {
-  min-height: 42px; min-width: 48px; padding: 0 12px; border: 0; border-radius: var(--r-pill);
-  background: transparent; color: var(--muted); font: 600 var(--fs-label) / 1 var(--font); cursor: pointer;
+  min-height: 42px; min-width: 48px; padding: 0 12px; border: 0; border-radius: 0;
+  background: transparent; color: var(--muted); font: 600 var(--fs-label) / 1 var(--font); letter-spacing: .04em; cursor: pointer;
 }
 .pay-lang:hover { color: var(--text); }
 .pay-lang[aria-pressed="true"] { background: var(--pink); color: var(--on-pink); }
 /* Test mode: a small note with a warn icon, never a banner. */
 .pay-test {
   display: inline-flex; align-items: center; gap: var(--s2); align-self: flex-start; max-width: 100%;
-  margin: 0; min-height: 32px; padding: 4px 12px; border-radius: var(--r-pill);
-  border: 1px solid var(--line); background: var(--surface);
+  margin: 0; min-height: 32px; padding: 4px 12px; border-radius: 0;
+  border: 2px solid var(--border); border-left: 6px solid var(--warn); background: var(--deep);
   color: var(--text); font-size: var(--fs-meta); font-weight: 600; line-height: 1.4;
 }
 .pay-test svg { width: 16px; height: 16px; color: var(--warn); }
 
 .pay-back {
   display: inline-flex; align-items: center; gap: var(--s2); align-self: flex-start;
-  min-height: 48px; padding: 0 16px 0 12px; border-radius: var(--r-pill);
-  border: 1px solid rgba(248, 236, 232, .55); color: var(--text); text-decoration: none; font-weight: 600; font-size: var(--fs-label);
+  min-height: 48px; padding: 0 16px 0 12px; border-radius: 0;
+  border: 1.6px solid var(--line-strong); background: rgba(11, 31, 75, .65); color: var(--text); text-decoration: none;
+  font: 600 var(--fs-label) / 1 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
 }
 .pay-back:hover { background: var(--surface-2); }
 
 /* ------------------------------------------------------------- card -- */
 .pay-card {
   display: flex; flex-direction: column; gap: var(--s4);
-  padding: var(--s5); border-radius: var(--r-card);
-  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+  padding: var(--s5); border-radius: 0;
+  background: var(--card); border: 2px solid var(--border); box-shadow: var(--shadow);
 }
 .pay-card > * { margin: 0; }
-.pay-ref { color: var(--muted); font-size: var(--fs-label); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pay-ref { color: var(--muted); font: 600 var(--fs-label) / 1.4 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pay-ref:empty { display: none; }
-.pay-title { font: 700 var(--fs-title) / 1.3 var(--font); outline: none; }
+.pay-title { font: var(--fw-display, 400) var(--fs-title) / 1.15 var(--font-display); letter-spacing: var(--display-track); outline: none; }
+:lang(hi) .pay-title, :lang(kn) .pay-title { line-height: 1.35; }
 .pay-sim { display: inline-flex; align-items: center; gap: var(--s2); color: var(--warn); font-size: var(--fs-label); font-weight: 600; }
 .pay-sim svg { width: 18px; height: 18px; }
 
 .pay-amount { display: flex; flex-direction: column; gap: var(--s1); }
 .pay-amount > p { margin: 0; }
-.pay-amount-label { color: var(--muted); font-size: var(--fs-label); font-weight: 600; }
+.pay-amount-label { color: var(--muted); font: 600 var(--fs-label) / 1.4 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
 .pay-amount-value {
-  font: 700 var(--fs-amount-xl) / 1.2 var(--font); letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  font: var(--fw-display, 400) var(--fs-amount-xl) / 1.05 var(--font-display); letter-spacing: var(--display-track);
+  color: var(--accent, var(--lime)); font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
 }
 
 .pay-facts { display: flex; flex-direction: column; margin: 0; }
 .pay-fact {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s1) var(--s4);
-  padding: var(--s3) 0; border-top: 1px solid var(--line);
+  padding: var(--s3) 0; border-top: 2px solid var(--border);
 }
-.pay-fact dt { color: var(--muted); font-size: var(--fs-label); font-weight: 600; }
+.pay-fact dt { color: var(--muted); font: 600 var(--fs-label) / 1.4 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
 .pay-fact dd { margin: 0; text-align: right; font-weight: 600; overflow-wrap: anywhere; min-width: 0; flex: 1 1 12ch; }
 
 /* ------------------------------------------------------------ action -- */
 .pay-action { display: flex; flex-direction: column; gap: var(--s3); padding-top: var(--s2); }
 
-/* The owner's flat solid pill (same as the app kit's .btn-primary): pink fill, dark 600-700 text,
-   52px, darker pink on hover and press, no edge, shadow or press-down. One line always: the word is
-   short and nowrap, and the narrowest phones get slightly smaller type rather than a wrap or a clip. */
+/* The square lime pixel button (v7): lime fill, navy text, HUD caps, a 2px pixel edge and a hard
+   2px shadow; hover lifts 1px, press drops the shadow. One line always: short word, nowrap, slightly
+   smaller type on the narrowest phones rather than a wrap or a clip. */
 .pay-btn {
-  position: relative; display: flex; width: 100%; min-height: var(--btn, 52px); padding: 0; border: 1px solid transparent;
-  border-radius: var(--r-pill); background: transparent; color: var(--on-pink); cursor: pointer;
-  font: 700 var(--fs-body) / 1 var(--font); text-decoration: none;
+  position: relative; display: flex; width: 100%; min-height: var(--btn-lg, 56px); padding: 0; border: 0;
+  border-radius: 0; background: transparent; color: var(--on-pink); cursor: pointer; text-decoration: none;
+  font: 600 .875rem / 1 var(--font); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
 }
 .pay-btn-front {
   display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
-  min-height: inherit; padding: 0 20px; border-radius: var(--r-pill); background: var(--pink); color: var(--on-pink);
-  white-space: nowrap; transition: background-color 120ms var(--ease);
+  min-height: inherit; padding: 0 20px; border-radius: 0; background: var(--accent, var(--lime)); color: var(--on-pink);
+  box-shadow: 0 0 0 2px var(--border), 2px 2px 0 0 var(--deep);
+  white-space: nowrap; transition: transform 120ms var(--ease), box-shadow 120ms var(--ease);
 }
 .pay-btn-front > span { overflow: hidden; text-overflow: ellipsis; }
-.pay-btn:hover .pay-btn-front { background: var(--pink-press); }
-.pay-btn:active:not([disabled]) .pay-btn-front { background: #D9A99D; }
-.pay-btn:focus-visible { outline-offset: 4px; }
+.pay-btn:hover .pay-btn-front { transform: translate(-1px, -1px); box-shadow: 0 0 0 2px var(--border), 3px 3px 0 0 var(--deep); }
+.pay-btn:active:not([disabled]) .pay-btn-front { transform: translate(2px, 2px); box-shadow: 0 0 0 2px var(--border); }
+.pay-btn:focus-visible { outline-offset: 5px; }
 .pay-btn[disabled] { cursor: default; }
-.pay-btn[disabled] .pay-btn-front { background: var(--disabled); color: var(--muted); }
-@media (max-width: 374px) { .pay-btn { font-size: 1rem; } .pay-btn-front { padding: 0 14px; gap: 8px; } }
+.pay-btn[disabled] .pay-btn-front { background: var(--disabled); color: var(--muted); transform: none; }
+:lang(hi) .pay-btn, :lang(kn) .pay-btn { font-size: 1rem; }
+@media (max-width: 374px) { .pay-btn { letter-spacing: .08em; } .pay-btn-front { padding: 0 12px; gap: 8px; } }
 
 /* Outline (Try again, Back to Sahay). */
 .pay-btn-ghost {
   align-items: center; justify-content: center; gap: var(--s2); padding: 0 20px;
-  border: 1px solid rgba(248, 236, 232, .55); color: var(--text); white-space: nowrap;
+  border: 1.6px solid var(--line-strong); background: rgba(11, 31, 75, .65); color: var(--text); white-space: nowrap;
 }
 .pay-btn-ghost:hover { background: var(--surface-2); }
-.pay-btn-ghost:active { background: var(--surface); }
+.pay-btn-ghost:active { background: var(--card); }
 
 /* Busy: the rupee gives way to three pulsing dots while checkout opens or the server verifies. */
 .pay-spin { display: none; width: 30px; height: 8px; background: radial-gradient(circle, currentColor 3.5px, transparent 4px) 0 0 / 11px 8px repeat-x; animation: pay-dots 1.2s var(--ease) infinite; }
@@ -134,14 +141,14 @@ svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; s
 /* Never colour alone: a check or an alert mark leads the line. */
 .pay-status.is-ok::before { content: "\2713\00a0"; }
 .pay-status.is-bad::before { content: "!\00a0"; font-weight: 700; }
-[data-state="paid"][data-kind="order"] .pay-status.is-ok { padding: var(--s4); border-radius: var(--r-card); border: 1px solid var(--line); background: var(--surface-2); font-size: var(--fs-body); }
+[data-state="paid"][data-kind="order"] .pay-status.is-ok { padding: var(--s4); border-radius: 0; border: 2px solid var(--border); border-left: 6px solid var(--good); background: var(--deep); font-size: var(--fs-body); }
 
 /* ----------------------------------------------------------- loading -- */
 .pay-skeleton { display: flex; flex-direction: column; gap: var(--s3); }
-.pay-skeleton span { display: block; height: 16px; width: 60%; border-radius: 8px; background: var(--surface-2); animation: pay-pulse 1.4s var(--ease) infinite; }
+.pay-skeleton span { display: block; height: 16px; width: 60%; border-radius: 0; background: var(--card-2); animation: pay-pulse 1.4s var(--ease) infinite; }
 .pay-skeleton span:nth-child(2) { width: 80%; height: 26px; }
 .pay-skeleton .pay-skeleton-big { width: 50%; height: 48px; margin-top: var(--s2); }
-.pay-skeleton .pay-skeleton-btn { width: 100%; height: 56px; border-radius: var(--r-pill); margin-top: var(--s4); }
+.pay-skeleton .pay-skeleton-btn { width: 100%; height: 56px; border-radius: 0; margin-top: var(--s4); }
 @keyframes pay-pulse { 50% { opacity: .55; } }
 .pay-loading { color: var(--muted); font-size: var(--fs-label); }
 [data-state="loading"] .pay-title, [data-state="loading"] .pay-action { display: none; }
@@ -149,23 +156,23 @@ svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; s
 /* -------------------------------------------- expired, invalid, error -- */
 .pay-problem { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); }
 .pay-problem > * { margin: 0; }
-.pay-problem-mark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); color: var(--needs); }
+.pay-problem-mark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 0; background: var(--deep); border: 2px solid var(--border); color: var(--needs); }
 .pay-problem-mark svg { width: 28px; height: 28px; }
 .pay-ico-clock { display: none; }
 [data-state="expired"] .pay-problem-mark, [data-state="limit"] .pay-problem-mark { color: var(--warn); }
 [data-state="expired"] .pay-ico-clock, [data-state="limit"] .pay-ico-clock { display: block; }
 [data-state="expired"] .pay-ico-alert, [data-state="limit"] .pay-ico-alert { display: none; }
-.pay-problem-title { font: 700 var(--fs-title) / 1.3 var(--font); outline: none; }
+.pay-problem-title { font: var(--fw-display, 400) var(--fs-title) / 1.15 var(--font-display); letter-spacing: var(--display-track); outline: none; }
 .pay-problem-text { color: var(--muted); }
 
 /* --------------------------------------------------------- thank you -- */
 .pay-thanks { display: flex; flex-direction: column; align-items: center; gap: var(--s4); text-align: center; }
 .pay-thanks > * { margin: 0; }
-.pay-thanks-mark { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: var(--pink); color: var(--on-pink); }
+.pay-thanks-mark { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 0; background: var(--accent, var(--lime)); color: var(--on-pink); box-shadow: 0 0 0 2px var(--border), 2px 2px 0 0 var(--deep); }
 .pay-thanks-mark svg { width: 36px; height: 36px; stroke-width: 2; }
-.pay-thanks-title { font: 700 var(--fs-title) / 1.3 var(--font); outline: none; }
+.pay-thanks-title { font: var(--fw-display, 400) var(--fs-title) / 1.15 var(--font-display); letter-spacing: var(--display-track); color: var(--accent, var(--lime)); outline: none; }
 .pay-thanks-facts { width: 100%; text-align: left; }
-.pay-fact-amount dd { font: 700 var(--fs-amount) / 1.3 var(--font); font-variant-numeric: tabular-nums; }
+.pay-fact-amount dd { font: var(--fw-display, 400) var(--fs-amount) / 1.2 var(--font-display); letter-spacing: var(--display-track); font-variant-numeric: tabular-nums; }
 
 .pay-done-back { display: flex; margin: 0; }
 .pay-fine { margin: 0; color: var(--muted); font-size: var(--fs-meta); line-height: 1.6; }
@@ -184,5 +191,5 @@ svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; s
 
 @media (prefers-reduced-motion: reduce) {
   .pay-skeleton span, .pay-spin { animation: none; }
-  .pay-btn-front { transition: none; }
+  .pay-btn-front { transition: none; transform: none !important; }
 }
