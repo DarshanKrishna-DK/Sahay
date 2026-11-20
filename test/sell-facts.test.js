@@ -134,3 +134,33 @@ test("state picker search: any script, the GST code, spaces and case ignored", a
   assert.deepEqual(findStates("zzzz", "en"), []);
   assert.equal(findStates("karna", "hi")[0].label, "कर्नाटक", "rows carry the owner's script");
 });
+
+test("bill filters: today, not paid, all; waiting bills left out; counts for the labels", async () => {
+  const { filterBills } = await facts();
+  const now = new Date(2026, 10, 20, 15, 0);
+  const at = (d, h) => new Date(2026, 10, d, h).toISOString();
+  const bills = [
+    { id: "a", status: "issued", createdAt: at(20, 9) },
+    { id: "b", status: "paid", createdAt: at(19, 9), issuedAt: at(20, 10) },
+    { id: "c", status: "part_paid", createdAt: at(18, 9) },
+    { id: "d", status: "pending", createdAt: at(20, 11) },
+    { id: "e", status: "draft", createdAt: at(17, 9) },
+  ];
+  const all = filterBills(bills, "all", now);
+  assert.deepEqual(all.bills.map((b) => b.id), ["b", "a", "c", "e"]);
+  assert.deepEqual(all.counts, { today: 2, unpaid: 2, all: 4 });
+  assert.deepEqual(filterBills(bills, "today", now).bills.map((b) => b.id), ["b", "a"]);
+  assert.deepEqual(filterBills(bills, "unpaid", now).bills.map((b) => b.id), ["a", "c"]);
+  assert.equal(filterBills(bills, "nonsense", now).filter, "all");
+});
+
+test("money received today: only today's receipts, local time", async () => {
+  const { receivedToday } = await facts();
+  const now = new Date(2026, 10, 20, 18, 0);
+  const at = (d, h) => new Date(2026, 10, d, h).toISOString();
+  assert.deepEqual(receivedToday([
+    { amount: 500, createdAt: at(20, 9) }, { amount: 250.5, createdAt: at(20, 17) },
+    { amount: 999, createdAt: at(19, 23) }, { amount: 10 },
+  ], now), { amount: 750.5, count: 2 });
+  assert.deepEqual(receivedToday([], now), { amount: 0, count: 0 });
+});

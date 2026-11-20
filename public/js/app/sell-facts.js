@@ -142,3 +142,38 @@ export function ordersToPay(orders) {
   return [...(orders || [])].filter((o) => o && o.status && !SETTLED.has(o.status))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
+
+/* ------------------------------------------------------- bill filters -- */
+
+/** The Sell list's filters (spec v4: Today / Not paid / All); waiting bills are never in the list. */
+export const BILL_FILTERS = ["today", "unpaid", "all"];
+
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/**
+ * Bills for a filter, newest first: "today" (made or billed today, local time), "unpaid" (billed
+ * or part paid), "all". Counts for every filter come back too, for the filter labels.
+ */
+export function filterBills(invoices, filter = "all", now = new Date()) {
+  const list = [...(invoices || [])].filter((i) => billStatus(i) !== "pending").sort(newestFirst);
+  const today = (i) => {
+    const raw = i.issuedAt || i.createdAt;
+    const d = raw ? new Date(raw) : null;
+    return Boolean(d && !Number.isNaN(d.getTime()) && sameDay(d, now));
+  };
+  const unpaid = (i) => ["issued", "part_paid"].includes(billStatus(i));
+  const pick = { today, unpaid, all: () => true };
+  const counts = { today: list.filter(today).length, unpaid: list.filter(unpaid).length, all: list.length };
+  const key = BILL_FILTERS.includes(filter) ? filter : "all";
+  return { bills: list.filter(pick[key]), counts, filter: key };
+}
+
+/** Money received today (local time): { amount, count } over the receipts the server sent. */
+export function receivedToday(receipts, now = new Date()) {
+  const today = (r) => {
+    const d = r && r.createdAt ? new Date(r.createdAt) : null;
+    return Boolean(d && !Number.isNaN(d.getTime()) && sameDay(d, now));
+  };
+  const rows = (receipts || []).filter(today);
+  return { amount: sumOf(rows), count: rows.length };
+}

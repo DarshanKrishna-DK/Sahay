@@ -1,11 +1,11 @@
-/* Sell and Money (UI v3, W4B): bills as receipts, the bill detail sheet, customers, the shop / GST
-   card and sheet with its state picker, the khata (totals, who owes you, to pay, received) and the
-   two number-pad sheets. Primitives (card, paper + perforation, stamp, pill, chip, keycap, speak,
-   rows, fold, field, choice, state, skel, sheet, picker) are W1's (css/README-v3.md section 2);
-   this file is layout and the pieces only these screens have. Tokens only; colours mixed from
-   tokens so the light theme follows. Container queries follow the width the shell gives the
-   screen (spec section 6). No rule here animates except the phone caret, and it stops under
-   prefers-reduced-motion. Indic text keeps letter-spacing 0. */
+/* Sell and Money (UI v4, W4B; Stitch 06-sell / 08-money): bills as receipts, the bill detail sheet,
+   customers, the shop / GST card and sheet with its state picker, the khata (totals, who owes you,
+   to pay, received) and the two number-pad sheets. Primitives (page head, card, paper +
+   perforation, pill, chip, keycap, speak, seg, field, choice, state, skel, sheet, picker, type
+   roles .t-*) are W1 (css/README-v3.md); this file is layout and the pieces only these screens
+   have. Tokens only; colours mixed from tokens so the light theme follows. Container queries
+   follow the width the shell gives the screen. No rule here animates except the phone caret, and
+   it stops under prefers-reduced-motion. Indic text keeps letter-spacing 0. */
 
 /* ============================================================ screens -- */
 .sl-screen, .mn-screen { container: sv / inline-size; display: grid; gap: var(--s-5); min-width: 0; padding-bottom: var(--s-6); }
@@ -66,94 +66,126 @@
 .sv-stamp-big { min-height: 44px; padding: 6px 16px 6px 12px; font-size: var(--fs-body); transform: rotate(-4deg); }
 
 /* ================================================================ sell -- */
+/* Stitch 06-sell: page head, then "Waiting for your yes", then "Recent bills" (filters on the right
+   of the h2) as receipts two across, with Customers and Your shop in the right column. */
+.sl-h2 { margin: 0; flex-wrap: wrap; gap: 12px; }
+.sl-h2-count {
+  align-self: center; padding: 4px 12px; border-radius: var(--r-pill);
+  font-family: var(--font-body); font-weight: 700; font-size: var(--fs-sm); letter-spacing: 0; line-height: 1.3;
+  color: var(--on-coral); background: var(--coral);
+}
+.sl-waiting { display: grid; gap: var(--s-4); }
 .sl-waiting-cards { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
 
 .sl-cols { display: grid; gap: var(--s-6); align-items: start; }
-/* Spec 6.2: bills 2/3, customers + shop 1/3 once the side column gets at least 260 px (content of
-   800 px and up, e.g. 1440 with the Yes column docked, about 830 px). At 260 px a customer row
-   keeps about 180 px for the name: it wraps to two lines and the amount owed moves under it (see
-   .sl-person), so no name is cut. Narrower content puts customers and the shop card under the
-   bills, two across when there is room. */
+/* Bills 2/3, customers + shop 1/3 from 800 px of content (side at least 260 px; names wrap to two
+   lines, never cut). Narrower: customers and the shop card under the bills, two across when there
+   is room. */
 @container sv (min-width: 800px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); } }
 @container sv (min-width: 640px) and (max-width: 799px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.sl-bills { container: slbills / inline-size; min-width: 0; }
-.sl-side { display: grid; gap: var(--s-4); min-width: 0; align-content: start; }
+.sl-side { display: grid; gap: var(--s-5); min-width: 0; align-content: start; }
 .sl-quiet { max-width: 52ch; }
 
-.sl-group + .sl-group { margin-top: var(--s-5); }
-.sl-group-h { display: flex; align-items: center; gap: 8px; margin: 0 0 var(--s-3); color: var(--text-md); font-size: var(--fs-body); font-weight: var(--fw-strong); }
-.sl-group-h svg { color: var(--text-lo); }
-.sl-group-unpaid .sl-group-h svg { color: var(--amber-text); }
-.sl-group-paid .sl-group-h svg { color: var(--ok-text); }
-.sl-group-cancelled .sl-group-h svg { color: var(--coral-text); }
-
+.sl-bills { container: slbills / inline-size; display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
+.sl-bills-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-4); }
+.sl-bills-head .seg { max-width: 100%; }
+.sl-filtered-none {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 24px;
+  border: 1px dashed var(--edge); border-radius: var(--r-card);
+}
 .sl-receipts { display: grid; gap: var(--s-4); grid-template-columns: minmax(0, 1fr); }
 @container slbills (min-width: 560px) { .sl-receipts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sl-bill-slot { display: flex; min-width: 0; }
 
-/* A receipt: number and date, the perforation between the punch notches, who bought and what,
-   the stamp, the total big, then one primary action and Open. The whole slip opens the bill. */
+/* A receipt. */
 .sl-bill {
-  flex: 1; min-width: 0; gap: 10px; padding: 16px 20px 20px; cursor: pointer;
-  transition: border-color var(--t-micro) var(--ease-out), background-color var(--t-micro) var(--ease-out);
+  flex: 1; min-width: 0; gap: 12px; padding: 20px 24px 22px; border-radius: var(--r-card); cursor: pointer;
+  transition: border-color var(--t-micro) var(--ease-out);
 }
 .sl-bill:hover { border-color: var(--edge); }
 .sl-bill:focus-within { border-color: var(--edge-strong); }
-.sl-bill .card-head { align-items: center; }
-.sl-bill-ico {
-  display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: var(--r-sm);
-  background: var(--piano-3); border: 1px solid var(--hairline); color: var(--accent-text);
+.sl-bill-top { display: flex; align-items: center; gap: 10px; min-height: var(--touch-min); }
+.sl-bill-state { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; margin: 0; }
+.sl-bill-state svg { flex: none; }
+.sl-state-issued, .sl-state-part_paid { color: var(--amber-text); }
+.sl-state-paid { color: var(--ok-text); }
+.sl-state-pending, .sl-state-cancelled { color: var(--coral-text); }
+.sl-bill-no {
+  flex: 0 1 auto; min-width: 0; max-width: 16ch; padding: 4px 10px; border-radius: var(--r-xs);
+  border: 1px solid var(--edge-accent); color: var(--accent-text);
+  font-family: var(--font-num); font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* The card head leads with an icon or avatar here: it keeps its size, the title takes the rest. */
-.card-head > .sl-bill-ico, .card-head > .sl-yes-bell, .card-head > .mn-avatar { flex: none; }
-.card-head > .sl-bill-id, .card-head > .card-title, .card-head > .mn-total-word { flex: 1 1 auto; min-width: 0; }
-.sl-bill-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
-.sl-bill-no { font-family: var(--font-num); font-weight: var(--fw-strong); font-size: var(--fs-body); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.sl-bill-date { color: var(--text-lo); font-size: var(--fs-sm); }
-.sl-bill > .perforation { margin: 2px calc(var(--r-notch) - 16px) 4px; }
-.sl-bill-body { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sl-bill-who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.sl-bill-name { font-size: var(--fs-lead); font-weight: var(--fw-display); line-height: 1.25; overflow-wrap: anywhere; }
-.sl-bill-name:lang(hi), .sl-bill-name:lang(kn) { line-height: 1.45; }
-.sl-bill-what { display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--text-md); font-size: var(--fs-body); overflow-wrap: anywhere; }
-.sl-bill .sv-stamp { flex: none; margin: 6px 2px 0 0; transform: rotate(-8deg); }
-.sl-bill-sum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
-.sl-bill-tax { color: var(--text-lo); font-size: var(--fs-sm); }
-.sl-bill-due { display: inline-flex; align-items: center; gap: 6px; color: var(--amber-text); font-weight: var(--fw-strong); }
-.sl-bill-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 6px; }
-.sl-bill-acts > * { flex: 1 1 auto; }
-.sl-bill-cancelled .sl-bill-total { color: var(--text-lo); text-decoration: line-through; text-decoration-thickness: 2px; }
-.sl-bill-draft .sl-bill-total { color: var(--text-md); }
+.sl-bill-top .card-speak { margin: 0; }
+.sl-bill-name { margin: -4px 0 0; overflow-wrap: anywhere; }
+.sl-bill-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; color: var(--text-lo); font-size: var(--fs-sm); }
+.sl-bill-when { display: inline-flex; align-items: center; gap: 6px; }
+.sl-bill-when svg { color: var(--accent-text); flex: none; }
+.sl-bill-kind { color: var(--text-md); }
+.sl-bill-lines { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.sl-bill-lines li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; color: var(--text-md); font-size: var(--t-body); }
+.sl-bl-what { min-width: 0; display: flex; flex-wrap: wrap; gap: 0 6px; }
+.sl-bl-qty { color: var(--text-lo); font-variant-numeric: tabular-nums; }
+.sl-bl-name { overflow-wrap: anywhere; }
+.sl-bl-amt { flex: none; color: var(--text-hi); font-family: var(--font-num); font-weight: 700; font-variant-numeric: tabular-nums; }
+li.sl-bl-more { color: var(--text-lo); }
+.sl-bill > .perforation { margin: 6px calc(var(--r-notch) - 20px) 2px; }
+.sl-bill-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.sl-bill-total-word { color: var(--text-md); font-size: var(--fs-sm); }
+.sl-bill-amt { font-size: clamp(28px, 1.6vw + 14px, 36px); font-weight: 800; line-height: 1.1; color: var(--accent-text); white-space: nowrap; }
+.sl-bill-draft .sl-bill-amt { color: var(--text-md); }
+.sl-bill-cancelled .sl-bill-amt { color: var(--text-lo); text-decoration: line-through; text-decoration-thickness: 2px; }
+.sl-bill-due, .sl-bill-paid { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--fw-strong); }
+.sl-bill-due { color: var(--amber-text); }
+.sl-bill-paid { color: var(--ok-text); }
+.sl-bill-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: auto; padding-top: 4px; }
+.sl-bill-acts > .sl-wa, .sl-bill-acts > .sl-add-phone { flex: 1 1 200px; }
+.sl-bill-acts > .sl-open { margin-left: auto; }
+.keycap.sl-wa { background: color-mix(in srgb, var(--lime) 13%, var(--piano-2)); border-color: var(--edge-accent); color: var(--accent-text); }
+.keycap.sl-wa:hover { background: color-mix(in srgb, var(--lime) 20%, var(--piano-2)); }
 
-/* Customers and the shop card sit in the side column (below the bills on a phone). */
-.sl-customers {
-  padding: 8px 12px 12px; border-radius: var(--r-card);
-  background: var(--piano-1); border: 1px solid var(--hairline);
+/* Customers card (right column). */
+.sl-customers { container: slcust / inline-size; gap: var(--s-4); }
+.sl-side-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 0; }
+.sl-side-count { color: var(--text-lo); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; }
+.sl-people { display: flex; flex-direction: column; gap: 10px; }
+.sl-person {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 12px;
+  padding: 12px 12px 12px 16px; border-radius: var(--r-md); background: var(--piano-1); border: 1px solid var(--hairline);
 }
-.sl-cust-body { display: flex; flex-direction: column; gap: 4px; }
-.sl-cust-speak { display: flex; justify-content: flex-end; }
+.sl-person.is-due { border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.sl-person-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+/* A name never cuts to a letter: up to two lines, then an ellipsis. */
+.sl-person-name {
+  font-weight: 700; font-size: var(--t-body); line-height: 1.3; overflow-wrap: anywhere; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.sl-person-name:lang(hi), .sl-person-name:lang(kn) { line-height: 1.5; }
+.sl-phone { display: inline-flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sl-person-end { text-align: right; min-width: 0; }
+.sl-owes { color: var(--amber-text); font-size: var(--t-body); font-weight: 800; white-space: nowrap; }
+.sl-owes-word { color: var(--amber-text); font-size: var(--fs-sm); }
+.sl-clear { display: inline-flex; align-items: center; gap: 4px; color: var(--ok-text); font-size: var(--fs-sm); white-space: nowrap; }
+.sl-person > .sv-line, .sl-person > .sl-person-note { grid-column: 1 / -1; }
+.sl-person-note { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.icon-btn.sl-remind, .icon-btn.sl-addphone { color: var(--amber-text); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.sl-more-people { align-self: flex-start; }
+@container slcust (max-width: 359px) {
+  .sl-person { grid-template-columns: minmax(0, 1fr) auto; }
+  .sl-person-end { grid-column: 1; grid-row: 2; text-align: left; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
+  .sl-person > .icon-btn { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+/* The avatar initial (bill detail sheet). */
 .sl-avatar {
   display: grid; place-items: center; width: 48px; height: 48px; flex: none; border-radius: 50%;
   background: var(--piano-3); border: 1px solid var(--hairline); color: var(--accent-text);
-  font-family: var(--font-display); font-weight: var(--fw-display); font-size: 1.3rem; line-height: 1;
+  font-family: var(--font-display); font-size: 1.5rem; line-height: 1;
 }
-.sl-avatar:lang(hi) { font-family: var(--font-deva); }
-.sl-avatar:lang(kn) { font-family: var(--font-kn); }
-.sl-person .row-ico.sl-avatar { width: 44px; height: 44px; }
-/* A customer row never cuts a name to a letter: the name wraps to two lines, the amount owed moves
-   under the name when the row is narrow. */
-.sl-person { flex-wrap: wrap; align-items: flex-start; }
-.sl-person .row-main { flex: 1 1 150px; }
-.sl-person .row-title {
-  white-space: normal; overflow-wrap: anywhere; line-height: 1.3;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
-}
-.sl-person .row-title:lang(hi), .sl-person .row-title:lang(kn) { line-height: 1.5; }
-.sl-person .row-sub { display: flex; flex-wrap: wrap; gap: 2px 12px; white-space: normal; }
-.sl-person .row-end { margin-left: auto; padding-top: 2px; }
-.sl-phone { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
-.sl-phone.is-none { color: var(--text-lo); }
-.sl-owes { color: var(--amber-text); font-family: var(--font-num); font-weight: var(--fw-strong); font-variant-numeric: tabular-nums; }
+
+/* A card head that leads with an icon or avatar: it keeps its size, the title takes the rest. */
+.card-head > .sl-yes-bell, .card-head > .mn-avatar { flex: none; }
+.card-head > .card-title, .card-head > .mn-total-word { flex: 1 1 auto; min-width: 0; }
 
 /* The small Yes card used only when the shared one (waiting.js) is not on this build. */
 .sl-yes { gap: 14px; padding: 20px 22px 24px; }
@@ -211,14 +243,16 @@
 .gs-need-text { color: var(--text-md); font-size: var(--fs-body); }
 .gs-need .gs-open { flex: 1 1 auto; }
 
-.gs-summary { gap: 14px; }
-.gs-facts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.gs-summary { gap: 10px; }
+.gs-summary-h { margin: 0; align-self: center; }
+/* Your shop (Stitch 06-sell): label over value, one fact per row, hairlines between. */
+.gs-facts { display: grid; gap: 0; grid-template-columns: minmax(0, 1fr); }
 .gs-fact {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: center;
-  padding: 12px 14px; border-radius: var(--r-md); background: var(--piano-1); border: 1px solid var(--hairline);
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: start;
+  padding: 12px 0; border-top: 1px solid var(--hairline);
 }
 .gs-fact-wide, .gs-fact-gstin { grid-column: 1 / -1; }
-.gs-fact-ico { grid-row: 1 / span 2; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--piano-3); color: var(--accent-text); }
+.gs-fact-ico { grid-row: 1 / span 2; display: grid; padding-top: 2px; color: var(--accent-text); }
 .gs-fact-label { color: var(--text-lo); font-size: var(--fs-sm); }
 .gs-fact-value { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-weight: var(--fw-strong); font-size: var(--fs-body); min-width: 0; overflow-wrap: anywhere; }
 .gs-fact-sub { color: var(--text-lo); font-weight: 500; font-size: var(--fs-sm); }
@@ -282,72 +316,101 @@
 .gs-none { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px 4px; }
 
 /* =============================================================== money -- */
-.mn-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
-.mn-total { gap: 8px; padding: 16px 16px 18px; }
-@container sv (min-width: 560px) { .mn-total { padding: 20px 22px 22px; } }
-.mn-total-word { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-strong); min-width: 0; overflow-wrap: normal; word-break: normal; hyphens: none; }
-/* On a phone the total card is about 160 px wide: the speaker sits in the top-right corner on its
-   own, the icon takes the first row beside it and the word gets the card's full width under them,
-   so a Kannada word never breaks per syllable. */
-@container sv (max-width: 559px) {
-  .mn-total .card-head { display: block; min-height: 0; }
-  .mn-total .card-speak { position: absolute; top: 0; right: 0; margin: 0; }
-  .mn-total-word { flex-direction: column; align-items: flex-start; gap: 8px; }
-  /* The icon row is as tall as the speaker (22 + 18 + gap 8 = 48), so the word starts below it. */
-  .mn-total-word > svg { margin-bottom: 18px; }
+/* Stitch 08-money: page head, three total cards (to collect, to pay, received today), then
+   "Who owes you" on the left and "To pay" + "Received" on the right. */
+.mn-totals { display: grid; gap: var(--s-4); grid-template-columns: minmax(0, 1fr); }
+@container sv (min-width: 560px) { .mn-totals { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.mn-total { gap: 10px; padding: 20px 22px 22px; }
+.mn-total-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: var(--touch-min); }
+.mn-total-label { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--text-md); }
+.mn-total-top .card-speak { margin: 0; }
+.mn-total-count {
+  padding: 3px 12px; border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap;
+  border: 1px solid currentColor;
 }
-.mn-total-collect .mn-total-word svg { color: var(--accent-text); flex: none; }
-.mn-total-pay .mn-total-word svg { color: var(--cyan-text); flex: none; }
-.mn-total-num { font-size: clamp(1.375rem, 7.4cqi, var(--fs-total)); }
-.mn-total-num.is-zero { color: var(--text-lo); }
-.mn-total-sub { display: flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); }
+.mn-total-collect .mn-total-count, .mn-total-collect .mn-total-num { color: var(--amber-text); }
+.mn-total-pay .mn-total-count, .mn-total-pay .mn-total-num { color: var(--coral-text); }
+.mn-total-got .mn-total-count, .mn-total-got .mn-total-num { color: var(--ok-text); }
+.mn-total-count { background: color-mix(in srgb, currentColor 10%, transparent); }
+.mn-total-num { margin: 0; overflow-wrap: anywhere; }
+.mn-total .mn-total-num.is-zero { color: var(--text-lo); }
+.mn-total-sub { color: var(--text-md); font-size: var(--fs-sm); }
 
 .mn-cols { display: grid; gap: var(--s-6); align-items: start; }
-/* Spec 6.2: to collect left, to pay + received right, from 680 px of content (1280 with the Yes
-   column docked); the right column keeps at least 300 px, the to-pay rows follow its width. */
-@container sv (min-width: 680px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr); } }
-.mn-side { display: grid; gap: var(--s-5); min-width: 0; align-content: start; }
+/* Two columns from 680 px of content (1280 with the Yes column docked); the right one keeps at
+   least 300 px and its rows follow their own width. */
+@container sv (min-width: 680px) { .mn-cols { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); } }
+.mn-collect { container: mnowe / inline-size; min-width: 0; }
+.mn-side { display: grid; gap: var(--s-6); min-width: 0; align-content: start; }
 .mn-quiet { max-width: 52ch; }
+.mn-h2 { margin: 0 0 var(--s-4); flex-wrap: wrap; gap: 10px; }
+.mn-h2-count {
+  align-self: center; padding: 3px 12px; border-radius: var(--r-pill); border: 1px solid var(--edge);
+  color: var(--text-md); font-family: var(--font-body); font-weight: 600; font-size: var(--fs-sm); letter-spacing: 0; line-height: 1.3;
+}
+.mn-more { margin-top: 10px; }
 
-/* Who owes you: one card per customer, largest first. */
-.mn-owed { display: grid; gap: var(--s-4); }
-.mn-owe { gap: 12px; padding: 16px 18px 18px; }
+/* Who owes you: one row per customer, largest first. */
+.mn-owed { display: grid; gap: var(--s-3); }
+.mn-owe {
+  display: grid; align-items: center; gap: 10px 14px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "av main amt" "acts acts acts" "meter meter meter";
+  padding: 16px 18px; border-radius: var(--r-lg);
+  background: var(--piano-surface) padding-box, var(--piano-rim) border-box; border: 1px solid transparent;
+  box-shadow: var(--shadow-1);
+}
+@container mnowe (min-width: 640px) {
+  .mn-owe { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "av main amt acts" "meter meter meter meter"; }
+}
+.mn-owe > .mn-avatar { grid-area: av; }
+.mn-owe-main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mn-owe-amt { grid-area: amt; margin: 0; font-size: var(--t-money); color: var(--amber-text); white-space: nowrap; text-align: right; }
+.mn-owe-acts { grid-area: acts; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mn-owe-acts > .keycap { flex: 1 1 auto; }
+.mn-owe-acts .card-speak { margin: 0; }
+.mn-owe > .mn-meter { grid-area: meter; }
+.mn-owe > .sv-line, .mn-owe > .mn-blocked { grid-column: 1 / -1; }
 .mn-avatar {
-  display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%;
-  background: var(--piano-3); border: 1px solid var(--hairline); color: var(--accent-text);
-  font-family: var(--font-display); font-weight: var(--fw-display); font-size: 1.25rem; line-height: 1;
+  display: grid; place-items: center; width: 48px; height: 48px; flex: none; border-radius: var(--r-md);
+  background: var(--piano-1); border: 1px solid var(--hairline); color: var(--text-hi);
+  font-family: var(--font-body); font-weight: 700; font-size: 1.125rem; line-height: 1;
 }
-.mn-avatar:lang(hi) { font-family: var(--font-deva); }
-.mn-avatar:lang(kn) { font-family: var(--font-kn); }
-.mn-owe .card-head { align-items: center; }
-.mn-owe-mid { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
-.mn-age { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--text-lo); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
-.mn-age-old { color: var(--amber-text); }
-.mn-age-old b { padding: 2px 10px; border-radius: var(--r-pill); border: 1.5px solid currentColor; }
-.mn-meter {
-  height: 12px; border-radius: var(--r-pill); overflow: hidden;
-  background: var(--piano-1); border: 1px solid var(--hairline);
-  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--piano-0) 80%, transparent);
-}
-.mn-meter-fill { display: block; width: var(--share, 0%); height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--lime-600), var(--lime)); }
-.mn-owe.is-old .mn-meter-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 70%, var(--piano-0)), var(--amber)); }
-.mn-owe-acts { display: flex; flex-wrap: wrap; gap: 10px; }
-.mn-owe-acts > .keycap { flex: 1 1 150px; }
+.mn-owe-name { margin: 0; font-family: var(--font-body); font-size: var(--t-h3); font-weight: 600; letter-spacing: var(--track-h3); line-height: 1.25; overflow-wrap: anywhere; }
+.mn-owe-name:lang(hi), .mn-owe-name:lang(kn) { letter-spacing: 0; line-height: 1.45; }
+.mn-owe-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--text-lo); font-size: var(--fs-sm); }
+.mn-owe-phone { font-variant-numeric: tabular-nums; }
+.mn-owe-phone.is-none { display: inline-flex; align-items: center; gap: 4px; }
+.mn-age { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.mn-age-old { color: var(--amber-text); font-weight: 600; }
+.mn-age-old b { padding: 1px 8px; border-radius: var(--r-pill); border: 1.5px solid currentColor; }
+.mn-meter { height: 4px; border-radius: var(--r-pill); overflow: hidden; background: var(--piano-1); }
+.mn-meter-fill { display: block; width: var(--share, 0%); height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--amber) 80%, transparent); }
+.mn-owe.is-old .mn-meter-fill { background: var(--amber); }
 .mn-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 
-/* To pay and received: rows in a quiet panel. */
+/* To pay and received: rows on piano cards. */
 .mn-pay { container: mnpay / inline-size; }
-.mn-pay, .mn-received { padding: 8px 14px 12px; border-radius: var(--r-card); background: var(--piano-1); border: 1px solid var(--hairline); }
-.mn-pay .sv-sec { margin: 6px 0 4px; }
-.mn-topay .row-ico { color: var(--cyan-text); }
+.mn-pay, .mn-received { min-width: 0; }
+.mn-topays, .mn-gots { gap: var(--s-3); }
+.rows.mn-topays > .row + .row, .rows.mn-gots > .row + .row { border-top: 0; }
+.mn-topay, .mn-got {
+  padding: 14px 16px; border-radius: var(--r-lg);
+  background: var(--piano-surface) padding-box, var(--piano-rim) border-box; border: 1px solid transparent;
+  box-shadow: var(--shadow-1);
+}
+.mn-topay .row-ico { color: var(--coral-text); }
+.mn-got-ico { color: var(--ok-text); background: color-mix(in srgb, var(--lime) 12%, var(--piano-1)); border-radius: var(--r-md); }
+.mn-topay .row-title, .mn-got .row-title { font-size: var(--t-body); font-weight: 700; }
 .mn-topay .row-sub, .mn-got .row-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; white-space: normal; }
+.mn-got-mode { display: inline-flex; align-items: center; gap: 4px; }
 /* "simulated vendor" is never cut: the pill wraps its words instead. */
 .mn-screen .pill, .sl-screen .pill, .sl-detail-who .pill { max-width: 100%; height: auto; white-space: normal; border-radius: var(--r-md); }
 .mn-screen .pill > svg, .sl-screen .pill > svg, .sl-detail-who .pill > svg { flex: none; }
 .mn-screen .pill > span, .sl-screen .pill > span, .sl-detail-who .pill > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .mn-po { font-family: var(--font-num); color: var(--text-md); font-variant-numeric: tabular-nums; }
 .mn-topay-end { flex-direction: column; align-items: flex-end; gap: 6px; }
-.mn-topay-amt, .mn-got-amt { font-family: var(--font-num); font-weight: var(--fw-display); font-size: var(--fs-lead); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mn-topay-amt, .mn-got-amt { font-family: var(--font-num); font-weight: 700; font-size: clamp(18px, 1vw + 12px, 22px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mn-got-amt { color: var(--ok-text); }
 .mn-topay-pay { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .mn-nolink { display: inline-flex; align-items: center; gap: 6px; max-width: 18ch; color: var(--text-lo); font-size: var(--fs-sm); text-align: right; }
@@ -356,6 +419,12 @@
   .mn-topay-end { flex: 1 1 100%; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 56px; }
   .mn-topay-pay { flex-direction: row-reverse; align-items: center; }
 }
+
+/* Record payment: choose who paid. */
+.mn-choose { gap: 14px; }
+.mn-choose .mn-avatar { width: 44px; height: 44px; }
+.mn-choose-name { min-width: 0; overflow-wrap: anywhere; font-size: var(--t-body); }
+.mn-choose-amt { color: var(--amber-text); font-size: var(--t-body); }
 
 /* ======================================================== number pads -- */
 .mp-pad { display: flex; flex-direction: column; gap: 14px; outline: none; }

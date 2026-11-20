@@ -1,29 +1,46 @@
-// Sell (UI v3): bills as receipts (punch notches on the perforation, a tilted rubber stamp for
-// draft / your yes / billed / part paid / paid / cancelled), grouped not paid -> not made yet ->
-// paid -> cancelled; a bill opens its detail sheet (lines, GST split, total, PDF, pay page in test
-// mode, WhatsApp). Bills waiting for the owner's yes show in place with the shared Yes card
-// (waiting.js, D6), the customers list folds on a phone, and the shop card shows how the shop
-// bills. A bill refused for missing shop facts (GSTIN_REQUIRED / STATE_REQUIRED) shows the needs
-// card. Data: store-sell.js (GET /api/sell + live invoice.* / customer.* / receipt.* events).
-// Layout per spec section 6: one column on a phone, bills 2/3 + customers 1/3 when wide.
+// Sell (UI v4, Stitch 06-sell): the page head (display title, one plain line, "Make bill" on the
+// right), then bills waiting for the owner's yes (the shared Yes card from waiting.js, D6), then
+// "Recent bills" with Today / Not paid / All as receipts (status word, punch notches on the
+// perforation, the total big, Send on WhatsApp or Add phone first, Open), and on the right the
+// customers card (who owes, remind on WhatsApp) and the shop card. A bill opens its detail sheet
+// (lines, GST split, total, PDF, pay page in test mode, WhatsApp). A bill refused for missing
+// shop facts (GSTIN_REQUIRED / STATE_REQUIRED) shows the needs card. Data: store-sell.js.
 
-import { h, patch, toDate } from "./dom.js";
+import { h, patch, toDate, safeUrl } from "./dom.js";
 import { t, when, addStrings } from "./i18n.js";
 import { state as appState } from "./store.js";
-import { yesNo, paper, perforation } from "./ui.js";
+import { yesNo, paper, perforation, pageHead, segmented } from "./ui.js";
 import { sell, loadSell, decideInvoice, pendingInvoices, invoiceCustomer, itemOf } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
 import { shopNeedCard, shopMissing, shopButton, shopSummary } from "./shop-settings.js";
 import { SHOP_CODES } from "./shop-facts.js";
-import { billStatus, billGroups, gstRows, lineAmount, dueOf } from "./sell-facts.js";
-import { openAddPhone } from "./money-pad.js";
+import { billStatus, gstRows, lineAmount, dueOf, filterBills, BILL_FILTERS } from "./sell-facts.js";
+import { openAddPhone, remindOnWhatsApp } from "./money-pad.js";
 import {
-  ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, agentAction, sectionHead,
-  buttonError, ask, alignNotches, count, ic, stamp, simTag, testTag, cardHead, screenHead, screenState,
-  fold, resultLine, linkKey, panel, initial,
+  ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, buttonError, ask,
+  alignNotches, ic, stamp, simTag, testTag, cardHead, screenState, resultLine, linkKey, panel, initial,
 } from "./sell-kit.js";
 
 addStrings({
+  "sl.sub": ["Bills, WhatsApp and your customers", "बिल, WhatsApp और आपके ग्राहक", "ಬಿಲ್, WhatsApp ಮತ್ತು ನಿಮ್ಮ ಗ್ರಾಹಕರು"],
+  "sl.makeBill": ["Make bill", "बिल बनाएँ", "ಬಿಲ್ ಮಾಡಿ"],
+  "sl.recent": ["Recent bills", "हाल के बिल", "ಇತ್ತೀಚಿನ ಬಿಲ್‌ಗಳು"],
+  "sl.filterLabel": ["Show bills", "कौन से बिल दिखाएँ", "ಯಾವ ಬಿಲ್ ತೋರಿಸಲಿ"],
+  "sl.f.today": ["Today ({n})", "आज ({n})", "ಇಂದು ({n})"],
+  "sl.f.unpaid": ["Not paid ({n})", "पैसे बाकी ({n})", "ಹಣ ಬಾಕಿ ({n})"],
+  "sl.f.all": ["All ({n})", "सभी ({n})", "ಎಲ್ಲಾ ({n})"],
+  "sl.none.today": ["No bills made today.", "आज कोई बिल नहीं बना।", "ಇಂದು ಯಾವ ಬಿಲ್ಲೂ ಆಗಿಲ್ಲ."],
+  "sl.none.unpaid": ["Every bill is paid.", "सब बिलों के पैसे मिल गए।", "ಎಲ್ಲಾ ಬಿಲ್‌ಗಳ ಹಣ ಬಂದಿದೆ."],
+  "sl.none.all": ["No bills yet.", "अभी कोई बिल नहीं।", "ಇನ್ನೂ ಬಿಲ್ ಇಲ್ಲ."],
+  "sl.showAllBills": ["Show all bills", "सभी बिल दिखाएँ", "ಎಲ್ಲಾ ಬಿಲ್ ತೋರಿಸಿ"],
+  "sl.sendWa": ["Send on WhatsApp", "WhatsApp पर भेजें", "WhatsApp ನಲ್ಲಿ ಕಳುಹಿಸಿ"],
+  "sl.totalGst": ["Total (GST {amt})", "कुल (GST {amt})", "ಒಟ್ಟು (GST {amt})"],
+  "sl.totalNoGst": ["Total, no GST", "कुल, GST नहीं", "ಒಟ್ಟು, GST ಇಲ್ಲ"],
+  "sl.paidAll": ["Paid in full", "पूरे पैसे मिले", "ಪೂರ್ತಿ ಹಣ ಬಂದಿದೆ"],
+  "sl.dueWord": ["due", "बाकी", "ಬಾಕಿ"],
+  "sl.nothingDue": ["Nothing due", "कुछ बाकी नहीं", "ಏನೂ ಬಾಕಿ ಇಲ್ಲ"],
+  "sl.showAll": ["Show all {n} customers", "सभी {n} ग्राहक दिखाएँ", "ಎಲ್ಲಾ {n} ಗ್ರಾಹಕರನ್ನು ತೋರಿಸಿ"],
+  "sl.showFewer": ["Show fewer", "कम दिखाएँ", "ಕಡಿಮೆ ತೋರಿಸಿ"],
   "sl.waiting": ["Waiting for your yes", "आपकी हाँ का इंतज़ार", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತಿವೆ"],
   "sl.group.unpaid": ["Not paid yet", "पैसे बाकी", "ಹಣ ಬಾಕಿ"],
   "sl.group.draft": ["Not made yet", "अभी नहीं बने", "ಇನ್ನೂ ಆಗಿಲ್ಲ"],
@@ -53,8 +70,6 @@ addStrings({
   "sl.say.clear": ["Every bill is paid.", "सब बिलों के पैसे मिल गए।", "ಎಲ್ಲಾ ಬಿಲ್‌ಗಳ ಹಣ ಬಂದಿದೆ."],
   "sl.say.empty": ["No bills yet. Press Make a bill and say who bought what.", "अभी कोई बिल नहीं। बिल बनाएँ दबाकर बोलिए किसने क्या खरीदा।", "ಇನ್ನೂ ಬಿಲ್ ಇಲ್ಲ. ಬಿಲ್ ಮಾಡಿ ಒತ್ತಿ ಯಾರು ಏನು ಕೊಂಡರು ಹೇಳಿ."],
 });
-
-const GROUP_ICON = { unpaid: "clock", draft: "doc", paid: "checkCircle", cancelled: "ban" };
 
 function customerName(inv) {
   const c = invoiceCustomer(inv);
@@ -174,6 +189,14 @@ function fallbackYes(inv, ui, onDecide) {
 
 /* ------------------------------------------------------------ receipts -- */
 
+const STATUS_ICON = { draft: "doc", pending: "bell", issued: "clock", part_paid: "clock", paid: "checkCircle", cancelled: "ban" };
+
+/**
+ * A bill as a receipt (Stitch 06-sell): status word on top (icon + colour), the bill number and
+ * the speaker on the right, the customer, time and kind, up to four lines, the perforation with its
+ * punch notches, the total big, then the one thing to do: send on WhatsApp (or add the phone
+ * first), or the paid line with the PDF. The whole slip opens the bill.
+ */
 function billCard(inv, onOpen) {
   const status = billStatus(inv);
   const tot = inv.totals || {};
@@ -183,31 +206,44 @@ function billCard(inv, onOpen) {
   const due = dueOf(inv);
   const lines = inv.lines || [];
   const g = gstRows(tot);
-  const openBtn = h("button", { class: "keycap keycap-secondary keycap-sm sl-open", type: "button", "aria-label": st("sl.openLong", { name }), on: { click: (e) => onOpen(inv.id, e.currentTarget) } },
+  const titleId = `sl-bill-${inv.id}`;
+  const openBtn = h("button", { class: "keycap keycap-ghost keycap-sm sl-open", type: "button", "aria-label": st("sl.openLong", { name }), on: { click: (e) => onOpen(inv.id, e.currentTarget) } },
     ic("doc", 20), h("span", { text: st("sl.open") }));
-  const primary = unpaid ? (hasPhone(inv) ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sl.whatsapp"), label: st("sell.shareLong"), tone: "primary", size: "sm" }) : addPhoneKey(inv))
-    : status === "paid" ? linkKey({ href: pdfHref(inv), icon: "download", word: st("sell.pdf"), label: st("sell.pdfLong"), size: "sm" }) : null;
-  const card = paper({ class: `sl-bill sl-bill-${status}`, tone: status === "paid" ? "paid" : unpaid ? "due" : null, dataset: { id: inv.id } },
-    cardHead(
-      h("p", { class: "sl-bill-id" },
-        h("span", { class: "sl-bill-no", text: inv.number || st("sl.noNumber") }),
-        made ? h("span", { class: "sl-bill-date", text: when(made, { day: "numeric", month: "short" }) }) : null),
-      readButton(`invoice:${inv.id}`),
-      { lead: h("span", { class: "sl-bill-ico", "aria-hidden": "true" }, ic("receipt", 22)) }),
+  let main = null;
+  if (unpaid) {
+    main = hasPhone(inv) && safeUrl(inv.shareUrl)
+      ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sl.sendWa"), label: st("sell.shareLong"), tone: "secondary", size: "md", cls: "sl-wa" })
+      : addPhoneKey(inv, { size: "md" });
+  } else if (status === "paid") {
+    main = linkKey({ href: pdfHref(inv), icon: "download", word: st("sell.pdf"), label: st("sell.pdfLong"), tone: "ghost", size: "sm" });
+  }
+  const totalWord = g.kind === "none" ? st("sl.totalNoGst") : g.tax ? st("sl.totalGst", { amt: money(g.tax) }) : st("sell.total");
+  const card = paper({ class: `sl-bill sl-bill-${status}`, tone: status === "paid" ? "paid" : unpaid ? "due" : null, dataset: { id: inv.id }, "aria-labelledby": titleId },
+    h("div", { class: "sl-bill-top" },
+      h("p", { class: `t-label sl-bill-state sl-state-${status}` }, ic(STATUS_ICON[status] || "doc", 16), h("span", { text: st(`sell.status.${status}`) })),
+      inv.number ? h("span", { class: "sl-bill-no", text: `#${inv.number}` }) : null,
+      h("span", { class: "card-speak" }, readButton(`invoice:${inv.id}`))),
+    scriptedText("h3", name, { class: "t-h3 sl-bill-name", id: titleId }),
+    h("p", { class: "sl-bill-meta" },
+      made ? h("span", { class: "sl-bill-when" }, ic("clock", 18), h("span", { text: when(made, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) })) : null,
+      h("span", { class: "sl-bill-kind", text: kindWord(inv) })),
+    lines.length
+      ? h("ul", { class: "sl-bill-lines" },
+        ...lines.slice(0, 4).map((l) => {
+          const amt = lineAmount(l);
+          return h("li", {},
+            h("span", { class: "sl-bl-what" }, h("span", { class: "sl-bl-qty", text: qtyText(l.qty, l.unit) }), scriptedText("span", lineName(l), { class: "sl-bl-name" })),
+            amt !== null ? h("span", { class: "sl-bl-amt", text: money(amt) }) : null);
+        }),
+        lines.length > 4 ? h("li", { class: "sl-bl-more", text: st("sell.more", { n: lines.length - 4 }) }) : null)
+      : h("p", { class: "note-line" }, ic("info", 18), h("span", { text: st("sl.noLines") })),
     perforation(),
-    h("div", { class: "sl-bill-body" },
-      h("div", { class: "sl-bill-who" },
-        scriptedText("p", name, { class: "sl-bill-name" }),
-        lines.length === 1
-          ? h("p", { class: "sl-bill-what" }, scriptedText("span", lineName(lines[0])), h("span", { text: qtyText(lines[0].qty, lines[0].unit) }))
-          : lines.length > 1 ? h("p", { class: "sl-bill-what", text: count("sell.items", lines.length) }) : null),
-      stamp(status)),
-    h("div", { class: "sl-bill-sum" },
-      h("p", { class: "bignum bignum-amount sl-bill-total", text: money(tot.total) }),
-      g.kind === "none" ? h("p", { class: "sl-bill-tax", text: st("sell.noGst") })
-        : g.tax ? h("p", { class: "sl-bill-tax", text: `${st("sell.gst")} ${money(g.tax)}` }) : null),
+    h("div", { class: "sl-bill-total" },
+      h("p", { class: "sl-bill-total-word", text: totalWord }),
+      h("p", { class: "t-money sl-bill-amt", text: money(tot.total) })),
     status === "part_paid" && due !== null ? h("p", { class: "sl-bill-due" }, ic("clock", 18), h("span", { text: st("sl.due", { amt: money(due) }) })) : null,
-    h("div", { class: "sl-bill-acts" }, primary, openBtn));
+    status === "paid" ? h("p", { class: "sl-bill-paid" }, ic("checkCircle", 18), h("span", { text: st("sl.paidAll") })) : null,
+    h("div", { class: "sl-bill-acts" }, main, openBtn));
   // The whole receipt opens the bill; its own buttons and links keep their jobs.
   card.addEventListener("click", (e) => { if (!e.target.closest("a, button")) onOpen(inv.id, openBtn); });
   return h("li", { class: "sl-bill-slot" }, card);
@@ -271,30 +307,61 @@ function detailTitle(inv) {
 
 /* ------------------------------------------------------------ customers -- */
 
-function customersList(owedBy) {
+const CUSTOMERS_SHOWN = 6;
+
+/**
+ * The customers card (Stitch 06-sell, right column): name (two lines at most, never cut short),
+ * phone or "No phone", what they owe or "Nothing due", and for a customer who owes: remind on
+ * WhatsApp, or add the phone first. The server reads the list aloud (key `customers`).
+ */
+function customersCard(owedBy, cui, handlers, showAll) {
   const list = [...sell.customers.values()].sort((a, b) => (owedBy.get(b.id) || 0) - (owedBy.get(a.id) || 0) || String(a.name || "").localeCompare(String(b.name || "")));
-  if (!list.length) return h("p", { class: "note-line sl-quiet" }, ic("users", 18), h("span", { text: st("sell.noCustomers") }));
-  const counts = new Map();
-  for (const inv of sell.invoices.values()) if (inv.customerId) counts.set(inv.customerId, (counts.get(inv.customerId) || 0) + 1);
-  return h("div", { class: "sl-cust-body" },
-    h("div", { class: "sl-cust-speak" }, readButton("customers")),
-    h("ul", { class: "rows sl-people" }, ...list.map((c) => {
-      const owes = owedBy.get(c.id);
-      return h("li", { class: "row sl-person" },
-        scriptedText("span", initial(c.name), { class: "row-ico sl-avatar", "aria-hidden": "true" }),
-        h("span", { class: "row-main" },
-          scriptedText("span", c.name || "", { class: "row-title" }),
-          h("span", { class: "row-sub" },
-            c.phone ? h("span", { class: "sl-phone" }, ic("phone", 16), h("span", { text: c.phone }))
-              : h("span", { class: "sl-phone is-none" }, ic("phone", 16), h("span", { text: st("sl.noPhone") })),
-            counts.get(c.id) ? h("span", { text: count("sell.billsCount", counts.get(c.id)) }) : null)),
-        owes ? h("span", { class: "row-end sl-owes" }, ic("clock", 16), h("span", { text: st("sl.due", { amt: money(owes) }) })) : null);
-    })));
+  const shown = showAll ? list : list.slice(0, CUSTOMERS_SHOWN);
+  return h("article", { class: "card sl-customers", "aria-labelledby": "sl-cust-h" },
+    h("header", { class: "card-head" },
+      h("h2", { class: "t-h3 sl-side-title", id: "sl-cust-h" }, h("span", { text: st("sell.customers") }), list.length ? h("span", { class: "sl-side-count", text: String(list.length) }) : null),
+      list.length ? h("span", { class: "card-speak" }, readButton("customers")) : null),
+    list.length
+      ? h("ul", { class: "sl-people" }, ...shown.map((c) => {
+        const owes = owedBy.get(c.id) || 0;
+        const u = cui.get(String(c.id)) || {};
+        const act = !owes ? null
+          : c.phone
+            ? h("button", {
+              class: "icon-btn sl-remind", type: "button", "aria-busy": u.busy ? "true" : undefined,
+              "aria-label": st("money.remindLong", { name: c.name || "" }), dataset: { tip: st("money.remind") },
+              on: { click: () => handlers.remind(String(c.id)) },
+            }, u.busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : ic("chat", 22))
+            : h("button", {
+              class: "icon-btn sl-addphone", type: "button", "aria-label": st("mn.addPhoneLong", { name: c.name || "" }), dataset: { tip: st("mn.addPhone") },
+              on: { click: (e) => openAddPhone({ name: c.name || "", opener: e.currentTarget }) },
+            }, ic("phone", 22));
+        return h("li", { class: `sl-person${owes ? " is-due" : ""}` },
+          h("div", { class: "sl-person-main" },
+            scriptedText("p", c.name || "", { class: "sl-person-name" }),
+            c.phone ? h("p", { class: "sl-phone" }, h("span", { text: c.phone }))
+              : h("p", { class: "sl-phone is-none" }, ic("phone", 16), h("span", { text: st("sl.noPhone") }))),
+          h("div", { class: "sl-person-end" },
+            owes
+              ? [h("p", { class: "t-money sl-owes", text: money(owes) }), h("p", { class: "sl-owes-word", text: st("sl.dueWord") })]
+              : h("p", { class: "sl-clear" }, ic("check", 16), h("span", { text: st("sl.nothingDue") }))),
+          act,
+          u.opened ? resultLine("ok", st("mn.opened")) : null,
+          u.link ? h("div", { class: "sl-person-note" }, resultLine("error", st("mn.blocked")),
+            linkKey({ href: u.link, icon: "external", word: st("money.openWhatsapp"), tone: "primary", size: "sm" })) : null,
+          u.error ? resultLine("error", u.error) : null);
+      }))
+      : h("p", { class: "note-line" }, ic("users", 18), h("span", { text: st("sell.noCustomers") })),
+    list.length > CUSTOMERS_SHOWN
+      ? h("button", { class: "keycap keycap-ghost keycap-sm sl-more-people", type: "button", "aria-expanded": String(showAll), on: { click: handlers.toggleAll } },
+        ic(showAll ? "chevronUp" : "chevronDown", 20), h("span", { text: showAll ? st("sl.showFewer") : st("sl.showAll", { n: list.length }) }))
+      : null);
 }
 
 /* --------------------------------------------------------------- screen -- */
 
-let customersOpen = null; // the owner's own choice for the customers fold (null: open when wide)
+let billFilter = null; // "today" | "unpaid" | "all"; null = Today when there are bills today, else All
+let showAllCustomers = false;
 
 export function createSell() {
   ensureCss();
@@ -303,6 +370,7 @@ export function createSell() {
   const body = h("div", { class: "sl-body" });
   el.append(head, body);
   const ui = new Map(); // invoiceId -> { busy: "yes" | "no", error, fix, shop }
+  const cui = new Map(); // customerId -> { busy, opened, link, error } (remind)
   askWaiting(() => render(true));
 
   async function decide(id, decision) {
@@ -318,6 +386,16 @@ export function createSell() {
     }
     render(true);
   }
+
+  const handlers = {
+    async remind(id) {
+      cui.set(id, { busy: true });
+      render(true);
+      try { cui.set(id, await remindOnWhatsApp(id)); } catch (err) { cui.set(id, { error: err.message }); }
+      render(true);
+    },
+    toggleAll() { showAllCustomers = !showAllCustomers; render(true); },
+  };
 
   function openBill(id, opener) {
     const inv = sell.invoices.get(String(id)) || null;
@@ -349,56 +427,73 @@ export function createSell() {
     ].join(" ").trim();
   }
 
+  function makeBill() {
+    return h("button", { class: "keycap keycap-primary keycap-lg sl-make", type: "button", on: { click: () => ask({ hint: "sell.hint" }) } },
+      ic("plus", 24), h("span", { text: st("sl.makeBill") }));
+  }
+
+  function billsSection(invoices) {
+    const first = filterBills(invoices, "all");
+    const filter = billFilter || (first.counts.today ? "today" : "all");
+    const { bills, counts } = filterBills(invoices, filter);
+    const pick = (id) => { billFilter = id; render(true); };
+    return h("section", { class: "sl-bills", "aria-labelledby": "sl-bills-h" },
+      h("div", { class: "sl-bills-head" },
+        h("h2", { class: "section-title sl-h2", id: "sl-bills-h" }, h("span", { text: st("sl.recent") })),
+        counts.all ? segmented({
+          label: st("sl.filterLabel"),
+          value: filter,
+          onPick: pick,
+          options: BILL_FILTERS.map((id) => ({ id, word: st(`sl.f.${id}`, { n: counts[id] }) })),
+        }) : null),
+      bills.length
+        ? h("ol", { class: "sl-receipts" }, ...bills.map((inv) => billCard(inv, openBill)))
+        : counts.all
+          ? h("div", { class: "sl-filtered-none" },
+            h("p", { class: "note-line" }, ic("info", 18), h("span", { text: st(`sl.none.${filter}`) })),
+            h("button", { class: "keycap keycap-secondary keycap-sm", type: "button", on: { click: () => pick("all") } }, ic("receipt", 20), h("span", { text: st("sl.showAllBills") })))
+          : h("p", { class: "note-line" }, ic("info", 18), h("span", { text: st("sell.empty.text") })));
+  }
+
   function render(force = false) {
     const invoices = [...sell.invoices.values()];
     const ready = sell.status === "ready";
     const empty = ready && !invoices.length && !sell.customers.size;
-    patch(head, JSON.stringify([document.documentElement.lang, sell.status, empty]), () => screenHead({
-      id: "sell-title",
+    patch(head, JSON.stringify([document.documentElement.lang, sell.status, empty]), () => pageHead({
       title: t("nav.sell"),
-      speakBtn: ready ? readButton("sell-head", headSentence) : null,
-      actions: ready ? [agentAction({ word: st("sell.act"), hint: "sell.hint" }), empty ? null : shopButton({ size: "sm" })] : [],
+      sub: st("sl.sub"),
+      actions: ready ? [makeBill(), empty ? null : shopButton({ size: "md" }), readButton("sell-head", headSentence)].filter(Boolean) : [],
     }));
+    const h1 = head.querySelector(".page-title");
+    if (h1) h1.id = "sell-title";
     if (force) body.__key = null;
     const need = shopMissing();
     // Once the shop details change (saved from the sheet), a bill's "add shop details" note goes.
     for (const [id, u] of ui) if (u.fix && u.shop !== JSON.stringify(sell.settings)) ui.delete(id);
-    const key = JSON.stringify([document.documentElement.lang, sell.status, need, invoices, [...sell.customers.values()], sell.owed, sell.settings, [...ui.entries()], waiting ? 1 : 0]);
+    const key = JSON.stringify([document.documentElement.lang, sell.status, need, invoices, [...sell.customers.values()], sell.owed, sell.settings, [...ui.entries()], [...cui.entries()], billFilter, showAllCustomers, waiting ? 1 : 0]);
     patch(body, key, () => {
       const s = partState(sell, { which: "sell", reload: () => loadSell() });
       if (s) return s;
       if (empty) {
         return [need ? shopNeedCard(need) : null, screenState({ kind: "empty", icon: "receipt", title: st("sell.empty.title"), text: st("sell.empty.text"),
-          action: { label: st("sell.act"), icon: "mic", run: () => ask({ hint: "sell.hint" }) } })];
+          action: { label: st("sl.makeBill"), icon: "mic", run: () => ask({ hint: "sell.hint" }) } })];
       }
       const pending = pendingInvoices();
       pruneShared();
-      const groups = billGroups(invoices);
       const owedBy = new Map(sell.owed.map((o) => [o.customerId, o.amount]));
-      const wide = typeof matchMedia === "function" && matchMedia("(min-width: 1024px)").matches;
       return [
         need ? shopNeedCard(need) : null,
         pending.length ? h("section", { class: "sl-waiting", "aria-labelledby": "sl-waiting-h" },
-          sectionHead("sl-waiting-h", "bell", st("sl.waiting"), pending.length, "coral"),
+          h("h2", { class: "section-title sl-h2", id: "sl-waiting-h" }, h("span", { text: st("sl.waiting") }), h("span", { class: "sl-h2-count", text: String(pending.length) })),
           h("div", { class: "sl-waiting-cards" }, ...pending.map((inv) => {
             const u = ui.get(String(inv.id)) || {};
             // A refusal for shop facts is this screen's to show; otherwise the shared card.
             return (!u.fix && sharedCard(inv)) || fallbackYes(inv, ui, decide);
           }))) : null,
         h("div", { class: "sl-cols" },
-          h("section", { class: "sl-bills", "aria-labelledby": "sl-bills-h" },
-            sectionHead("sl-bills-h", "receipt", st("sell.bills"), invoices.length - pending.length || null),
-            groups.length ? groups.map(({ group, bills }) => h("div", { class: `sl-group sl-group-${group}` },
-              h("h3", { class: "sl-group-h" }, ic(GROUP_ICON[group], 18), h("span", { text: st(`sl.group.${group}`) }), h("span", { class: "fold-count", text: String(bills.length) })),
-              h("ol", { class: "sl-receipts" }, ...bills.map((inv) => billCard(inv, openBill)))))
-              : h("p", { class: "note-line sl-quiet" }, ic("info", 18), h("span", { text: pending.length ? st("sl.say.waiting", { n: pending.length }) : st("sell.empty.text") }))),
-          h("aside", { class: "sl-side" },
-            fold({
-              id: "sl-cust-h", icon: "users", word: st("sell.customers"), n: sell.customers.size || null, cls: "sl-customers",
-              open: customersOpen === null ? wide : customersOpen,
-              onToggle: (open) => { customersOpen = open; },
-              body: customersList(owedBy),
-            }),
+          billsSection(invoices),
+          h("aside", { class: "sl-side", "aria-label": `${st("sell.customers")}, ${st("shop.yours")}` },
+            customersCard(owedBy, cui, handlers, showAllCustomers),
             shopSummary())),
       ];
     });

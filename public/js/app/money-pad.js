@@ -7,10 +7,10 @@
 //    /api/customers { name, phone } (the server keys customers by name), then Remind works.
 // Digit rules (no leading zero, length caps, phone shape) are in sell-facts.js (node:test).
 
-import { h, rupees } from "./dom.js";
+import { h, rupees, safeUrl } from "./dom.js";
 import { addStrings } from "./i18n.js";
 import { agentRequest } from "./store.js";
-import { recordReceipt, loadSell } from "./store-sell.js";
+import { recordReceipt, loadSell, remindCustomer } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
 import { buttonError, ic, panel, resultLine, scriptedText } from "./sell-kit.js";
 import { padPress, cleanPhone, phoneProblem, formatPhone } from "./sell-facts.js";
@@ -19,6 +19,8 @@ import { notifyPaid } from "./moments.js";
 addStrings({
   "mn.addPhone": ["Add phone", "फ़ोन जोड़ें", "ಫೋನ್ ಸೇರಿಸಿ"],
   "mn.addPhoneLong": ["Add a phone number for {name}", "{name} का फ़ोन नंबर जोड़ें", "{name} ಅವರ ಫೋನ್ ಸಂಖ್ಯೆ ಸೇರಿಸಿ"],
+  "mn.opened": ["WhatsApp opened with the reminder.", "याद दिलाने का संदेश WhatsApp में खुल गया।", "ನೆನಪಿನ ಸಂದೇಶ WhatsApp ನಲ್ಲಿ ತೆರೆಯಿತು."],
+  "mn.blocked": ["The browser stopped WhatsApp from opening. Press Open WhatsApp.", "ब्राउज़र ने WhatsApp नहीं खोलने दिया। WhatsApp खोलें दबाइए।", "ಬ್ರೌಸರ್ WhatsApp ತೆರೆಯಲು ಬಿಡಲಿಲ್ಲ. WhatsApp ತೆರೆಯಿರಿ ಒತ್ತಿ."],
   "pp.clearAll": ["Clear the number", "पूरा नंबर हटाएँ", "ಪೂರ್ತಿ ಸಂಖ್ಯೆ ಅಳಿಸಿ"],
   "pp.of": ["{amt} owed in all", "कुल {amt} बाकी", "ಒಟ್ಟು {amt} ಬಾಕಿ"],
   "pp.more": ["This is more than they owe.", "यह बाकी से ज़्यादा है।", "ಇದು ಬಾಕಿಗಿಂತ ಹೆಚ್ಚು."],
@@ -52,6 +54,31 @@ function keys({ left = "00", onKey }) {
 
 function setKeysBusy(grid, busy) {
   for (const b of grid.querySelectorAll("button")) b.disabled = busy;
+}
+
+/* ----------------------------------------------------------------- remind -- */
+
+/**
+ * Remind a customer on WhatsApp (POST /api/customers/:id/remind gives the wa.me link). The tab is
+ * opened inside the tap so a popup blocker lets it through, then filled. Resolves { opened: true }
+ * or { link } when the browser blocked the tab; rejects with a message for the owner.
+ */
+export async function remindOnWhatsApp(customerId) {
+  let win = null;
+  try { win = window.open("", "_blank"); } catch { win = null; }
+  try {
+    const url = safeUrl(await remindCustomer(customerId));
+    if (!url || !/^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(url)) throw Object.assign(new Error(st("sell.noPhone")), { status: 422 });
+    if (win && !win.closed) {
+      try { win.opener = null; } catch { /* ignore */ }
+      win.location.href = url;
+      return { opened: true };
+    }
+    return { link: url };
+  } catch (err) {
+    if (win && !win.closed) win.close();
+    throw Object.assign(new Error(err.status === 422 ? err.message : buttonError(err)), { status: err.status });
+  }
 }
 
 /* --------------------------------------------------------------- got paid -- */

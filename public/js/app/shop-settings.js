@@ -437,7 +437,7 @@ export function shopSummary() {
     h("span", { class: "gs-fact-label", text: label }),
     h("span", { class: "gs-fact-value" }, value));
   return h("article", { class: `card gs-summary${need ? " card-alert" : ""}`, "aria-labelledby": "gs-summary-h" },
-    cardHead(st("shop.yours"), readButton("shop-facts", sentence), { id: "gs-summary-h" }),
+    cardHead(h("h2", { class: "t-label gs-summary-h", id: "gs-summary-h", text: st("shop.yours") }), readButton("shop-facts", sentence)),
     h("ul", { class: "gs-facts" },
       tile(SCHEME_ICON[s.gstScheme] || "receipt", st("shop.how"), [h("b", { text: schemeWord(s.gstScheme) }), h("span", { class: "gs-fact-sub", text: st(PAPER_KEY[s.gstScheme]) })]),
       tile("pin", st("shop.state"), s.stateCode ? stateText("b", s.stateCode) : missingMark("shop.noState")),
