@@ -13,11 +13,19 @@
 // Razorpay Standard Checkout: options key, amount, currency, name, description, order_id and a
 // success handler that receives razorpay_payment_id / razorpay_order_id / razorpay_signature,
 // which the server verifies before it marks the order or bill paid.
+//
+// Every state is a value of data-state on #pay-root (styled in public/css/pay.css):
+//   loading, ready, opening, verifying, paid (order verified or already paid), thanks (bill paid),
+//   partial (bill part paid), closed, failed, expired, invalid, limit, error (could not load: Try again).
 (function () {
   "use strict";
   var token = location.pathname.split("/").pop();
   var api = "/api/pay/" + encodeURIComponent(token);
+  // Bill links are "inv_" + 22 characters (src/sell/checkout.js); everything else is an order link.
+  var billToken = /^inv_/.test(token || "");
+  var root = document.getElementById("pay-root");
   var payBtn = document.getElementById("pay");
+  var retryBtn = document.getElementById("retry");
   var statusEl = document.getElementById("status");
   var order = null;
   var copy = null;
@@ -26,14 +34,25 @@
     lang: "en",
     title: "Payment for a purchase order",
     ref: function (n) { return "Purchase order " + n; },
-    vendor: "Supplier", item: "Item", buyer: "Buyer", amount: "Amount",
+    vendor: "Supplier", item: "Item", buyer: "Buyer", amount: "Amount to pay",
+    sim: "Simulated vendor: not a real supplier",
     brand: function () { return "Sahay, an automated procurement assistant"; },
     banner: "Razorpay TEST MODE: no real money moves. Use only Razorpay test card or UPI details.",
     pay: "Pay with Razorpay (test mode)",
     back: "Back to Sahay", backHref: "/app#/buy",
     fine: "This page opens Razorpay Checkout in test mode for the order above. Sahay marks the order paid only after the server has verified Razorpay's payment signature.",
+    loading: "Loading the order.",
+    retry: "Try again",
     loadFailed: "The order could not be loaded.",
     unusable: "This payment link cannot be used.",
+    expiredTitle: "This payment link has expired",
+    expiredText: "Ask Sahay for a new payment link for this order.",
+    invalidTitle: "This payment link is not valid",
+    invalidText: "Use the Pay button on the order in Sahay to open the right link.",
+    limitTitle: "Too many tries",
+    limitText: "Wait a few minutes, then open the link again.",
+    errorTitle: "The order could not be loaded",
+    errorText: "Check the internet connection and try again.",
     isPaid: "This order is paid (Razorpay test mode).",
     verifying: "Verifying the payment with the server.",
     verifyFailed: "The payment could not be verified.",
@@ -51,14 +70,24 @@
       lang: "en",
       title: "Pay your bill",
       ref: function (n) { return "Bill " + n; },
-      vendor: "Shop", item: "Items", buyer: "Customer", amount: "Amount",
-      brand: function (shop) { return "Sahay, an automated assistant for " + shop; },
+      vendor: "Shop", item: "Items", buyer: "Customer", amount: "Amount to pay",
+      brand: function (shop) { return shop ? "Sahay, an automated assistant for " + shop : "Sahay, an automated assistant for the shop"; },
       banner: "Razorpay TEST MODE: no real money moves. Use only Razorpay test card or UPI details.",
       pay: "Pay with Razorpay (test mode)",
       thanks: "Paid. Thank you.", bill: "Bill", paidAmount: "Amount paid",
       fine: "This page opens Razorpay Checkout in test mode for the bill above. The bill is marked paid only after the server has verified Razorpay's payment signature.",
+      loading: "Loading the bill.",
+      retry: "Try again",
       loadFailed: "The bill could not be loaded.",
       unusable: "This payment link cannot be used.",
+      expiredTitle: "This payment link has expired",
+      expiredText: "Ask the shop for a new payment link.",
+      invalidTitle: "This payment link is not valid",
+      invalidText: "Ask the shop to send the payment link again.",
+      limitTitle: "Too many tries",
+      limitText: "Wait a few minutes, then open the link again.",
+      errorTitle: "The bill could not be loaded",
+      errorText: "Check the internet connection and try again.",
       isPaid: "This bill is paid (Razorpay test mode).",
       verifying: "Verifying the payment with the server.",
       verifyFailed: "The payment could not be verified.",
@@ -73,14 +102,24 @@
       lang: "hi",
       title: "बिल का भुगतान",
       ref: function (n) { return "बिल " + n; },
-      vendor: "दुकान", item: "सामान", buyer: "ग्राहक", amount: "रकम",
-      brand: function (shop) { return "सहाय, " + shop + " का स्वचालित सहायक"; },
+      vendor: "दुकान", item: "सामान", buyer: "ग्राहक", amount: "चुकाने की रकम",
+      brand: function (shop) { return shop ? "सहाय, " + shop + " का स्वचालित सहायक" : "सहाय, दुकान का स्वचालित सहायक"; },
       banner: "Razorpay टेस्ट मोड: असली पैसा नहीं कटता। सिर्फ़ Razorpay के टेस्ट कार्ड या यूपीआई की जानकारी डालिए।",
       pay: "Razorpay से भुगतान करें (टेस्ट मोड)",
       thanks: "भुगतान हो गया। धन्यवाद।", bill: "बिल", paidAmount: "चुकाई गई रकम",
       fine: "यह पन्ना ऊपर वाले बिल के लिए Razorpay चेकआउट टेस्ट मोड में खोलता है। सर्वर के Razorpay का हस्ताक्षर जाँचने के बाद ही बिल चुका हुआ माना जाता है।",
+      loading: "बिल खुल रहा है।",
+      retry: "फिर कोशिश करें",
       loadFailed: "बिल नहीं खुल पाया।",
       unusable: "यह भुगतान लिंक काम नहीं करता।",
+      expiredTitle: "इस भुगतान लिंक का समय निकल गया",
+      expiredText: "दुकान से नया भुगतान लिंक माँगिए।",
+      invalidTitle: "यह भुगतान लिंक सही नहीं है",
+      invalidText: "दुकान से भुगतान लिंक फिर से भेजने को कहिए।",
+      limitTitle: "बहुत बार कोशिश हुई",
+      limitText: "कुछ मिनट रुककर लिंक फिर से खोलिए।",
+      errorTitle: "बिल नहीं खुल पाया",
+      errorText: "इंटरनेट देखकर फिर कोशिश कीजिए।",
       isPaid: "यह बिल चुका दिया गया है (Razorpay टेस्ट मोड)।",
       verifying: "सर्वर भुगतान जाँच रहा है।",
       verifyFailed: "भुगतान की जाँच नहीं हो पाई।",
@@ -95,14 +134,24 @@
       lang: "kn",
       title: "ಬಿಲ್ ಪಾವತಿ",
       ref: function (n) { return "ಬಿಲ್ " + n; },
-      vendor: "ಅಂಗಡಿ", item: "ಸಾಮಾನು", buyer: "ಗ್ರಾಹಕರು", amount: "ಮೊತ್ತ",
-      brand: function (shop) { return "ಸಹಾಯ್, " + shop + " ಅವರ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ"; },
+      vendor: "ಅಂಗಡಿ", item: "ಸಾಮಾನು", buyer: "ಗ್ರಾಹಕರು", amount: "ಪಾವತಿಸಬೇಕಾದ ಮೊತ್ತ",
+      brand: function (shop) { return shop ? "ಸಹಾಯ್, " + shop + " ಅವರ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ" : "ಸಹಾಯ್, ಅಂಗಡಿಯ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ"; },
       banner: "Razorpay ಟೆಸ್ಟ್ ಮೋಡ್: ನಿಜವಾದ ಹಣ ಹೋಗುವುದಿಲ್ಲ. Razorpay ಟೆಸ್ಟ್ ಕಾರ್ಡ್ ಅಥವಾ ಯುಪಿಐ ವಿವರಗಳನ್ನು ಮಾತ್ರ ಬಳಸಿ.",
       pay: "Razorpay ಮೂಲಕ ಪಾವತಿಸಿ (ಟೆಸ್ಟ್ ಮೋಡ್)",
       thanks: "ಪಾವತಿ ಆಯಿತು. ಧನ್ಯವಾದಗಳು.", bill: "ಬಿಲ್", paidAmount: "ಪಾವತಿಸಿದ ಮೊತ್ತ",
       fine: "ಈ ಪುಟ ಮೇಲಿನ ಬಿಲ್‌ಗೆ Razorpay ಚೆಕ್‌ಔಟ್ ಅನ್ನು ಟೆಸ್ಟ್ ಮೋಡ್‌ನಲ್ಲಿ ತೆರೆಯುತ್ತದೆ. ಸರ್ವರ್ Razorpay ಸಹಿಯನ್ನು ಪರಿಶೀಲಿಸಿದ ನಂತರವೇ ಬಿಲ್ ಪಾವತಿಯಾಗಿದೆ ಎಂದು ಗುರುತಿಸಲಾಗುತ್ತದೆ.",
+      loading: "ಬಿಲ್ ತೆರೆಯುತ್ತಿದೆ.",
+      retry: "ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ",
       loadFailed: "ಬಿಲ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ.",
       unusable: "ಈ ಪಾವತಿ ಲಿಂಕ್ ಬಳಸಲು ಆಗುವುದಿಲ್ಲ.",
+      expiredTitle: "ಈ ಪಾವತಿ ಲಿಂಕ್‌ನ ಸಮಯ ಮುಗಿದಿದೆ",
+      expiredText: "ಅಂಗಡಿಯಿಂದ ಹೊಸ ಪಾವತಿ ಲಿಂಕ್ ಕೇಳಿ.",
+      invalidTitle: "ಈ ಪಾವತಿ ಲಿಂಕ್ ಸರಿಯಿಲ್ಲ",
+      invalidText: "ಪಾವತಿ ಲಿಂಕ್ ಮತ್ತೆ ಕಳುಹಿಸಲು ಅಂಗಡಿಗೆ ಹೇಳಿ.",
+      limitTitle: "ತುಂಬಾ ಬಾರಿ ಪ್ರಯತ್ನಿಸಲಾಗಿದೆ",
+      limitText: "ಕೆಲವು ನಿಮಿಷ ಕಾದು ಲಿಂಕ್ ಮತ್ತೆ ತೆರೆಯಿರಿ.",
+      errorTitle: "ಬಿಲ್ ತೆರೆಯಲು ಆಗಲಿಲ್ಲ",
+      errorText: "ಇಂಟರ್ನೆಟ್ ನೋಡಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
       isPaid: "ಈ ಬಿಲ್ ಪಾವತಿಯಾಗಿದೆ (Razorpay ಟೆಸ್ಟ್ ಮೋಡ್).",
       verifying: "ಸರ್ವರ್ ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸುತ್ತಿದೆ.",
       verifyFailed: "ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸಲು ಆಗಲಿಲ್ಲ.",
@@ -123,18 +172,35 @@
     return BILL[d.language] || BILL["en-IN"];
   }
 
+  /** Before any data (or when none comes): a bill link speaks the visitor's browser language. */
+  function guessCopy() {
+    if (!billToken) return PURCHASE;
+    var nav = typeof navigator !== "undefined" && navigator ? String(navigator.language || "") : "";
+    if (/^hi/i.test(nav)) return BILL["hi-IN"];
+    if (/^kn/i.test(nav)) return BILL["kn-IN"];
+    return BILL["en-IN"];
+  }
+
+  function el(id) { return document.getElementById(id); }
+  function setText(id, text) { var e = el(id); if (e) e.textContent = text; }
+  function setHidden(id, hidden) { var e = el(id); if (e) e.hidden = hidden; }
+  function focusOn(id) { var e = el(id); if (e && typeof e.focus === "function") e.focus(); }
+
+  function setState(s) {
+    if (root) root.setAttribute("data-state", s);
+    var card = el("card");
+    if (card) card.setAttribute("aria-busy", s === "loading" || s === "verifying" ? "true" : "false");
+    var loading = s === "loading";
+    setHidden("skeleton", !loading);
+    setHidden("loading", !loading);
+  }
+
   // Razorpay Checkout leaves history entries behind (QA: the browser Back hung after it), so the
   // owner's way home is a plain link, always on the page and repeated after checkout. A bill's
   // customer has no Sahay app: no such link for them.
   function showBack() {
     if (!copy || !copy.backHref) return;
-    var b = document.getElementById("done-back");
-    if (b) b.hidden = false;
-  }
-
-  function setHidden(id, hidden) {
-    var el = document.getElementById(id);
-    if (el) el.hidden = hidden;
+    setHidden("done-back", false);
   }
 
   /**
@@ -153,17 +219,18 @@
     setHidden("thanks-label-amount", !known);
     setHidden("thanks-amount-row", !known);
     setHidden("details", true);
+    setHidden("amount-block", true);
     setHidden("po", true);
     setHidden("title", true);
     payBtn.hidden = true;
     setHidden("thanks", false);
-    var heading = document.getElementById("thanks-title");
-    if (heading && typeof heading.focus === "function") heading.focus();
+    setState("thanks");
+    focusOn("thanks-title");
   }
 
   function show(text, kind) {
     statusEl.textContent = text;
-    statusEl.className = kind || "";
+    statusEl.className = "pay-status" + (kind ? " is-" + kind : "");
   }
 
   function rupees(amount, currency, lang) {
@@ -175,28 +242,28 @@
     }
   }
 
-  function setText(id, text) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = text;
-  }
-
   function applyCopy(c, d) {
     copy = c;
     if (document.documentElement) document.documentElement.lang = c.lang;
+    if (root) root.setAttribute("data-kind", c === PURCHASE ? "order" : "bill");
     setText("title", c.title);
     setText("label-vendor", c.vendor);
     setText("label-item", c.item);
     setText("label-buyer", c.buyer);
     setText("label-amount", c.amount);
-    setText("brand-text", c.brand(d.merchant || d.vendor || ""));
-    setText("banner", c.banner);
+    setText("brand-text", c.brand(d ? d.merchant || d.vendor || "" : ""));
+    setText("banner-text", c.banner);
     setText("fine", c.fine);
-    setText("pay", c.pay);
+    setText("pay-text", c.pay);
+    setText("retry-text", c.retry);
+    setText("loading", c.loading);
+    if (c.sim) setText("sim-text", c.sim);
     if (c.backHref) {
       setText("back-text", c.back);
       setText("done-back-link", c.back);
-      document.getElementById("back").href = c.backHref;
-      document.getElementById("done-back-link").href = c.backHref;
+      el("back").href = c.backHref;
+      el("done-back-link").href = c.backHref;
+      setHidden("back", false);
     } else {
       // The shop's customer: no link into the owner's app, before or after paying.
       setHidden("back", true);
@@ -208,48 +275,95 @@
     order = d;
     var c = copyFor(d);
     applyCopy(c, d);
+    setHidden("problem", true);
+    retryBtn.hidden = true;
     var number = isInvoice(d) ? d.invoiceNumber || d.poNumber : d.poNumber;
     setText("po", c.ref(number));
+    setHidden("po", false);
+    setHidden("title", false);
     setText("vendor", isInvoice(d) ? d.merchant || d.vendor : d.vendor);
     setText("item", isInvoice(d) ? d.item : d.quantity + " " + d.unit + " " + d.item);
     setText("buyer", d.buyer || "");
+    setHidden("row-buyer", !d.buyer);
     setText("amount", rupees(d.amount, d.currency, c.lang));
     // Only a simulated vendor of a purchase order is labelled; a customer paying the shop's own bill
     // has no vendor at all, whatever the data says.
-    document.getElementById("sim").hidden = isInvoice(d) || !d.simulated;
-    document.getElementById("details").hidden = false;
+    el("sim").hidden = isInvoice(d) || !d.simulated;
+    el("details").hidden = false;
+    setHidden("amount-block", false);
     if (d.paid) {
       payBtn.hidden = true;
       show(c.isPaid, "ok");
+      setState("paid");
       // Reopened after paying: nothing is open (the page says 0), so no amount is repeated.
       if (isInvoice(d)) showThanks(c, d, null);
+      else setHidden("amount-block", true);
     } else {
+      payBtn.hidden = false;
       payBtn.disabled = false;
       show("");
+      setState("ready");
     }
   }
 
-  function errorText(body, fallback) {
-    return (body && body.message) || fallback;
+  /** No usable data: expired, not valid, too many tries, or the server did not answer (Try again). */
+  function problem(kind) {
+    var c = copy || guessCopy();
+    applyCopy(c, null);
+    var words = {
+      expired: [c.expiredTitle, c.expiredText],
+      invalid: [c.invalidTitle, c.invalidText],
+      limit: [c.limitTitle, c.limitText],
+    }[kind] || [c.errorTitle, c.errorText];
+    setText("problem-title", words[0]);
+    setText("problem-text", words[1]);
+    setText("po", c.unusable);
+    setHidden("po", true);
+    setHidden("title", true);
+    setHidden("details", true);
+    setHidden("amount-block", true);
+    setHidden("sim", true);
+    payBtn.hidden = true;
+    show("");
+    setHidden("problem", false);
+    retryBtn.hidden = kind !== "error";
+    setState(kind);
+    focusOn("problem-title");
   }
 
-  fetch(api, { cache: "no-store" })
-    .then(function (r) {
-      return r.json().catch(function () { return null; }).then(function (body) {
-        if (!r.ok) throw new Error(errorText(body, PURCHASE.loadFailed));
-        return body;
-      });
-    })
-    .then(render)
-    .catch(function (e) {
-      setText("po", (copy || PURCHASE).unusable);
-      show(e.message, "bad");
-    });
+  function problemKind(status, body) {
+    var code = body && body.code;
+    if (code === "PAY_LINK_EXPIRED") return "expired";
+    if (code === "PAY_LINK_INVALID" || code === "LINK_INVALID" || status === 404) return "invalid";
+    if (code === "RATE_LIMITED" || status === 429) return "limit";
+    return "error";
+  }
+
+  function load() {
+    applyCopy(guessCopy(), null);
+    setState("loading");
+    setHidden("problem", true);
+    retryBtn.hidden = true;
+    return fetch(api, { cache: "no-store" })
+      .then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (body) {
+          if (!r.ok) {
+            var err = new Error((body && body.message) || PURCHASE.loadFailed);
+            err.kind = problemKind(r.status, body);
+            throw err;
+          }
+          return body;
+        });
+      })
+      .then(render)
+      .catch(function (e) { problem(e && e.kind ? e.kind : "error"); });
+  }
 
   function verify(response) {
     var c = copy || PURCHASE;
     var number = isInvoice(order) ? order.invoiceNumber || order.poNumber : order.poNumber;
     show(c.verifying);
+    setState("verifying");
     return fetch(api + "/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -261,19 +375,22 @@
     })
       .then(function (r) {
         return r.json().catch(function () { return null; }).then(function (body) {
-          if (!r.ok) throw new Error(errorText(body, c.verifyFailed));
+          if (!r.ok) throw new Error((body && body.message) || c.verifyFailed);
           return body;
         });
       })
       .then(function (body) {
         payBtn.hidden = true;
-        show(body.status === "paid" ? c.verified(number) : c.recorded(number, body.status), body.status === "paid" ? "ok" : "bad");
-        if (body.status === "paid" && isInvoice(order)) showThanks(c, order, order.amount);
+        var paid = body.status === "paid";
+        show(paid ? c.verified(number) : c.recorded(number, body.status), paid ? "ok" : "bad");
+        setState(paid ? "paid" : "partial");
+        if (paid && isInvoice(order)) showThanks(c, order, order.amount);
         showBack();
       })
       .catch(function (e) {
         payBtn.disabled = false;
         show(e.message, "bad");
+        setState("failed");
         showBack();
       });
   }
@@ -283,10 +400,12 @@
     var c = copy || PURCHASE;
     if (typeof window.Razorpay !== "function") {
       show(c.noCheckout, "bad");
+      setState("failed");
       return;
     }
     payBtn.disabled = true;
     show(c.opening);
+    setState("opening");
     var invoice = isInvoice(order);
     var checkout = new window.Razorpay({
       key: order.keyId,
@@ -299,12 +418,13 @@
       notes: invoice
         ? { invoice_number: order.invoiceNumber || order.poNumber }
         : { po_number: order.poNumber, simulated_vendor: order.simulated ? "yes" : "no" },
-      theme: { color: "#1f6f5c" },
+      theme: { color: "#B6F23C" },
       handler: verify,
       modal: {
         ondismiss: function () {
           payBtn.disabled = false;
           show(c.closed);
+          setState("closed");
           showBack();
         },
       },
@@ -312,7 +432,12 @@
     checkout.on("payment.failed", function (r) {
       payBtn.disabled = false;
       show(c.failed(r && r.error && r.error.description), "bad");
+      setState("failed");
     });
     checkout.open();
   });
+
+  retryBtn.addEventListener("click", function () { load(); });
+
+  load();
 })();

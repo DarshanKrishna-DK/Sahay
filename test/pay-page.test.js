@@ -17,6 +17,7 @@ const vm = require("node:vm");
 const ROOT = path.join(__dirname, "..");
 const HTML = fs.readFileSync(path.join(ROOT, "public", "pay.html"), "utf8");
 const SCRIPT = fs.readFileSync(path.join(ROOT, "public", "js", "pay.js"), "utf8");
+const CSS = fs.readFileSync(path.join(ROOT, "public", "css", "pay.css"), "utf8");
 const IDS = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
 
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
@@ -26,7 +27,7 @@ const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(
  * resolves to the elements once rendered. `pay()` presses Pay: the fake Razorpay Checkout succeeds
  * at once and the page posts the signature to the server.
  */
-async function load(data, { verified = null } = {}) {
+async function load(data, { verified = null, fail = null, token = null } = {}) {
   const elements = {};
   for (const id of IDS) {
     const attrs = {};
@@ -46,15 +47,19 @@ async function load(data, { verified = null } = {}) {
   const requests = [];
   const fetch = async (url, opts = {}) => {
     requests.push({ url, method: opts.method || "GET" });
+    if (fail && !String(url).endsWith("/verify")) {
+      if (fail.network) throw new TypeError("Failed to fetch");
+      return { ok: false, status: fail.status, json: async () => fail.body };
+    }
     const body = String(url).endsWith("/verify") ? verified : data;
-    return { ok: true, json: async () => body };
+    return { ok: true, status: 200, json: async () => body };
   };
   class Razorpay {
     constructor(options) { this.options = options; }
     on() {}
     open() { this.options.handler({ razorpay_payment_id: "pay_TESTONLY1", razorpay_order_id: this.options.order_id, razorpay_signature: "0".repeat(64) }); }
   }
-  const context = { window: { Razorpay }, document, location: { pathname: "/pay/" + (data.kind === "invoice" ? "inv_" : "") + "A".repeat(22) }, fetch, Intl, console };
+  const context = { window: { Razorpay }, document, location: { pathname: "/pay/" + (token || ((data.kind === "invoice" ? "inv_" : "") + "A".repeat(22))) }, fetch, Intl, console };
   vm.createContext(context);
   vm.runInContext(SCRIPT, context);
   // fetch -> json -> render run on microtasks.
@@ -94,7 +99,7 @@ test("an invoice token: the shop is the merchant, the customer the buyer, a bill
   assert.equal(el.back.hidden, true, "the customer has no Sahay app: no way back into it");
   assert.equal(el["done-back"].hidden, true);
   assert.equal(el.thanks.hidden, true, "not paid yet");
-  assert.match(el.banner.textContent, /Razorpay/);
+  assert.match(el["banner-text"].textContent, /Razorpay/);
   assert.doesNotMatch(Object.values(el).map((e) => e.textContent).join(" "), /purchase order|simulated/i);
 });
 
@@ -184,7 +189,60 @@ test("the customer's page never links to the owner-only bill PDF", () => {
 test("an invoice page never shows the simulated-vendor label, even if the data said simulated, and [hidden] wins over the label's own display", async () => {
   // E2E 2026-11-19 (ce5d22b): ".sim { display: inline-block }" beat the hidden attribute, so the
   // label showed on a customer's bill although the API sent simulated:false. 331269c added the rule below.
-  assert.match(HTML, /\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
+  assert.match(CSS, /\[hidden\]\s*\{\s*display:\s*none\s*!important;?\s*\}/);
   const { el } = await load({ ...INVOICE, simulated: true });
   assert.equal(el.sim.hidden, true, "a customer's bill has no vendor to label");
+});
+
+const stateOf = (page) => page.el["pay-root"].getAttribute("data-state");
+
+test("every pay state is named on the page root: ready, verifying ends on paid (order) or thanks (bill)", async () => {
+  const po = await load(PO, { verified: { status: "paid" } });
+  assert.equal(stateOf(po), "ready");
+  assert.equal(po.el["pay-root"].getAttribute("data-kind"), "order");
+  assert.equal(po.el["amount-block"].hidden, false);
+  assert.equal(po.el.skeleton.hidden, true, "the loading skeleton gives way to the order");
+  await po.pay();
+  assert.equal(stateOf(po), "paid");
+  const bill = await load(INVOICE, { verified: { status: "paid" } });
+  assert.equal(bill.el["pay-root"].getAttribute("data-kind"), "bill");
+  await bill.pay();
+  assert.equal(stateOf(bill), "thanks");
+  const part = await load(INVOICE, { verified: { status: "part_paid" } });
+  await part.pay();
+  assert.equal(stateOf(part), "partial");
+});
+
+test("an expired bill link says so in the visitor's words, with no pay button and no way into the owner's app", async () => {
+  const page = await load(INVOICE, { token: "inv_" + "B".repeat(22), fail: { status: 410, body: { code: "PAY_LINK_EXPIRED", message: "expired" } } });
+  assert.equal(stateOf(page), "expired");
+  assert.equal(page.el.problem.hidden, false);
+  assert.equal(page.el["problem-title"].textContent, "This payment link has expired");
+  assert.equal(page.el["problem-text"].textContent, "Ask the shop for a new payment link.");
+  assert.equal(page.el["problem-title"].focused, true);
+  assert.equal(page.el.pay.hidden, true);
+  assert.equal(page.el.back.hidden, true, "a bill link never links into Sahay");
+  assert.equal(page.el.retry.hidden, true, "nothing to retry on an expired link");
+});
+
+test("an unknown order link is 'not valid' with the way back to Buy; a network failure offers Try again", async () => {
+  const bad = await load(PO, { token: "Z".repeat(22), fail: { status: 404, body: { code: "PAY_LINK_INVALID" } } });
+  assert.equal(stateOf(bad), "invalid");
+  assert.equal(bad.el["problem-title"].textContent, "This payment link is not valid");
+  assert.equal(bad.el.back.hidden, false);
+  assert.equal(bad.el.back.href, "/app#/buy");
+  const down = await load(PO, { fail: { network: true } });
+  assert.equal(stateOf(down), "error");
+  assert.equal(down.el.retry.hidden, false);
+  const limited = await load(PO, { fail: { status: 429, body: { code: "RATE_LIMITED" } } });
+  assert.equal(stateOf(limited), "limit");
+});
+
+test("the pay page uses the v3 tokens and its own sheet: no inline style block, no old marigold or saffron", () => {
+  assert.doesNotMatch(HTML, /<style/i, "styles live in /css/pay.css (self only under PAY_CSP)");
+  assert.match(HTML, /href="\/css\/tokens-v3\.css"/);
+  assert.match(HTML, /href="\/css\/pay\.css"/);
+  assert.doesNotMatch(HTML, /fonts\.googleapis/, "PAY_CSP has font-src 'self' only");
+  assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c/i);
+  assert.match(SCRIPT, /theme: \{ color: "#B6F23C" \}/);
 });

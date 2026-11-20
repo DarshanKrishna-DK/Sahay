@@ -1,0 +1,362 @@
+/* Pay page (/pay/<token>, public/pay.html + public/js/pay.js), Sahay UI v3.
+   Tokens: /css/tokens-v3.css. The page runs under PAY_CSP (server.js): styles and fonts from this
+   origin only, so text uses the system faces (Noto where the device has it), never Google Fonts.
+   One piano-black card over the hex-dot field; lime is the Pay button and the paid check only.
+   Layout (spec 6.2): phone one column, amount 48px+, Pay in the bottom third; phone landscape two
+   columns; 600px and up a centred card 480px wide. Every state is a data-state on #pay-root. */
+
+[hidden] { display: none !important; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+body.pay {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--piano-0);
+  color: var(--text-hi);
+  font: var(--fw-body) var(--fs-body) / var(--lh-body) var(--font-body);
+  overflow-x: hidden;
+}
+:lang(hi) body.pay, :lang(kn) body.pay, body.pay :lang(hi), body.pay :lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-indic); }
+
+/* Hex-dot field: a true hex lattice (rows half a pitch apart, 0.866 pitch high), lime at low alpha,
+   faded at the edges, static. Tile 22 x 38.1 px, two dot layers. */
+.pay-hex {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  --c: rgba(var(--hex-rgb), var(--hex-alpha));
+  background-image:
+    radial-gradient(circle, var(--c) 1.15px, transparent 1.6px),
+    radial-gradient(circle, var(--c) 1.15px, transparent 1.6px);
+  background-size: 22px 38.105px;
+  background-position: 0 0, 11px 19.05px;
+  -webkit-mask-image: radial-gradient(120% 85% at 50% 38%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(120% 85% at 50% 38%, #000 30%, transparent 100%);
+}
+
+.pay-main {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: calc(var(--s-4) + var(--safe-t)) calc(var(--s-4) + var(--safe-r)) calc(var(--s-5) + var(--safe-b)) calc(var(--s-4) + var(--safe-l));
+}
+
+svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ------------------------------------------------------------ top: brand + test mode -- */
+.pay-top { display: flex; flex-direction: column; gap: var(--s-3); }
+.pay-brand {
+  display: flex; align-items: center; gap: var(--s-3);
+  margin: 0;
+  color: var(--text-md);
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+}
+.pay-logo { width: 36px; height: 36px; border-radius: 50%; flex: none; box-shadow: var(--shadow-1); }
+.pay-test {
+  display: flex; align-items: flex-start; gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--amber) 12%, var(--piano-1));
+  color: var(--amber-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+  line-height: 1.4;
+}
+.pay-test svg { width: 22px; height: 22px; margin-top: 1px; }
+
+/* ------------------------------------------------------------------- back link -- */
+.pay-back {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  align-self: flex-start;
+  min-height: var(--touch-min);
+  padding: 0 var(--s-4) 0 var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--edge);
+  background: var(--glass-fill);
+  color: var(--text-hi);
+  text-decoration: none;
+  font-weight: var(--fw-strong);
+  font-size: var(--fs-sm);
+  box-shadow: var(--depth-soft);
+  transition: background var(--t-micro) var(--ease-out), transform var(--t-micro) var(--ease-out);
+}
+.pay-back:hover { background: var(--piano-3); }
+.pay-back:active { transform: translateY(1px); box-shadow: var(--press); }
+
+/* -------------------------------------------------------------------- the card -- */
+.pay-card {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  border: 1px solid transparent;
+  border-radius: var(--r-card);
+  background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
+  box-shadow: var(--shadow-3), inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+.pay-card::after {
+  content: "";
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 36%;
+  border-radius: inherit;
+  background: var(--piano-sheen);
+  pointer-events: none;
+}
+.pay-card > * { position: relative; z-index: 1; margin: 0; }
+
+.pay-ref {
+  color: var(--text-lo);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.pay-title {
+  font-family: var(--font-display);
+  font-weight: var(--fw-display);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-tight);
+  outline: none;
+}
+:lang(hi) .pay-title, :lang(kn) .pay-title { font-family: inherit; line-height: 1.3; }
+
+.pay-sim {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  align-self: flex-start;
+  min-height: 36px;
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--cyan) 60%, transparent);
+  background: color-mix(in srgb, var(--cyan) 12%, transparent);
+  color: var(--cyan-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
+}
+.pay-sim svg { width: 20px; height: 20px; }
+
+/* Amount: the biggest thing on the page. */
+.pay-amount { display: flex; flex-direction: column; gap: var(--s-1); }
+.pay-amount > p { margin: 0; }
+.pay-amount-label { color: var(--text-lo); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
+.pay-amount-value {
+  font-family: var(--font-num);
+  font-size: var(--fs-total);
+  font-weight: var(--fw-display);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}
+
+/* Facts: label over value on phones, side by side from 400px. Never a table. */
+.pay-facts { display: flex; flex-direction: column; margin: 0; border-top: 1px solid var(--hairline); }
+.pay-fact {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--s-1) var(--s-4);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.pay-fact dt { color: var(--text-lo); font-size: var(--fs-sm); }
+.pay-fact dd { margin: 0; text-align: right; font-weight: var(--fw-strong); overflow-wrap: anywhere; min-width: 0; flex: 1 1 12ch; }
+
+/* ----------------------------------------------------------------- the action -- */
+.pay-action { display: flex; flex-direction: column; gap: var(--s-3); margin-top: auto; padding-top: var(--s-2); }
+
+.pay-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3);
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--s-3) var(--s-5);
+  border: 1px solid var(--btn-rim);
+  border-radius: var(--r-pill);
+  background: var(--btn-surface);
+  color: var(--on-accent);
+  font: inherit;
+  font-weight: var(--fw-display);
+  font-size: var(--fs-body);
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--depth);
+  transition: transform var(--t-micro) var(--ease-out), box-shadow var(--t-micro) var(--ease-out), filter var(--t-micro) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.pay-btn:hover { filter: brightness(1.04); }
+.pay-btn:active { transform: translateY(2px); box-shadow: var(--press); }
+.pay-btn:disabled { cursor: default; filter: saturate(.35) brightness(.8); transform: none; box-shadow: var(--depth-soft); }
+.pay-btn:focus-visible, .pay-back:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.pay-btn-ghost {
+  border: 1px solid var(--edge);
+  background: var(--piano-surface) padding-box;
+  color: var(--text-hi);
+  box-shadow: var(--depth-soft);
+}
+
+/* Busy: the rupee gives way to a spinner while checkout opens or the server verifies. */
+.pay-spin {
+  display: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--on-accent) 30%, transparent);
+  border-top-color: var(--on-accent);
+  animation: pay-spin 800ms linear infinite;
+}
+[data-state="opening"] .pay-spin, [data-state="verifying"] .pay-spin { display: inline-block; }
+[data-state="opening"] #pay svg, [data-state="verifying"] #pay svg { display: none; }
+@keyframes pay-spin { to { transform: rotate(360deg); } }
+
+.pay-status { margin: 0; min-height: 1.5em; color: var(--text-md); font-size: var(--fs-sm); line-height: 1.45; }
+.pay-status:empty { display: none; }
+.pay-status.is-ok { color: var(--ok-text); font-weight: var(--fw-strong); display: flex; gap: var(--s-2); align-items: flex-start; }
+.pay-status.is-bad { color: var(--coral-text); font-weight: var(--fw-strong); display: flex; gap: var(--s-2); align-items: flex-start; }
+/* Never colour alone: a check or an alert mark leads the line. */
+.pay-status.is-ok::before, .pay-status.is-bad::before {
+  content: "";
+  flex: none;
+  width: 22px; height: 22px; margin-top: 1px;
+  background: currentColor;
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
+}
+.pay-status.is-ok { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 11.1V12a10 10 0 1 1-5.9-9.1'/%3E%3Cpath d='M22 4L12 14l-3-3'/%3E%3C/svg%3E"); }
+.pay-status.is-bad { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E"); }
+
+/* An order paid and verified: the status is the ending, set like a receipt stamp. */
+[data-state="paid"][data-kind="order"] .pay-status.is-ok {
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  font-size: var(--fs-body);
+}
+
+/* ------------------------------------------------------------------- loading -- */
+.pay-skeleton { display: flex; flex-direction: column; gap: var(--s-3); }
+.pay-skeleton span {
+  display: block;
+  height: 18px;
+  width: 60%;
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--piano-3) 0%, var(--piano-4) 40%, var(--piano-3) 80%);
+  background-size: 300% 100%;
+  animation: pay-shimmer 1.4s var(--ease-soft) infinite;
+}
+.pay-skeleton span:nth-child(2) { width: 85%; height: 30px; }
+.pay-skeleton .pay-skeleton-big { width: 55%; height: 56px; margin-top: var(--s-3); }
+.pay-skeleton .pay-skeleton-btn { width: 100%; height: var(--touch); border-radius: var(--r-pill); margin-top: var(--s-6); }
+@keyframes pay-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.pay-loading { color: var(--text-lo); font-size: var(--fs-sm); }
+/* Nothing of the order shows until it has loaded. */
+[data-state="loading"] .pay-title, [data-state="loading"] .pay-action, [data-state="loading"] .pay-ref:empty { display: none; }
+.pay-ref:empty { display: none; }
+
+/* ----------------------------------------------- problems: expired, invalid, error -- */
+.pay-problem { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-3); padding: var(--s-2) 0; }
+.pay-problem > * { margin: 0; }
+.pay-problem-mark {
+  display: grid; place-items: center;
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  color: var(--coral-text);
+  background: color-mix(in srgb, var(--coral) 14%, var(--piano-1));
+  border: 1px solid color-mix(in srgb, var(--coral) 55%, transparent);
+  box-shadow: var(--depth-soft);
+}
+.pay-problem-mark svg { width: 36px; height: 36px; }
+.pay-ico-clock { display: none; }
+[data-state="expired"] .pay-problem-mark { color: var(--amber-text); background: color-mix(in srgb, var(--amber) 14%, var(--piano-1)); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+[data-state="expired"] .pay-ico-clock, [data-state="limit"] .pay-ico-clock { display: block; }
+[data-state="expired"] .pay-ico-alert, [data-state="limit"] .pay-ico-alert { display: none; }
+.pay-problem-title { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: var(--fw-display); line-height: 1.25; outline: none; }
+:lang(hi) .pay-problem-title, :lang(kn) .pay-problem-title { font-family: inherit; }
+.pay-problem-text { color: var(--text-md); }
+
+/* ------------------------------------------------------------- bill: thank you -- */
+.pay-thanks { display: flex; flex-direction: column; align-items: center; gap: var(--s-4); text-align: center; padding-top: var(--s-3); }
+.pay-thanks > * { margin: 0; }
+.pay-thanks-mark {
+  display: grid; place-items: center;
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  background: var(--btn-surface);
+  color: var(--on-accent);
+  border: 1px solid var(--btn-rim);
+  box-shadow: var(--depth), var(--glow-lime);
+  animation: pay-pop var(--t-enter) var(--ease-spring) both;
+}
+.pay-thanks-mark svg { width: 52px; height: 52px; stroke-width: 2.6; }
+@keyframes pay-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.pay-thanks-title { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: var(--fw-display); color: var(--ok-text); outline: none; }
+:lang(hi) .pay-thanks-title, :lang(kn) .pay-thanks-title { font-family: inherit; line-height: 1.35; }
+.pay-thanks-facts { width: 100%; text-align: left; }
+.pay-fact-amount dd { font-family: var(--font-num); font-size: var(--fs-amount); font-variant-numeric: tabular-nums; }
+
+.pay-done-back { display: flex; }
+
+.pay-fine { margin: 0; color: var(--text-lo); font-size: var(--fs-sm); line-height: 1.5; }
+
+/* ------------------------------------------------------------------ layouts -- */
+@media (min-width: 400px) {
+  .pay-fact { flex-wrap: nowrap; }
+}
+/* Tablet, laptop, 1920: a centred card 480px wide over the field. */
+@media (min-width: 600px) {
+  .pay-main { justify-content: center; padding-top: calc(var(--s-7) + var(--safe-t)); padding-bottom: calc(var(--s-7) + var(--safe-b)); }
+  .pay-card { flex: 0 0 auto; padding: var(--s-6); }
+  .pay-action { margin-top: var(--s-2); }
+}
+/* Phone landscape: facts left, amount and Pay right. */
+@media (max-height: 500px) and (min-width: 568px) {
+  .pay-main { max-width: 860px; justify-content: flex-start; padding-top: calc(var(--s-3) + var(--safe-t)); }
+  .pay-top { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--s-4); }
+  .pay-test { flex: 1 1 auto; max-width: 52%; }
+  .pay-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-flow: dense;
+    column-gap: var(--s-6);
+    row-gap: var(--s-3);
+    align-content: start;
+    padding: var(--s-5);
+  }
+  .pay-card > * { grid-column: 1; }
+  .pay-amount, .pay-action, .pay-done-back { grid-column: 2; }
+  .pay-amount { grid-row: 1 / span 2; align-self: end; }
+  .pay-action { grid-row: 3 / span 3; margin-top: 0; align-self: start; }
+  .pay-thanks, .pay-problem, .pay-skeleton { grid-column: 1 / -1; }
+}
+
+/* ------------------------------------------------------------ reduced motion -- */
+@media (prefers-reduced-motion: reduce) {
+  .pay-skeleton span { animation: none; background: var(--piano-3); }
+  .pay-spin { animation-duration: 2.4s; }
+  .pay-thanks-mark { animation: none; }
+  .pay-btn, .pay-back { transition: none; }
+}
+
+/* Browsers without color-mix: solid fallbacks from the same tokens. */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .pay-test { background: var(--piano-1); border-color: var(--amber); }
+  .pay-sim { background: transparent; border-color: var(--cyan); }
+  .pay-problem-mark { background: var(--piano-1); border-color: var(--coral); }
+  [data-state="paid"][data-kind="order"] .pay-status.is-ok { background: transparent; border-color: var(--ok); }
+}
