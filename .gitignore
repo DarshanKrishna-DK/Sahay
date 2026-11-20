@@ -1,22 +1,41 @@
+# Secrets: only the template ships
 .env
 .env.*
 !.env.example
-node_modules/
-data/
-*.log
-.claude/settings.local.json
-.claude/worktrees/
-docs/build/evidence/**/*.wav
-# local tooling and working notes - never pushed
+
+# Every dot-folder (.claude, .agents, .playwright-mcp, .superpowers, .vscode, .idea, ...) stays local.
+# Dot-files that ship (.gitignore, .gitattributes, .gitguardian.yaml, .env.example) are not folders.
+.*/
+
+# Local tooling, agent notes and working docs: never pushed
 docs/
-.claude/
 .mcp.json
-.agents/
 CLAUDE.md
 AGENTS.md
-.vscode/
-.idea/
-*.wav
-spike/
 skills-lock.json
-.playwright-mcp/
+spike/
+
+# Dependencies, the live database and runtime output
+node_modules/
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.log
+*.wav
+
+# Screenshots, evidence and scratch artefacts
+evidence/
+screenshots/
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.gif
+/*.mp4
+/*.webm
+/*.txt
+/*.tmp
+tmp/
+scratch/
