@@ -105,7 +105,8 @@
 
 /* ============================================================ the cards -- */
 .hm-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); width: 100%; }
-@media (min-width: 900px) { .hm-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+/* Today gets the wider column so four tiles fit in one row with one-line labels. */
+@media (min-width: 900px) { .hm-cards { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; } }
 .hm-card { min-width: 0; }
 
 /* Needs you: [icon] [what + who] [amount] [Check]; the whole row opens the Yes card. */
@@ -120,8 +121,12 @@
 /* Today: 2x2 tiles; value is "—" until data. */
 .hm-tiles { margin: 0; padding: 0; list-style: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (min-width: 900px) { .hm-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.hm-tile { display: flex; flex-direction: column; justify-content: space-between; min-height: 88px; text-decoration: none; color: var(--text); }
-.hm-tile .tile-label { justify-content: space-between; }
+/* Every tile the same height: icon + HUD word on one line, the number under it in Jersey 10. */
+.hm-tiles > li { display: flex; min-width: 0; }
+.hm-tile { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: var(--s2); min-height: 88px; text-decoration: none; color: var(--text); }
+.hm-tile .tile-label { display: flex; align-items: center; gap: 6px; min-width: 0; padding-right: 0; white-space: nowrap; }
+.hm-tile .tile-label > svg { position: static; flex: none; width: 18px; height: 18px; color: var(--muted); }
+.hm-tile-word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hm-tile[data-empty="true"] .tile-value { color: var(--muted); }
 .hm-tile[data-tone="good"] .tile-value { color: var(--good); }
 .hm-tile[data-tone="warn"][data-empty="false"] .tile-value { color: var(--warn); }
@@ -153,5 +158,5 @@
   .hm-assistant { margin-top: var(--s2); }
   .hm-card { padding: 20px; }
   .hm-card-today .hm-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .hm-tile { min-height: 80px; padding: 12px 14px; }
+  .hm-tile { min-height: 80px; padding: 12px; }
 }

@@ -321,7 +321,7 @@ export function createHome() {
       const value = x.value === null ? "—" : x.kind === "money" ? money(x.value) : grouped(x.value);
       const label = t(x.key);
       return h("li", null, h("a", { class: "tile hm-tile", href: x.route, dataset: { id: x.id, tone: x.tone, empty: String(x.value === null) }, "aria-label": t("home.statOpen", { word: label, value }) },
-        h("span", { class: "tile-label" }, scripted("span", label), icon(x.icon, 20)),
+        h("span", { class: "tile-label" }, icon(x.icon, 18), scripted("span", label, { class: "hm-tile-word" })),
         h("span", { class: "tile-value", text: value })));
     });
     fill(todayBody,
