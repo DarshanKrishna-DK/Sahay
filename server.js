@@ -187,6 +187,7 @@ function boot() {
   const jobs = require("./src/jobs");
   const failed = jobs.failInterruptedJobs();
   if (failed) console.warn(`[sahay] marked ${failed} interrupted job(s) as failed.`);
+  require("./src/approvals").startExpiry(); // a deal waiting for a yes that no longer stands leaves Needs-you
 
   const narrator = require("./src/agora/narrator");
   const followups = require("./src/followups");

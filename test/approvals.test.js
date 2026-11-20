@@ -295,7 +295,8 @@ test("review #2: with two deals, a yes to the second read-back can never approve
   // Putting B to the owner withdrew A: only one deal waits at a time.
   assert.equal(repo.getApproval(businessId, a.id).status, "rejected");
   assert.equal(repo.listApprovals(businessId, { status: "pending" }).length, 1);
-  assert.match(repo.listAudit(businessId, { type: "approval.decided" })[0].detail.reason, /Another deal was put to the owner/);
+  // The first deal is withdrawn: replaced by another deal, or (fix-live c) by the newer need for the same item.
+  assert.match(repo.listAudit(businessId, { type: "approval.decided" })[0].detail.reason, /Another deal was put to the owner|A newer need for the same item/);
 
   const afterB = [...heard(a.readback, { from: 10 }), ...heard(b.readback, { from: 20 }), asr("yes", 30)];
   assert.throws(() => voice(businessId, a, afterB), refuses("ALREADY_DECIDED"));
@@ -399,10 +400,10 @@ test("an approval stops counting the moment the deal behind it changes", () => {
 
   repo.updateRequirement(businessId, quote.requirement_id, { quantity: 80 });
   repo.setQuoteLandedCost(businessId, quote.id, 80 * 62 + 150);
-  assert.throws(() => approvals.confirmApproval(businessId, pending.id, { decision: "approve", via: "button" }), refuses("APPROVAL_STALE"));
-  assert.equal(repo.getApproval(businessId, pending.id).status, "pending");
-  // Rejecting a stale approval is still possible.
-  assert.equal(approvals.confirmApproval(businessId, pending.id, { decision: "reject", via: "button" }).status, "rejected");
+  // fix-live (c): a yes to it is refused as APPROVAL_EXPIRED and the stale approval is withdrawn (it leaves Needs-you).
+  assert.throws(() => approvals.confirmApproval(businessId, pending.id, { decision: "approve", via: "button" }), refuses("APPROVAL_EXPIRED"));
+  assert.equal(repo.getApproval(businessId, pending.id).status, "rejected");
+  assert.equal(repo.getApproval(businessId, pending.id).decided_via, null, "withdrawn by the server, not the owner's no");
 
   const fresh = approvals.requestApproval(businessId, quote.id).approval;
   approvals.confirmApproval(businessId, fresh.id, { decision: "approve", via: "button" });

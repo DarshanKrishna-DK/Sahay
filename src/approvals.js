@@ -230,6 +230,98 @@ function summary(approval) {
   };
 }
 
+/* ------------------------------------------------- stale approvals --- */
+
+/**
+ * Live 2026-11-20: a deal put to the owner at 02:07 stayed in Needs-you for a day; at 18:58 the owner
+ * tapped Yes and got APPROVAL_STALE ("the deal changed"), because its read-back no longer matched
+ * the deal as the code builds it now. A waiting approval now expires (it is withdrawn: status
+ * "rejected" with no decided_via, the same as when another deal replaces it) when:
+ * - "deal_changed": its read-back no longer matches the deal (or the deal cannot be built);
+ * - "too_old": nobody asked about it for APPROVAL_MAX_AGE_MS (since it was requested or last read out);
+ * - "superseded": the owner has since started a new need for the same item.
+ * Its audit row (approval.decided) carries `expired: <reason>`. Nothing is ever approved here.
+ */
+const APPROVAL_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+const itemKey = (text) =>
+  String(text ?? "").normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
+const sameItem = (a, b) => {
+  const x = itemKey(a);
+  const y = itemKey(b);
+  return Boolean(x && y) && (x === y || ` ${x} `.includes(` ${y} `) || ` ${y} `.includes(` ${x} `));
+};
+
+/** Why a pending approval no longer stands, or null while it does. */
+function staleReason(businessId, approval, now = Date.now()) {
+  if (!approval || approval.status !== "pending") return null;
+  let deal;
+  try {
+    deal = loadDeal(businessId, approval.quote_id);
+  } catch {
+    return "deal_changed";
+  }
+  if (!matchesDeal(approval, deal)) return "deal_changed";
+  const lastAsked = Math.max(Date.parse(approval.requested_at), ...repo.listApprovalReadbacks(businessId, { approval_id: approval.id }).map((r) => Date.parse(r.spoken_at)).filter(Number.isFinite));
+  if (now - lastAsked > APPROVAL_MAX_AGE_MS) return "too_old";
+  const need = repo.getRequirement(businessId, repo.getQuote(businessId, approval.quote_id)?.requirement_id);
+  if (need && repo.listRequirements(businessId).some((r) => r.id !== need.id && r.created_at >= approval.requested_at && sameItem(r.item, need.item))) return "superseded";
+  return null;
+}
+
+const EXPIRED_TEXT = {
+  deal_changed: "The deal changed after this approval was requested.",
+  too_old: "Nobody answered this approval for six hours.",
+  superseded: "A newer need for the same item replaced this one.",
+};
+
+/** Withdraw one stale pending approval. Returns its reason, or null when it still stands (or is not pending). */
+function expireIfStale(businessId, approvalId, { now = Date.now(), sessionId = null } = {}) {
+  return db.transaction(() => {
+    const approval = repo.getApproval(businessId, approvalId);
+    const reason = staleReason(businessId, approval, now);
+    if (!reason || !repo.withdrawApproval(businessId, approval.id)) return null;
+    events.emit(businessId, "approval.decided", { ...summary(approval), status: "rejected", expired: reason, reason: EXPIRED_TEXT[reason] }, { sessionId, actor: "system" });
+    return reason;
+  });
+}
+
+/** Expire every stale pending approval of a business. Returns [{approvalId, reason}]. */
+function expireStale(businessId, options = {}) {
+  return repo
+    .listApprovals(businessId, { status: "pending" })
+    .map((a) => ({ approvalId: a.id, reason: expireIfStale(businessId, a.id, options) }))
+    .filter((x) => x.reason);
+}
+
+/** Every business (boot and the periodic sweep). Returns the number expired; never throws. */
+function expireStaleAll(options = {}) {
+  let count = 0;
+  for (const { business_id: businessId } of db.prepare("SELECT DISTINCT business_id FROM approvals WHERE status = 'pending'").all()) {
+    try {
+      count += expireStale(businessId, options).length;
+    } catch (err) {
+      console.warn(`[approvals] could not check stale approvals of a business: ${err.message}`);
+    }
+  }
+  return count;
+}
+
+let sweepTimer = null;
+/** Expire stale approvals now and every `everyMs`. Returns stop(). */
+function startExpiry({ everyMs = 10 * 60 * 1000 } = {}) {
+  const expired = expireStaleAll();
+  if (expired) console.warn(`[approvals] withdrew ${expired} stale approval(s) waiting for the owner.`);
+  if (!sweepTimer) {
+    sweepTimer = setInterval(() => expireStaleAll(), everyMs);
+    sweepTimer.unref?.();
+  }
+  return () => {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  };
+}
+
 /**
  * Ask for the owner's approval of one quote. Returns `{ approval, deal, created }`.
  * Asking again for an unchanged deal returns the approval that is already open
@@ -240,6 +332,7 @@ function summary(approval) {
  */
 function requestApproval(businessId, quoteId, { sessionId = null } = {}) {
   return db.transaction(() => {
+    expireStale(businessId, { sessionId }); // a stale one waiting for the same quote is replaced, never re-read
     const deal = loadDeal(businessId, quoteId);
     if (repo.listOrders(businessId, { quote_id: quoteId }).length) {
       throw new ApprovalError("ALREADY_ORDERED", "An order has already been placed for this quote.");
@@ -523,6 +616,17 @@ function lastOwnerWords(contents) {
 function confirmApproval(businessId, approvalId, { decision, via, agentId = null, history, sessionId = null } = {}) {
   if (decision !== "approve" && decision !== "reject") throw new ApprovalError("INVALID_DECISION", 'decision is "approve" or "reject".');
   if (via !== "voice" && via !== "button") throw new ApprovalError("INVALID_VIA", 'via is "voice" or "button".');
+  // A yes to a deal that no longer stands is never taken: the approval is withdrawn and the owner told to bargain again.
+  if (decision === "approve") {
+    const current = repo.getApproval(businessId, approvalId);
+    // Withdrawn by the server already (a screen opened before the sweep): the same clear line, not "already rejected".
+    const reason = via === "button" && current?.status === "rejected" && !current.decided_via ? "withdrawn" : expireIfStale(businessId, approvalId, { sessionId });
+    if (reason) {
+      const err = new ApprovalError("APPROVAL_EXPIRED", "This deal is old. Ask Sahay to bargain again.");
+      err.details = { reason };
+      throw err;
+    }
+  }
 
   return db.transaction(() => {
     const approval = repo.getApproval(businessId, approvalId);
@@ -587,4 +691,5 @@ module.exports = {
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
   answerToReadback, answerAfterSpoken, lastOwnerTurnAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr, spokenQuestionTables,
   buildReadback, loadDeal,
+  staleReason, expireIfStale, expireStale, expireStaleAll, startExpiry, APPROVAL_MAX_AGE_MS,
 };
