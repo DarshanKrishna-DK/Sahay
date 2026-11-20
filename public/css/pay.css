@@ -42,7 +42,7 @@ svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; s
 .brand-mark .brand-img { display: block; width: 32px; height: 40px; }
 .pay-langs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 0; background: var(--deep); box-shadow: var(--pixel-edge); }
 .pay-lang {
-  min-height: 42px; min-width: 48px; padding: 0 12px; border: 0; border-radius: 0;
+  min-height: 48px; min-width: 48px; padding: 0 12px; border: 0; border-radius: 0;
   background: transparent; color: var(--muted); font: 600 var(--fs-label) / 1 var(--font); letter-spacing: .04em; cursor: pointer;
 }
 .pay-lang:hover { color: var(--text); }
@@ -117,7 +117,9 @@ svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; s
 .pay-btn:focus-visible { outline-offset: 5px; }
 .pay-btn[disabled] { cursor: default; }
 .pay-btn[disabled] .pay-btn-front { background: var(--disabled); color: var(--muted); transform: none; }
-:lang(hi) .pay-btn, :lang(kn) .pay-btn { font-size: 1rem; }
+:lang(hi) .pay-btn, :lang(kn) .pay-btn { font-size: 1rem; letter-spacing: 0; text-transform: none; }
+/* Indic matras sit above/below the line: give the label room so overflow never clips them. */
+:lang(hi) .pay-btn-front > span, :lang(kn) .pay-btn-front > span { line-height: 1.6; padding-block: 2px; overflow: visible; }
 @media (max-width: 374px) { .pay-btn { letter-spacing: .08em; } .pay-btn-front { padding: 0 12px; gap: 8px; } }
 
 /* Outline (Try again, Back to Sahay). */
