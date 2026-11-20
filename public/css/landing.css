@@ -210,7 +210,8 @@ main, .site-foot { position: relative; z-index: 1; }
   background: rgba(182, 242, 60, 0.08); border: 1px solid rgba(182, 242, 60, 0.35);
 }
 .ai-chip svg { color: var(--lime); flex: none; }
-.nav-links { display: flex; gap: 4px; margin-left: auto; }
+/* Stitch v4 order: brand and notice left, page links centred, language and start on the right. */
+.nav-links { display: flex; flex: 1; justify-content: center; gap: 4px; }
 .nav-links a {
   display: inline-flex; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 999px;
   text-decoration: none; color: var(--text);
@@ -282,6 +283,7 @@ main, .site-foot { position: relative; z-index: 1; }
   font-size: clamp(44px, 6vw, 92px); line-height: 1.02;
   letter-spacing: -0.01em; text-wrap: balance;
 }
+.h1-lime { color: var(--lime); }
 :lang(hi) .hero-copy h1, :lang(kn) .hero-copy h1 { max-width: 16ch; font-size: clamp(40px, 5.2vw, 80px); line-height: 1.5; }
 .hero-sub { max-width: 32em; margin-top: 22px; font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem); line-height: 1.6; color: var(--text); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }

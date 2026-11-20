@@ -21,11 +21,9 @@ const S = {
   start: { en: "Start talking", hi: "बोलकर शुरू करें", kn: "ಮಾತನಾಡಿ ಶುರು ಮಾಡಿ" },
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
-  heroTitle: {
-    en: "Buy, sell and keep accounts by talking.",
-    hi: "बोलकर ख़रीदिए, बेचिए, हिसाब रखिए।",
-    kn: "ಮಾತನಾಡಿ ಖರೀದಿಸಿ, ಮಾರಿ, ಲೆಕ್ಕ ಇಡಿ.",
-  },
+  // The hero line in two parts (the second is lit): what Sahay does, then how you ask for it.
+  heroTitleA: { en: "Buy, sell and keep accounts", hi: "ख़रीदिए, बेचिए, हिसाब रखिए,", kn: "ಖರೀದಿ, ಮಾರಾಟ, ಲೆಕ್ಕ," },
+  heroTitleB: { en: "by talking.", hi: "बस बोलकर।", kn: "ಮಾತಿನಲ್ಲೇ." },
   heroSub: {
     en: "Sahay calls real sellers, bargains, makes your bills and watches your stock, and waits for your yes before anything goes ahead.",
     hi: "सहाय असली विक्रेताओं से बात करता है, मोलभाव करता है, बिल बनाता है, स्टॉक पर नज़र रखता है, और कुछ भी आगे बढ़ाने से पहले आपकी हाँ का इंतज़ार करता है।",
