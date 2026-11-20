@@ -231,9 +231,8 @@
 .b3-st[data-status="needs"] .b3-hud-box, .b3-st[data-status="failed"] .b3-hud-box { --b: var(--coral-text); }
 
 /* wide: one horizontal wave, HUD above each station, label under it */
-@container b3river (min-width: 720px) {
-  .b3-river { padding: var(--s-5); }
-  .b3-river-stage { --hud-h: 76px; --track-h: 112px; --label-h: 92px; height: calc(var(--hud-h) + var(--track-h) + var(--label-h)); }
+@container b3river (min-width: 600px) {
+  .b3-river-stage { --hud-h: 92px; --track-h: 112px; --label-h: 92px; height: calc(var(--hud-h) + var(--track-h) + var(--label-h)); }
   .b3-wave { display: block; position: absolute; left: 0; top: var(--hud-h); width: 100%; height: var(--track-h); overflow: visible; pointer-events: none; }
   .b3-leg { display: none; }
   .b3-stations { grid-template-columns: repeat(7, minmax(0, 1fr)); height: 100%; }
@@ -265,7 +264,9 @@
     margin: 0;
     transform: translateX(-50%);
   }
-  .b3-hud-box { flex-direction: column; align-items: center; flex-wrap: nowrap; padding: 4px 8px; text-align: center; }
+  .b3-hud-box { flex-direction: column; align-items: center; flex-wrap: nowrap; padding: 4px 6px; text-align: center; }
+  /* Narrow columns (about 85 px at 600): a figure wraps at a space ("कुल / ₹20,200"), never cut. */
+  .b3-hud-line { white-space: normal; text-overflow: clip; overflow-wrap: normal; }
   .b3-hud-link { display: block; width: 1.5px; height: 12px; background: var(--accent-text); opacity: .7; }
   .b3-st[data-status="needs"] .b3-hud-link, .b3-st[data-status="failed"] .b3-hud-link { background: var(--coral-text); }
 }
@@ -311,8 +312,10 @@
 .b3-ready-box { order: 3; }
 .b3-col-b > .b3-orders { order: 4; }
 .b3-earlier-box { order: 5; }
-/* Laptop (spec 6.2): river full width above; ladder, Listen in and earlier needs left, orders right. */
-@container b3 (min-width: 700px) {
+/* Laptop (spec 6.2): river full width above; ladder, Listen in and earlier needs left, orders right.
+   Keyed to the Buy screen's own width (container b3 = the content #main gives it, after the nav and
+   the agent column), so 1280 with the Yes column (about 670 px of content) already has two columns. */
+@container b3 (min-width: 640px) {
   .b3-cols { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
   .b3-col-a, .b3-col-b { display: grid; gap: var(--s-5); align-content: start; }
 }
