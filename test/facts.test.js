@@ -118,7 +118,7 @@ test("sales today, payments and the overview come from this shop's records only"
   assert.equal(overview.billsToday, 2);
   assert.equal(overview.owedTotal, 3999 - 1000 + 0); // 2500 + 500 + 999 billed, 1000 received
   assert.equal(overview.owedCustomers, 1);
-  assert.match(overview.say, /^Today 2 bills for 3 thousand rupees; 2 thousand 999 rupees from 1 customer owed to you; nothing is low; no orders open\.$/);
+  assert.match(overview.say, /^Today: 2 bills for 3 thousand rupees; 2 thousand 999 rupees from 1 customer owed to you; nothing is low; no orders open\.$/);
 
   // The khata topic is who_owes_me's own answer.
   const fromFacts = await ask(businessId, "khata");

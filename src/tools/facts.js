@@ -111,7 +111,7 @@ const LINES = {
   overview: {
     "hi-IN": (v) => `आज ${v.bills}; उधार में ${v.owed}; ${v.low}; ${v.orders}।`,
     "kn-IN": (v) => `ಇವತ್ತು ${v.bills}; ಬಾಕಿ ${v.owed}; ${v.low}; ${v.orders}.`,
-    "en-IN": (v) => `Today ${v.bills}; ${v.owed} owed to you; ${v.low}; ${v.orders}.`,
+    "en-IN": (v) => `Today: ${v.bills}; ${v.owed} owed to you; ${v.low}; ${v.orders}.`,
   },
 };
 
