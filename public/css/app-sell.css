@@ -69,7 +69,11 @@
 .sl-waiting-cards { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
 
 .sl-cols { display: grid; gap: var(--s-6); align-items: start; }
-@container sv (min-width: 720px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); } }
+/* Side by side only when the side column gets at least 320 px (laptop with the agent column open is
+   about 1000 px of content at 1568, about 730 at 1280); narrower, customers and the shop card go
+   under the bills, two across when there is room. */
+@container sv (min-width: 980px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); } }
+@container sv (min-width: 680px) and (max-width: 979px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sl-bills { container: slbills / inline-size; min-width: 0; }
 .sl-side { display: grid; gap: var(--s-4); min-width: 0; align-content: start; }
 .sl-quiet { max-width: 52ch; }
@@ -134,7 +138,17 @@
 .sl-avatar:lang(hi) { font-family: var(--font-deva); }
 .sl-avatar:lang(kn) { font-family: var(--font-kn); }
 .sl-person .row-ico.sl-avatar { width: 44px; height: 44px; }
+/* A customer row never cuts a name to a letter: the name wraps to two lines, the amount owed moves
+   under the name when the row is narrow. */
+.sl-person { flex-wrap: wrap; align-items: flex-start; }
+.sl-person .row-main { flex: 1 1 150px; }
+.sl-person .row-title {
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.3;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+}
+.sl-person .row-title:lang(hi), .sl-person .row-title:lang(kn) { line-height: 1.5; }
 .sl-person .row-sub { display: flex; flex-wrap: wrap; gap: 2px 12px; white-space: normal; }
+.sl-person .row-end { margin-left: auto; padding-top: 2px; }
 .sl-phone { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .sl-phone.is-none { color: var(--text-lo); }
 .sl-owes { color: var(--amber-text); font-family: var(--font-num); font-weight: var(--fw-strong); font-variant-numeric: tabular-nums; }
@@ -275,7 +289,7 @@
 .mn-total-sub { display: flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); }
 
 .mn-cols { display: grid; gap: var(--s-6); align-items: start; }
-@container sv (min-width: 720px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } }
+@container sv (min-width: 900px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(340px, 1fr); } }
 .mn-side { display: grid; gap: var(--s-5); min-width: 0; align-content: start; }
 .mn-quiet { max-width: 52ch; }
 
@@ -306,17 +320,22 @@
 .mn-blocked { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 
 /* To pay and received: rows in a quiet panel. */
+.mn-pay { container: mnpay / inline-size; }
 .mn-pay, .mn-received { padding: 8px 14px 12px; border-radius: var(--r-card); background: var(--piano-1); border: 1px solid var(--hairline); }
 .mn-pay .sv-sec { margin: 6px 0 4px; }
 .mn-topay .row-ico { color: var(--cyan-text); }
 .mn-topay .row-sub, .mn-got .row-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; white-space: normal; }
+/* "simulated vendor" is never cut: the pill wraps its words instead. */
+.mn-screen .pill, .sl-screen .pill, .sl-detail-who .pill { max-width: 100%; height: auto; white-space: normal; border-radius: var(--r-md); }
+.mn-screen .pill > svg, .sl-screen .pill > svg, .sl-detail-who .pill > svg { flex: none; }
+.mn-screen .pill > span, .sl-screen .pill > span, .sl-detail-who .pill > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 .mn-po { font-family: var(--font-num); color: var(--text-md); font-variant-numeric: tabular-nums; }
 .mn-topay-end { flex-direction: column; align-items: flex-end; gap: 6px; }
 .mn-topay-amt, .mn-got-amt { font-family: var(--font-num); font-weight: var(--fw-display); font-size: var(--fs-lead); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mn-got-amt { color: var(--ok-text); }
 .mn-topay-pay { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .mn-nolink { display: inline-flex; align-items: center; gap: 6px; max-width: 18ch; color: var(--text-lo); font-size: var(--fs-sm); text-align: right; }
-@container sv (max-width: 419px) {
+@container mnpay (max-width: 459px) {
   .mn-topay { flex-wrap: wrap; }
   .mn-topay-end { flex: 1 1 100%; flex-direction: row; justify-content: space-between; align-items: center; padding-left: 56px; }
   .mn-topay-pay { flex-direction: row-reverse; align-items: center; }
