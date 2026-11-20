@@ -164,12 +164,24 @@ function buyBody(c) {
         hasQty ? h("span", { class: "bignum bignum-amount" }, qtyText(v.quantity, null), unit ? h("span", { class: "bignum-unit", text: ` ${unit}` }) : null) : null)) : null,
     has(v.total) ? h("div", { class: "yc-total" }, label(t("wt.total")), h("p", { class: "bignum bignum-total yc-total-num", text: rupees(v.total) })) : null,
     has(v.leadTimeDays) ? h("p", { class: "yc-meta" }, icon("truck", 20), h("span", { text: v.leadTimeDays === 1 ? t("wt.deliveryOne") : t("wt.delivery", { n: v.leadTimeDays }) })) : null,
-    v.approval && v.approval.readback ? heard(v.approval.readback) : null,
+    v.approval && v.approval.readback ? heard(v.approval.readback, c.key) : null,
   ];
 }
 
-function heard(text) {
-  return h("div", { class: "yc-heard" }, label(t("wt.heard")), scripted("p", text, { class: "yc-heard-text" }));
+/** Read-backs the owner opened in full (key set); a long one is three lines with "Read more" (QA #6). */
+const openHeard = new Set();
+
+function heard(text, key) {
+  const long = String(text || "").length > 110;
+  const open = openHeard.has(key);
+  const id = domId("yc-heard", key);
+  return h("div", { class: "yc-heard" },
+    label(t("wt.heard")),
+    scripted("p", text, { class: `yc-heard-text${long && !open ? " is-clamped" : ""}`, id }),
+    long ? h("button", {
+      class: "chip yc-more", type: "button", "aria-expanded": String(open), "aria-controls": id,
+      on: { click: () => { if (open) openHeard.delete(key); else openHeard.add(key); renderAll(); } },
+    }, icon(open ? "chevronUp" : "chevronDown", 20), h("span", { text: t(open ? "wt.readLess" : "wt.readMore") })) : null);
 }
 
 function billBody(c) {
@@ -198,7 +210,7 @@ function billBody(c) {
       lines.length > MAX ? h("li", { class: "yc-line yc-line-more", text: t("wt.more", { n: lines.length - MAX }) }) : null) : null,
     gstLine(tot),
     has(tot.total) ? h("div", { class: "yc-total" }, label(t("wt.total")), h("p", { class: "bignum bignum-total yc-total-num", text: money(tot.total) })) : null,
-    inv.readback ? heard(inv.readback) : null,
+    inv.readback ? heard(inv.readback, c.key) : null,
   ];
 }
 
@@ -290,7 +302,7 @@ function doneNumber(c) {
   return null;
 }
 
-function foot(c, place) {
+function foot(c, place, { actionsOut = false } = {}) {
   const closable = place !== "inline" || c.phase !== "saving";
   switch (c.phase) {
     case "waiting": case "error": {
@@ -307,12 +319,12 @@ function foot(c, place) {
         errText ? h("p", { class: "error-line yc-error", role: "alert" }, icon("alert", 20), scripted("span", errText)) : null,
         d.voiceOnly
           ? h("p", { class: "note-line yc-voice" }, icon("mic", 20), h("span", { text: t("wt.voiceOnly") }))
-          : actions(c),
+          : actionsOut ? null : actions(c),
       ];
     }
     case "saving":
       return [
-        actions(c),
+        actionsOut ? null : actions(c),
         h("p", { class: "yc-status yc-status-saving", role: "status" },
           h("span", { class: "spinner", "aria-hidden": "true" }),
           h("span", { text: c.busy === "no" ? t("wt.savingNo") : t(`wt.saving.${c.kind}`) })),
@@ -365,11 +377,11 @@ function cardSig(c, extra) {
       : c.kind === "reorder" ? [itemOf(d.itemId), d.proposal, reorderQuestion.get(String(d.proposal && d.proposal.id))]
         : d.rule;
   const after = c.phase === "done" ? [state.orders.size, c.kind === "buy" ? [...state.orders.values()].filter((o) => String(o.approvalId) === String(c.id)) : null] : null;
-  return JSON.stringify([lang(), c.phase, c.busy, c.say, c.fix, c.result, c.status, live, after, extra]);
+  return JSON.stringify([lang(), c.phase, c.busy, c.say, c.fix, c.result, c.status, live, after, openHeard.has(c.key), extra]);
 }
 
 /** One Yes card element for a model card. */
-function buildCard(c, { place, index = 0, total = 1, speaking = false }) {
+function buildCard(c, { place, index = 0, total = 1, speaking = false, actionsOut = false }) {
   const titleId = domId("yc-t", c.key);
   const isLive = c.phase === "waiting" || c.phase === "error";
   const now = speaking && isLive;
@@ -387,7 +399,7 @@ function buildCard(c, { place, index = 0, total = 1, speaking = false }) {
       speakKey ? h("span", { class: "card-speak" }, speakButton(speakKey)) : null),
     now ? h("p", { class: "yc-now" }, h("span", { class: "yc-now-dot", "aria-hidden": "true" }), h("span", { text: t("wt.speaking") })) : null,
     h("div", { class: "yc-body" }, ...BODY[c.kind](c).filter(Boolean)),
-    h("div", { class: "yc-foot" }, ...foot(c, place).filter(Boolean)));
+    h("div", { class: "yc-foot" }, ...foot(c, place, { actionsOut }).filter(Boolean)));
 }
 
 /** A collapsed tray row: kind icon, title, the figure, phase mark; tap expands it. */
@@ -407,7 +419,7 @@ function buildRow(c, onOpen) {
 /* ------------------------------------------------------------------ tray -- */
 
 /** One tray view (the sheet/drawer body, or the agent column). */
-function createTrayView({ place, withHead }) {
+function createTrayView({ place, withHead, onFoot = null }) {
   const el = h("section", { class: `wt wt-${place}`, "aria-labelledby": undefined });
   const headId = domId("wt-h", place);
   const count = h("span", { class: "badge wt-badge", "aria-hidden": "true" });
@@ -420,6 +432,8 @@ function createTrayView({ place, withHead }) {
   const nodes = new Map(); // key -> { li, sig }
   let expanded = null;
   let stateKey = "";
+  let footSig = null;
+  const footEl = onFoot ? h("div", { class: "wt-foot" }) : null;
 
   function render() {
     if (head) {
@@ -467,7 +481,7 @@ function createTrayView({ place, withHead }) {
         const hadFocus = n.li.contains(document.activeElement) ? document.activeElement : null;
         const focusSel = hadFocus ? focusPath(hadFocus) : null;
         n.li.className = `wt-item${open ? " is-open" : " row"}`;
-        fill(n.li, open ? buildCard(c, { place, index: i, total: cards.length, speaking: speaking === c.key }) : buildRow(c, (k) => { expanded = k; render(); focusTitle(k); }));
+        fill(n.li, open ? buildCard(c, { place, index: i, total: cards.length, speaking: speaking === c.key, actionsOut: Boolean(onFoot) }) : buildRow(c, (k) => { expanded = k; render(); focusTitle(k); }));
         if (focusSel) restoreFocus(n.li, focusSel);
       }
       order.push(n.li);
@@ -479,6 +493,19 @@ function createTrayView({ place, withHead }) {
       for (const li of order) list.append(li);
     }
     list.hidden = cards.length === 0;
+    if (onFoot) {
+      // The expanded card's Yes / No sit in the sheet footer: always in view above the safe area.
+      const c = cards.find((x) => x.key === expanded);
+      const needs = c && ["waiting", "error", "saving"].includes(c.phase) && !(c.data && c.data.voiceOnly);
+      const sig = needs ? JSON.stringify([c.key, c.phase, c.busy, lang()]) : "none";
+      if (sig !== footSig) {
+        footSig = sig;
+        const had = footEl.contains(document.activeElement) ? focusPath(document.activeElement) : null;
+        if (needs) { const a = actions(c); a.classList.add("wt-foot-actions"); fill(footEl, a); } else fill(footEl);
+        onFoot(needs ? footEl : null);
+        if (had) restoreFocus(footEl, had);
+      }
+    }
   }
 
   function focusTitle(key) {
@@ -492,19 +519,20 @@ function createTrayView({ place, withHead }) {
   return {
     el, render, focusTitle,
     expand(key) { if (key) expanded = key; render(); },
+    resetFoot() { footSig = null; },
     hasKey: (key) => nodes.has(key),
   };
 }
 
 /** Keep focus on "the same control" across a rebuild: its role in the card (yes / no / close / speak). */
 function focusPath(el) {
-  for (const sel of [".yes-btn-yes", ".yes-btn-no", ".yc-close", ".card-speak button", ".yc-title", ".yc-row", ".yc-link", ".yc-fix button"]) {
+  for (const sel of [".yes-btn-yes", ".yes-btn-no", ".yc-close", ".card-speak button", ".yc-title", ".yc-row", ".yc-link", ".yc-fix button", ".yc-more"]) {
     if (el.matches(sel)) return sel;
   }
   return ".yc-title";
 }
 function restoreFocus(root, sel) {
-  const el = root.querySelector(`${sel}:not([disabled])`) || root.querySelector(".yc-title");
+  const el = root.querySelector(`${sel}:not([disabled])`) || root.querySelector(".yc-title") || root.querySelector("button:not([disabled])");
   if (el) el.focus({ preventScroll: true });
 }
 
@@ -515,6 +543,8 @@ let layout = null;              // the shell's layout() or our own measure
 let columnView = null;          // tray inside slots.agentColumn (1280+)
 let sheetView = null;           // tray inside a sheet / drawer
 let sheetApi = null;
+let sheetFoot = null;           // the expanded card's Yes / No for the sheet footer
+let sheetRoute = null;          // the route the sheet opened on: another route closes it
 let pillEl = null;
 let fallbackHost = null;        // our own layer when the shell is not there (old main.js)
 let deferredOpen = null;        // a card that wanted to open while the phone keyboard was up
@@ -559,7 +589,7 @@ export function openTray(key = null) {
     columnView.focusTitle(key || (model.list()[0] || {}).key);
     return;
   }
-  if (!sheetView) sheetView = createTrayView({ place: "sheet", withHead: false });
+  if (!sheetView) sheetView = createTrayView({ place: "sheet", withHead: false, onFoot: (el) => { sheetFoot = el; if (sheetIsOpen() && sheetApi.setFooter) sheetApi.setFooter(el ? [el] : []); } });
   sheetView.expand(key);
   if (!sheetIsOpen()) {
     sheetApi = openSheet({
@@ -568,8 +598,11 @@ export function openTray(key = null) {
       opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
       kind: "yes", // sheet.js places it per spec 6.3: phone sheet, landscape / 1024+ drawer, tablet centred sheet
       place: p === "drawer" || p === "landDrawer" ? "drawer" : undefined,
+      closeLabel: t("wt.later"),
+      footer: sheetFoot ? [sheetFoot] : undefined,
       onClose: () => { sheetApi = null; settleOnClose(); },
     });
+    sheetRoute = location.hash;
   }
   const first = key || (model.list()[0] || {}).key;
   if (first) sheetView.focusTitle(first);
@@ -622,7 +655,9 @@ function buildPill() {
 
 function renderPill(n) {
   if (!pillEl) return;
-  pillEl.hidden = n === 0;
+  if (n === 0) { pillEl.hidden = true; if (pillEl.parentNode && pillEl.parentNode !== fallbackHost) pillEl.remove(); return; }
+  if (!pillEl.isConnected || (fallbackHost && pillEl.parentNode === fallbackHost && shellSlot("waitingPill"))) mountPill();
+  pillEl.hidden = false;
   pillEl.__num.textContent = n > 9 ? "9+" : String(n);
   pillEl.__word.textContent = t("wt.new");
   pillEl.setAttribute("aria-label", t("wt.pillLong", { n }));
@@ -653,7 +688,11 @@ function ensureMounted() {
   document.addEventListener("sahay:open-tray", () => openTray());
   // #/waiting (a Telegram deep link, or Sahay home before this module loaded): the shell fires
   // sahay:open-tray for it; without the shell the hash itself opens the tray. Opening twice is a no-op.
-  const fromHash = () => { if (location.hash === "#/waiting" || location.hash.startsWith("#/waiting?")) requestAnimationFrame(() => openTray()); };
+  const fromHash = () => {
+    if (location.hash === "#/waiting" || location.hash.startsWith("#/waiting?")) { requestAnimationFrame(() => openTray()); return; }
+    // Moving to another screen puts the tray away (QA #21); the pill keeps the count.
+    if (sheetIsOpen() && sheetRoute !== null && location.hash !== sheetRoute && typeof sheetApi.close === "function") sheetApi.close();
+  };
   window.addEventListener("hashchange", fromHash);
   fromHash();
 }
@@ -736,7 +775,6 @@ function areaCounts() {
 function renderAll() {
   if (typeof document === "undefined") return;
   // The shell may mount after this module loaded: move the pill into its slot and open the column then.
-  if (pillEl && (!pillEl.isConnected || (fallbackHost && pillEl.parentNode === fallbackHost && shellSlot("waitingPill")))) mountPill();
   if (!columnView) mountColumn();
   const n = model.count();
   const per = areaCounts();

@@ -21,6 +21,8 @@
 export const SAVE_TIMEOUT_MS = 45000;
 /** Done, declined and gone cards leave by themselves after this long (the owner can close them sooner). */
 export const SETTLED_TTL_MS = 120000;
+/** A spoken event older than this (by its server time) is history, not a read-back being heard now. */
+export const SPOKEN_FRESH_MS = 45000;
 
 export const KINDS = Object.freeze(["buy", "bill", "reorder", "rule"]);
 export const AREA = Object.freeze({ buy: "buy", bill: "sell", reorder: "stock", rule: "me" });
@@ -110,7 +112,7 @@ export function isTypedYes(text) {
 const LIVE = new Set(["waiting", "error"]);
 const SETTLED = new Set(["done", "declined", "gone"]);
 
-export function createWaitingModel({ now = () => Date.now(), timeoutMs = SAVE_TIMEOUT_MS, settledTtlMs = SETTLED_TTL_MS } = {}) {
+export function createWaitingModel({ now = () => Date.now(), timeoutMs = SAVE_TIMEOUT_MS, settledTtlMs = SETTLED_TTL_MS, freshMs = SPOKEN_FRESH_MS } = {}) {
   /** key -> card */
   const cards = new Map();
   /** keys the server has spoken whose item we do not hold yet (the store loads it a moment later) */
@@ -149,9 +151,11 @@ export function createWaitingModel({ now = () => Date.now(), timeoutMs = SAVE_TI
       c.data = it;
       c.createdAt = it.createdAt || c.createdAt || null;
       if (spokenEarly.has(it.key)) {
-        c.spokenAt = spokenEarly.get(it.key);
+        const early = spokenEarly.get(it.key);
         spokenEarly.delete(it.key);
-        if (LIVE.has(c.phase)) open(it.key, "spoken");
+        c.spokenAt = early.ts;
+        // Only while the read-back is still current: an item that shows up long after its read-back stays shut.
+        if (LIVE.has(c.phase) && now() - early.at <= freshMs) open(it.key, "spoken");
       }
     }
     for (const [key, c] of cards) {
@@ -161,12 +165,12 @@ export function createWaitingModel({ now = () => Date.now(), timeoutMs = SAVE_TI
     if (speaking && !cards.has(speaking)) speaking = null;
   }
 
-  function spoken(key, ts) {
-    speaking = key;
+  function spoken(key, ts, fresh) {
     const c = cards.get(key);
-    if (!c) { spokenEarly.set(key, ts || null); return; }
+    if (fresh) speaking = key;
+    if (!c) { if (fresh) spokenEarly.set(key, { ts: ts || null, at: now() }); return; }
     c.spokenAt = ts || new Date(now()).toISOString();
-    if (LIVE.has(c.phase)) open(key, "spoken");
+    if (fresh && LIVE.has(c.phase)) open(key, "spoken");
   }
 
   function decided(key, yes, { reason } = {}) {
@@ -199,11 +203,16 @@ export function createWaitingModel({ now = () => Date.now(), timeoutMs = SAVE_TI
     if (!evt || typeof evt !== "object") return;
     const d = evt.data && typeof evt.data === "object" ? evt.data : {};
     const ts = evt.ts || null;
+    // D7 is about the read-back the owner is hearing NOW. An old spoken event (replayed after a
+    // reconnect, or a stale stream at page load) never opens a card.
+    const at = ts ? Date.parse(ts) : NaN;
+    const fresh = !Number.isFinite(at) || Math.abs(now() - at) <= freshMs;
+    const spoke = (key, when) => spoken(key, when, fresh);
     switch (evt.type) {
-      case "approval.spoken": { const id = str(d.approvalId); if (id) spoken(`approval:${id}`, d.spokenAt || ts); break; }
-      case "invoice.spoken": { const id = str(d.invoiceId); if (id) spoken(`invoice:${id}`, d.spokenAt || ts); break; }
-      case "stock.reorder_spoken": { const id = str(d.proposalId); if (id) spoken(`reorder:${id}`, ts); break; }
-      case "rule.spoken": { const id = str(d.ruleId); if (id) spoken(`rule:${id}`, ts); break; }
+      case "approval.spoken": { const id = str(d.approvalId); if (id) spoke(`approval:${id}`, d.spokenAt || ts); break; }
+      case "invoice.spoken": { const id = str(d.invoiceId); if (id) spoke(`invoice:${id}`, d.spokenAt || ts); break; }
+      case "stock.reorder_spoken": { const id = str(d.proposalId); if (id) spoke(`reorder:${id}`, ts); break; }
+      case "rule.spoken": { const id = str(d.ruleId); if (id) spoke(`rule:${id}`, ts); break; }
       case "approval.decided": {
         const id = str(d.approvalId ?? d.approval_id ?? d.id);
         if (id) decided(`approval:${id}`, d.status === "approved" || d.status === "consumed", { reason: d.reason });

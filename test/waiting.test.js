@@ -65,3 +65,16 @@ test("every animation in app-waiting.css has a reduced-motion branch", () => {
   assert.ok(animated.length >= 2, "found the animated rules");
   for (const sel of animated) assert.ok(reduced.includes(sel), `${sel} stops under reduced motion`);
 });
+
+test("QA 2026-11-20 fixes stay in: drawer fits the screen, Yes / No in the sheet footer, read-back clamp, route change closes the tray", () => {
+  assert.match(CSS, /\.sheet-root\[data-place="drawer"\] \.sheet:has\(\.wt-sheet\) \{ width: min\(420px, 55vw\);[^}]*max-width: calc\(100vw - 16px\)/);
+  assert.match(CSS, /\.sheet-root\[data-place="drawer"\]\.is-open \.sheet:has\(\.wt-sheet\) \{ transform: none; \}/);
+  assert.match(WAITING, /footer: sheetFoot \? \[sheetFoot\] : undefined/, "Yes / No go to the sheet footer");
+  assert.match(WAITING, /actionsOut: Boolean\(onFoot\)/, "and leave the card body in the sheet");
+  assert.match(WAITING, /closeLabel: t\("wt\.later"\)/, "the sheet's close says Later");
+  assert.match(CSS, /\.yc-heard-text\.is-clamped \{[^}]*line-clamp: 3/);
+  assert.match(WAITING, /"wt\.readMore"/);
+  assert.match(CSS, /\.yc \.pill-sim > span \{ white-space: normal; overflow: visible; text-overflow: clip;/, "simulated vendor label never truncated");
+  assert.match(CSS, /\.yc-title:focus, \.yc-title:focus-visible \{ outline: none; box-shadow: none; \}/);
+  assert.match(WAITING, /location\.hash !== sheetRoute && typeof sheetApi\.close === "function"\) sheetApi\.close\(\)/, "another route closes the tray");
+});

@@ -48,6 +48,8 @@ export const WT_STRINGS = {
   "wt.delivery": ["Delivery in {n} days", "{n} दिन में डिलीवरी", "{n} ದಿನಗಳಲ್ಲಿ ವಿತರಣೆ"],
   "wt.deliveryOne": ["Delivery in 1 day", "1 दिन में डिलीवरी", "1 ದಿನದಲ್ಲಿ ವಿತರಣೆ"],
   "wt.heard": ["Sahay read out", "सहाय ने पढ़ा", "ಸಹಾಯ್ ಓದಿದ್ದು"],
+  "wt.readMore": ["Read more", "और पढ़ें", "ಇನ್ನಷ್ಟು ಓದಿ"],
+  "wt.readLess": ["Show less", "कम दिखाएँ", "ಕಡಿಮೆ ತೋರಿಸಿ"],
   "wt.customer": ["Customer", "ग्राहक", "ಗ್ರಾಹಕ"],
   "wt.walkin": ["Walk-in customer", "दुकान पर आया ग्राहक", "ಅಂಗಡಿಗೆ ಬಂದ ಗ್ರಾಹಕ"],
   "wt.more": ["+{n} more", "+{n} और", "+{n} ಇನ್ನಷ್ಟು"],

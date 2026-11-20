@@ -57,6 +57,25 @@ test("each kind opens only on its own spoken event, also when the event comes be
   assert.deepEqual(m.takeSignals(), []);
 });
 
+test("an old spoken event (replayed after a reconnect or at page load) never opens a card; a fresh one does", async () => {
+  const { createWaitingModel, SPOKEN_FRESH_MS } = await load();
+  const t0 = Date.parse("2026-11-20T10:00:00Z");
+  const c = clock(t0);
+  const m = createWaitingModel({ now: c.now });
+  m.sync([buy(1), bill(2)]);
+  const old = new Date(t0 - SPOKEN_FRESH_MS - 1000).toISOString();
+  m.event({ type: "approval.spoken", ts: old, data: { approvalId: 1, spokenAt: old } });
+  assert.deepEqual(m.takeSignals(), []);
+  assert.equal(m.speaking(), null, "history does not lead the tray");
+  m.event({ type: "invoice.spoken", ts: new Date(t0 - 2000).toISOString(), data: { invoiceId: 2 } });
+  assert.deepEqual(m.takeSignals().map((s) => s.key), ["invoice:2"]);
+  // Spoken before the store had the item, but the item arrives only much later: it stays shut.
+  m.event({ type: "rule.spoken", ts: new Date(t0).toISOString(), data: { ruleId: 9 } });
+  c.advance(SPOKEN_FRESH_MS + 1);
+  m.sync([buy(1), bill(2), rule(9)]);
+  assert.deepEqual(m.takeSignals(), []);
+});
+
 test("the card being spoken now leads; then buy and bill oldest first, then reorder, then rule", async () => {
   const { createWaitingModel } = await load();
   const m = createWaitingModel();

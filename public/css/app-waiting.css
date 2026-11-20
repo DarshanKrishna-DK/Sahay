@@ -34,8 +34,7 @@
 }
 .yc-title:lang(hi), :lang(hi) > .yc-title { font-family: var(--font-deva); }
 .yc-title:lang(kn), :lang(kn) > .yc-title { font-family: var(--font-kn); }
-.yc-title:focus { outline: none; }
-.yc-title:focus-visible { border-radius: var(--r-xs); box-shadow: var(--focus-ring); }
+.yc-title:focus, .yc-title:focus-visible { outline: none; box-shadow: none; } /* focused for screen readers only (QA #6) */
 
 /* Being spoken now (D7): a lime dot and one line; the card rim comes from .card-now. */
 .yc-now {
@@ -61,6 +60,10 @@
 .yc-who-main { display: flex; flex-direction: column; flex: 1 1 140px; min-width: 0; }
 .yc-who-label { font-size: var(--fs-sm); color: var(--text-lo); }
 .yc-who-name { font-size: var(--fs-lead); font-weight: var(--fw-strong); line-height: var(--lh-tight); overflow-wrap: anywhere; }
+/* Rule 4: the "simulated vendor" label is never cut; it wraps at every width (QA #6). */
+.yc .pill-sim { height: auto; max-width: 100%; align-items: flex-start; }
+.yc .pill-sim > span { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.yc .pill-sim > svg { flex: none; margin-top: 1px; }
 
 /* Price per unit x quantity, then the total in a well. */
 .yc-figs { padding-top: var(--s-3); border-top: 1px solid var(--hairline); }
@@ -84,6 +87,8 @@
 /* What Sahay read out (the server's read-back), quieter than the figures. */
 .yc-heard { padding-left: var(--s-3); border-left: 3px solid var(--hairline); }
 .yc-heard-text { margin: var(--s-1) 0 0; font-size: var(--fs-sm); line-height: var(--yc-lh); color: var(--text-md); overflow-wrap: anywhere; }
+.yc-heard-text.is-clamped { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.yc-more { margin-top: var(--s-2); }
 
 /* Bill lines and GST. */
 .yc-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
@@ -110,6 +115,7 @@
 /* ------------------------------------------------------------ the footer -- */
 
 .yc-foot { display: grid; gap: var(--s-4); padding-top: var(--s-2); }
+.yc-foot:empty { display: none; }
 .yc-foot .yes-actions { justify-content: center; padding-top: var(--s-1); }
 
 .yc-fix {
@@ -189,6 +195,20 @@
 
 .yc-host[hidden] { display: none; }
 
+/* The sheet / drawer the tray opens in (W1's sheet.js, kind "yes"). Yes / No live in the sheet
+   footer, so they stay in view above the safe area while the card scrolls (QA #2, #6). The drawer
+   never runs off the screen: 420 px at most, 55 % of a landscape phone, 16 px short of the edge. */
+.sheet-root[data-place="drawer"] .sheet:has(.wt-sheet) { width: min(420px, 55vw); min-width: min(320px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
+.sheet-root[data-place="drawer"].is-open .sheet:has(.wt-sheet) { transform: none; }
+.sheet:has(.wt-sheet) .sheet-foot { justify-content: center; padding-top: var(--s-3); }
+.wt-foot { flex: 1; display: flex; justify-content: center; min-width: 0; }
+.wt-foot .yes-actions { padding-top: 0; }
+@media (max-height: 500px) {
+  /* landscape phone: the pair shrinks to the 88 px minimum so the card keeps room */
+  .wt-foot .yesno-lg .yes-btn-yes { width: var(--touch-yes); height: var(--touch-yes); }
+  .sheet:has(.wt-sheet) .sheet-foot { padding-top: var(--s-2); padding-bottom: calc(8px + var(--safe-b)); }
+}
+
 /* ---------------------------------------------------------------- the pill -- */
 /* Coral droplet with the count: phone under the top capsule, tablet / 1024-1279 top-right
    (the shell places slots.waitingPill); hidden at 0. */
@@ -244,11 +264,6 @@
   .yc-body { gap: var(--s-3); }
   .yc-title { font-size: var(--fs-h3); }
   .yc-link { flex-basis: 120px; }
-}
-
-/* Short screens (360x640, landscape phones): keep the figures and the buttons, quiet the read-back. */
-@media (max-height: 700px) {
-  .yc-heard-text { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
 
 /* ---------------------------------------------------------- reduced motion -- */
