@@ -17,6 +17,7 @@ addStrings({
   "app.noticeShort": ["Automated assistant", "स्वचालित सहायक", "ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ"],
   "app.needs": ["Needs you", "आपकी हाँ चाहिए", "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಬೇಕು"],
   "app.needsLong": ["{n} things need your yes. Open them.", "{n} काम आपकी हाँ चाहते हैं। खोलें।", "{n} ಕೆಲಸಗಳಿಗೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಬೇಕು. ತೆರೆಯಿರಿ."],
+  "app.needsLongOne": ["1 thing needs your yes. Open it.", "1 काम आपकी हाँ चाहता है। खोलें।", "1 ಕೆಲಸಕ್ಕೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಬೇಕು. ತೆರೆಯಿರಿ."],
   "app.account": ["Account", "खाता", "ಖಾತೆ"],
   "app.logout": ["Log out", "लॉग आउट", "ಲಾಗ್ ಔಟ್"],
   "app.logoutFail": ["Could not log out. Try again.", "लॉग आउट नहीं हुआ। फिर कोशिश करें।", "ಲಾಗ್ ಔಟ್ ಆಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
@@ -121,13 +122,13 @@ function render() {
       const n = id === "home" ? needs : 0;
       b.hidden = n <= 0;
       b.textContent = n > 9 ? "9+" : String(n);
-      a.setAttribute("aria-label", n > 0 ? `${t(TAB_KEY[id])}, ${t("app.needsLong", { n })}` : t(TAB_KEY[id]));
+      a.setAttribute("aria-label", n > 0 ? `${t(TAB_KEY[id])}, ${needsWords(n)}` : t(TAB_KEY[id]));
     }
   }
   needsBtn.hidden = needs <= 0;
   needsBtn.querySelector(".needs-word").textContent = t("app.needs");
   needsBtn.querySelector(".needs-n").textContent = `(${needs})`;
-  needsBtn.setAttribute("aria-label", t("app.needsLong", { n: needs }));
+  needsBtn.setAttribute("aria-label", needsWords(needs));
   const ini = initialsOf(shopName);
   account.querySelector(".account-ini").textContent = ini;
   account.classList.toggle("has-ini", Boolean(ini));
@@ -137,6 +138,9 @@ function render() {
   live.dataset.state = navigator.onLine === false ? "offline" : stream;
 }
 onLang(render);
+
+/** "1 thing needs your yes" / "3 things need your yes" in the screen's language. */
+function needsWords(n) { return n === 1 ? t("app.needsLongOne") : t("app.needsLong", { n }); }
 
 function openNeeds() {
   for (const fn of needsListeners) { try { fn(); } catch (err) { console.error(err); } }

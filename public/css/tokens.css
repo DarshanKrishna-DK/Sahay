@@ -97,7 +97,7 @@
   --tap: 48px;
   --btn: 48px;
   --btn-lg: 56px;
-  --btn-sm: 44px;           /* + a 48px tap area */
+  --btn-sm: 48px;           /* every control box is at least 48px */
   --content-max: 1120px;
   --gutter: 32px;           /* phone 16 */
   --topbar-h: 66px;         /* phone 56 */

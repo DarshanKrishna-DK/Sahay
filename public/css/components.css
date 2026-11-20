@@ -77,8 +77,8 @@ svg { flex: none; }
 .btn svg { width: 18px; height: 18px; }
 .btn-md { min-height: var(--btn); }
 .btn-lg, .btn-hero { min-height: var(--btn-lg); padding: 0 24px; font-size: .875rem; }
-.btn-sm { min-height: var(--btn-sm); padding: 0 16px; }
-.btn-sm::before { content: ""; position: absolute; inset: -2px 0; } /* 48px tap area */
+.btn-sm { min-height: var(--btn-sm); min-width: 48px; padding: 0 16px; }
+.btn { min-width: 48px; }
 .btn-block { display: flex; width: 100%; }
 
 .btn-primary { background: var(--lime); color: var(--navy); box-shadow: var(--shadow-btn); }
@@ -115,10 +115,9 @@ svg { flex: none; }
 }
 .link-btn:hover { color: var(--lime); text-decoration-color: var(--lime); }
 .icon-btn {
-  position: relative; display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
+  position: relative; display: inline-grid; place-items: center; flex: none; width: 48px; height: 48px; padding: 0;
   border: 0; border-radius: 0; background: var(--deep); color: var(--text); box-shadow: var(--pixel-edge);
 }
-.icon-btn::before { content: ""; position: absolute; inset: -4px; } /* 48px tap area */
 .icon-btn:hover { background: var(--sky); }
 .icon-btn[aria-pressed="true"] { color: var(--lime); box-shadow: 0 0 0 2px var(--lime); }
 .icon-btn svg { width: 20px; height: 20px; }
@@ -273,7 +272,7 @@ textarea.input { min-height: 112px; padding: 14px 16px; resize: vertical; }
 /* Square tabs: a deep track with a pixel border; a lime block slides under the checked option. */
 .seg {
   position: relative; display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0;
-  min-height: 48px; padding: 4px; border-radius: 0; background: var(--deep); box-shadow: var(--pixel-edge); max-width: 100%;
+  min-height: 56px; padding: 4px; border-radius: 0; background: var(--deep); box-shadow: var(--pixel-edge); max-width: 100%;
 }
 .seg-glider {
   position: absolute; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 0; background: var(--lime);
@@ -281,7 +280,7 @@ textarea.input { min-height: 112px; padding: 14px 16px; resize: vertical; }
 }
 .seg-opt {
   position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 40px; padding: 0 18px; border: 0; border-radius: 0; background: transparent;
+  min-height: 48px; min-width: 48px; padding: 0 18px; border: 0; border-radius: 0; background: transparent;
   color: var(--muted); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap;
   transition: color var(--t) var(--ease);
 }
@@ -386,11 +385,10 @@ textarea.input { min-height: 112px; padding: 14px 16px; resize: vertical; }
 
 /* ===================================================== language switch -- */
 .lang-switch {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; flex: none;
+  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; min-width: 48px; padding: 0 12px; flex: none;
   border: 0; border-radius: 0; background: var(--deep); color: var(--text); box-shadow: var(--pixel-edge);
   font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap;
 }
-.lang-switch::before { content: ""; position: absolute; inset: -4px; } /* 48px tap area */
 .lang-switch svg { width: 18px; height: 18px; }
 .lang-switch:hover { background: var(--sky); }
 .lang-switch[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--lime); }
@@ -399,7 +397,7 @@ textarea.input { min-height: 112px; padding: 14px 16px; resize: vertical; }
 .lang-switch-name:lang(kn) { font-family: var(--font-kn); letter-spacing: 0; }
 
 /* ========================================================== brand mark -- */
-.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); flex: none; min-height: var(--tap); }
+.brand { display: inline-flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; color: var(--text); flex: none; min-height: var(--tap); min-width: var(--tap); }
 .brand img { display: block; width: auto; height: 34px; }
 .brand-word { font: 400 1.875rem/1 var(--font-display); letter-spacing: .02em; color: var(--lime); text-shadow: 2px 2px 0 var(--deep); }
 @media (max-width: 767px) { .brand img { height: 28px; } .brand-word { font-size: 1.5rem; } }
@@ -434,8 +432,7 @@ textarea.input { min-height: 112px; padding: 14px 16px; resize: vertical; }
 
 /* ========================================================== read aloud -- */
 .speak-wrap { position: relative; display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
-.speak { position: relative; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 0; background: var(--deep); color: var(--text); box-shadow: var(--pixel-edge); }
-.speak::before { content: ""; position: absolute; inset: -4px; }
+.speak { position: relative; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 0; background: var(--deep); color: var(--text); box-shadow: var(--pixel-edge); }
 .speak svg { width: 20px; height: 20px; }
 .speak:hover { background: var(--sky); }
 .speak[data-state="playing"] { background: var(--lime); color: var(--navy); }

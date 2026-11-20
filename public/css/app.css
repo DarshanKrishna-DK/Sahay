@@ -18,7 +18,7 @@
 /* Tabs in the bar (768px and up): HUD caps words; active = lime text + 2px lime underline. */
 .tabs-top { display: none; align-items: stretch; gap: 4px; margin: 0 auto; align-self: stretch; }
 .tab {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; min-height: var(--tap);
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; min-height: var(--tap); min-width: 48px;
   color: var(--muted); text-decoration: none; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
   transition: color var(--t-fast) var(--ease);
 }
@@ -34,48 +34,45 @@
 
 /* NEEDS YOU (n): a square navy HUD button with the pixel border; hidden when nothing waits. */
 .needs-btn {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px;
   border: 0; border-radius: 0; background: var(--navy); color: var(--text); box-shadow: var(--pixel-edge);
   font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap;
 }
-.needs-btn::before { content: ""; position: absolute; inset: -4px; } /* 48px tap area */
 .needs-btn:hover { background: var(--sky); }
 .needs-dot { width: 8px; height: 8px; background: var(--needs); flex: none; }
 .needs-n { color: var(--lime); font-variant-numeric: tabular-nums; }
 
 /* Account: a square with the shop's initials (a person icon without a name). */
 .account-btn {
-  position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
+  position: relative; display: grid; place-items: center; flex: none; width: 48px; height: 48px; padding: 0;
   border: 0; border-radius: 0; background: var(--card); color: var(--text); box-shadow: var(--pixel-edge);
 }
-.account-btn::before { content: ""; position: absolute; inset: -4px; }
 .account-btn:hover { background: var(--sky); }
 .account-btn[aria-current="page"], .account-btn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--lime); }
 .account-ini { font: 400 1.25rem/1 var(--font-display); letter-spacing: .04em; }
 .account-btn.has-ini .account-ico, .account-btn:not(.has-ini) .account-ini { display: none; }
 
-/* The automated-assistant notice: small HUD words, always visible. In the bar from 1280px; a thin
-   line under the bar below that. On Home the screen's own line under Talk says it, so this steps aside. */
+/* The automated-assistant notice: small HUD words in a thin strip right under the bar, the same on every
+   route and size (one header geometry). On Home the screen's own line under Talk says it, so the strip
+   keeps its place there but shows no words. */
 .notice { display: flex; align-items: center; gap: 8px; color: var(--muted); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap; }
 .notice svg { width: 16px; height: 16px; }
 .live-dot { width: 8px; height: 8px; background: var(--muted); flex: none; }
 .live-dot[data-state="open"] { background: var(--lime); }
 .live-dot[data-state="connecting"], .live-dot[data-state="reconnecting"] { background: var(--warn); }
 .live-dot[data-state="closed"] { background: transparent; box-shadow: inset 0 0 0 2px var(--needs); }
-@media (max-width: 1279px) {
-  .topbar .notice {
-    position: absolute; left: 0; right: 0; top: 100%; justify-content: center;
-    min-height: 26px; padding: 3px var(--gutter) 4px; background: var(--deep); border-bottom: 1px solid var(--border);
-  }
+.topbar .notice {
+  position: absolute; left: 0; right: 0; top: 100%; justify-content: center;
+  min-height: 26px; padding: 3px var(--gutter) 4px; background: var(--deep); border-bottom: 1px solid var(--border);
 }
-:root[data-route="home"] .topbar .notice { display: none; }
+:root[data-route="home"] .topbar .notice > * { visibility: hidden; }
 
 /* ============================================================== layout -- */
 .page {
   max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: 0 auto;
   padding: 0 calc(var(--gutter) + var(--safe-r)) calc(var(--tabbar-h) + 24px + var(--safe-b)) calc(var(--gutter) + var(--safe-l));
 }
-@media (max-width: 1279px) { :root:not([data-route="home"]) .page { padding-top: 26px; } }
+.page { padding-top: 26px; } /* the notice strip under the bar, on every route */
 #main { display: block; min-height: 50dvh; }
 #main:focus { outline: none; }
 .screen { min-width: 0; }
