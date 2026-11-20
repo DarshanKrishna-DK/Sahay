@@ -421,10 +421,12 @@ export function linkKey({ href, icon: icn, word, label, tone = "secondary", size
  * server read-aloud key shown in the title row); on a sheet without a
  * footer slot the footer is appended under the body. Returns { setBody, setFooter, close, isOpen }.
  */
-export function panel({ title, body, footer = null, opener = null, onClose, speakKey }) {
+export function panel({ title, body, footer = null, opener = null, onClose, speakKey, tall = false }) {
   const list = (b) => (Array.isArray(b) ? b : [b]);
   let foot = footer;
   const api = openSheet({ title, body: list(body), footer: foot || undefined, opener, onClose, speakKey });
+  // A number pad needs its four rows and Save on one screen: the sheet may grow to 92 dvh.
+  if (tall && api.el) api.el.classList.add("sv-sheet-tall");
   const hasFooter = typeof api.setFooter === "function";
   let current = list(body);
   if (!hasFooter && foot) api.setBody([...current, h("div", { class: "sv-foot" }, foot)]);

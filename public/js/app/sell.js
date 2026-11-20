@@ -16,6 +16,7 @@ import { st } from "./sell-i18n.js";
 import { shopNeedCard, shopMissing, shopButton, shopSummary } from "./shop-settings.js";
 import { SHOP_CODES } from "./shop-facts.js";
 import { billStatus, billGroups, gstRows, lineAmount, dueOf } from "./sell-facts.js";
+import { openAddPhone } from "./money-pad.js";
 import {
   ensureCss, money, qtyText, itemName, scriptedText, readButton, partState, agentAction, sectionHead,
   buttonError, ask, alignNotches, count, ic, stamp, simTag, testTag, cardHead, screenHead, screenState,
@@ -68,6 +69,15 @@ function lineName(l) {
 const hasPrice = (l) => l.unitPrice !== null && l.unitPrice !== undefined;
 const kindWord = (inv) => (inv.kind === "tax_invoice" || inv.kind === "bill_of_supply" ? st(`sell.kind.${inv.kind}`) : st("sl.kind.plain"));
 const billDate = (inv) => toDate(inv.issuedAt || inv.createdAt);
+/** WhatsApp only for a customer with a phone; otherwise the owner adds one first (D14). */
+const hasPhone = (inv) => { const c = invoiceCustomer(inv); return Boolean(c && c.phone); };
+function addPhoneKey(inv, { size = "sm", block = false } = {}) {
+  const name = customerName(inv);
+  return h("button", {
+    class: `keycap keycap-primary keycap-${size}${block ? " keycap-block" : ""} sl-add-phone`, type: "button", "aria-label": st("mn.addPhoneLong", { name }),
+    on: { click: (e) => openAddPhone({ name, opener: e.currentTarget }) },
+  }, ic("phone", 22), h("span", { text: st("mn.addPhone") }));
+}
 const pdfHref = (inv) => inv.pdfUrl || `/api/invoices/${encodeURIComponent(inv.id)}/pdf`;
 
 /* ------------------------------------------------- the shared Yes card -- */
@@ -175,7 +185,7 @@ function billCard(inv, onOpen) {
   const g = gstRows(tot);
   const openBtn = h("button", { class: "keycap keycap-secondary keycap-sm sl-open", type: "button", "aria-label": st("sl.openLong", { name }), on: { click: (e) => onOpen(inv.id, e.currentTarget) } },
     ic("doc", 20), h("span", { text: st("sl.open") }));
-  const primary = unpaid ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sl.whatsapp"), label: st("sell.shareLong"), tone: "primary", size: "sm" })
+  const primary = unpaid ? (hasPhone(inv) ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sl.whatsapp"), label: st("sell.shareLong"), tone: "primary", size: "sm" }) : addPhoneKey(inv))
     : status === "paid" ? linkKey({ href: pdfHref(inv), icon: "download", word: st("sell.pdf"), label: st("sell.pdfLong"), size: "sm" }) : null;
   const card = paper({ class: `sl-bill sl-bill-${status}`, tone: status === "paid" ? "paid" : unpaid ? "due" : null, dataset: { id: inv.id } },
     cardHead(
@@ -245,9 +255,9 @@ function detailFooter(inv) {
   const status = billStatus(inv);
   if (!(status === "issued" || status === "part_paid" || status === "paid")) return null;
   const unpaid = status !== "paid";
-  const share = unpaid ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sell.shareLong"), tone: "primary", size: "md", cls: "keycap-block" }) : null;
+  const share = unpaid && hasPhone(inv) ? linkKey({ href: inv.shareUrl, icon: "chat", word: st("sell.shareLong"), tone: "primary", size: "md", cls: "keycap-block" }) : null;
   return h("div", { class: "sl-detail-acts" },
-    share || (unpaid ? h("p", { class: "note-line" }, ic("phone", 18), h("span", { text: st("sl.noShare") })) : null),
+    share || (unpaid ? [h("p", { class: "note-line" }, ic("phone", 18), h("span", { text: st("sl.noShare") })), addPhoneKey(inv, { size: "md", block: true })] : null),
     h("div", { class: "sl-detail-acts-row" },
       linkKey({ href: pdfHref(inv), icon: "download", word: st("sell.pdf"), label: st("sell.pdfLong"), size: "md" }),
       unpaid ? linkKey({ href: inv.payUrl, icon: "rupee", word: st("sell.pay"), label: st("sell.payLong"), size: "md" }) : null,

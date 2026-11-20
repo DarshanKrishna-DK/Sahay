@@ -32,8 +32,7 @@ addStrings({
   "mn.seller": ["Seller", "विक्रेता", "ಮಾರಾಟಗಾರ"],
   "mn.payLong": ["Pay {name} {amt}", "{name} को {amt} दें", "{name} ಅವರಿಗೆ {amt} ಕೊಡಿ"],
   "mn.old": ["Over 30 days", "30 दिन से ज़्यादा", "30 ದಿನಕ್ಕಿಂತ ಹೆಚ್ಚು"],
-  "mn.addPhone": ["Add phone", "फ़ोन जोड़ें", "ಫೋನ್ ಸೇರಿಸಿ"],
-  "mn.addPhoneLong": ["Add a phone number for {name}", "{name} का फ़ोन नंबर जोड़ें", "{name} ಅವರ ಫೋನ್ ಸಂಖ್ಯೆ ಸೇರಿಸಿ"],
+  "mn.ladder": ["Who owes you", "किससे लेना है", "ಯಾರಿಂದ ಬರಬೇಕು"],
   "mn.opened": ["WhatsApp opened with the reminder.", "याद दिलाने का संदेश WhatsApp में खुल गया।", "ನೆನಪಿನ ಸಂದೇಶ WhatsApp ನಲ್ಲಿ ತೆರೆಯಿತು."],
   "mn.blocked": ["The browser stopped WhatsApp from opening. Press Open WhatsApp.", "ब्राउज़र ने WhatsApp नहीं खोलने दिया। WhatsApp खोलें दबाइए।", "ಬ್ರೌಸರ್ WhatsApp ತೆರೆಯಲು ಬಿಡಲಿಲ್ಲ. WhatsApp ತೆರೆಯಿರಿ ಒತ್ತಿ."],
   "mn.reminding": ["Making the reminder", "याद दिलाने का संदेश बन रहा है", "ನೆನಪಿನ ಸಂದೇಶ ಸಿದ್ಧವಾಗುತ್ತಿದೆ"],
@@ -209,7 +208,7 @@ export function createMoney() {
         totals(toPay),
         h("div", { class: "mn-cols" },
           h("section", { class: "mn-collect", "aria-labelledby": "mn-collect-h" },
-            sectionHead("mn-collect-h", "users", st("money.ladder"), sell.owed.length || null),
+            sectionHead("mn-collect-h", "users", st("mn.ladder"), sell.owed.length || null),
             sell.owed.length
               ? h("ol", { class: "mn-owed" }, ...sell.owed.map((o) => owedCard(o, max, ui, handlers)))
               : h("p", { class: "note-line mn-quiet" }, ic("checkCircle", 18), h("span", { text: st("mn.nobody") }))),

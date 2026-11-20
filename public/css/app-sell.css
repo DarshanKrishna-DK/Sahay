@@ -69,11 +69,11 @@
 .sl-waiting-cards { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
 
 .sl-cols { display: grid; gap: var(--s-6); align-items: start; }
-/* Side by side only when the side column gets at least 320 px (laptop with the agent column open is
-   about 1000 px of content at 1568, about 730 at 1280); narrower, customers and the shop card go
-   under the bills, two across when there is room. */
-@container sv (min-width: 980px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); } }
-@container sv (min-width: 680px) and (max-width: 979px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Spec 6.2: bills 2/3, customers + shop 1/3, once the side column gets at least 300 px (content of
+   900 px and up); narrower, customers and the shop card go under the bills, two across when there
+   is room. Names are never cut to a letter (see .sl-person). */
+@container sv (min-width: 900px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); } }
+@container sv (min-width: 680px) and (max-width: 899px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sl-bills { container: slbills / inline-size; min-width: 0; }
 .sl-side { display: grid; gap: var(--s-4); min-width: 0; align-content: start; }
 .sl-quiet { max-width: 52ch; }
@@ -242,7 +242,7 @@
 }
 .gs-count { margin-left: auto; color: var(--text-lo); font-family: var(--font-num); font-size: var(--fs-sm); font-weight: 500; font-variant-numeric: tabular-nums; }
 .gs-count.is-full { color: var(--accent-text); }
-.gs-gstin { font-family: var(--font-num); letter-spacing: .08em; text-transform: uppercase; }
+.gs-gstin { font-family: var(--font-num); letter-spacing: .08em; }
 .gs-optional { color: var(--text-lo); font-size: var(--fs-sm); font-weight: 500; }
 .gs-pick {
   display: flex; align-items: center; gap: 12px; width: 100%; min-height: var(--touch); padding: 0 14px 0 16px;
@@ -271,7 +271,9 @@
 .gs-picker-title { font-size: var(--fs-lead); font-weight: var(--fw-display); }
 .gs-searchbox { display: flex; align-items: center; background: color-mix(in srgb, var(--piano-1) 94%, transparent); border-radius: var(--r-md); }
 .gs-search-ico { position: absolute; left: 16px; display: grid; color: var(--text-lo); pointer-events: none; z-index: 1; }
-.gs-search { padding-left: 50px; padding-right: 60px; }
+.gs-search { padding-left: 50px; padding-right: 60px; text-transform: none; -webkit-appearance: none; appearance: none; }
+/* One clear button only: ours (48 px, worded for screen readers), not the browser's small one. */
+.gs-search::-webkit-search-cancel-button, .gs-search::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
 .gs-search-clear { position: absolute; right: 4px; }
 .gs-state[aria-pressed="true"] { color: var(--accent-text); }
 .gs-state-name { min-width: 0; overflow-wrap: anywhere; }
@@ -281,7 +283,17 @@
 .mn-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
 .mn-total { gap: 8px; padding: 16px 16px 18px; }
 @container sv (min-width: 560px) { .mn-total { padding: 20px 22px 22px; } }
-.mn-total-word { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-strong); min-width: 0; overflow-wrap: anywhere; }
+.mn-total-word { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-strong); min-width: 0; overflow-wrap: normal; word-break: normal; hyphens: none; }
+/* On a phone the total card is about 160 px wide: the speaker sits in the top-right corner on its
+   own, the icon takes the first row beside it and the word gets the card's full width under them,
+   so a Kannada word never breaks per syllable. */
+@container sv (max-width: 559px) {
+  .mn-total .card-head { display: block; min-height: 0; }
+  .mn-total .card-speak { position: absolute; top: 0; right: 0; margin: 0; }
+  .mn-total-word { flex-direction: column; align-items: flex-start; gap: 8px; }
+  /* The icon row is as tall as the speaker (22 + 18 + gap 8 = 48), so the word starts below it. */
+  .mn-total-word > svg { margin-bottom: 18px; }
+}
 .mn-total-collect .mn-total-word svg { color: var(--accent-text); flex: none; }
 .mn-total-pay .mn-total-word svg { color: var(--cyan-text); flex: none; }
 .mn-total-num { font-size: clamp(1.375rem, 7.4cqi, var(--fs-total)); }
@@ -289,7 +301,8 @@
 .mn-total-sub { display: flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); }
 
 .mn-cols { display: grid; gap: var(--s-6); align-items: start; }
-@container sv (min-width: 900px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(340px, 1fr); } }
+/* Spec 6.2: to collect left, to pay + received right, once the right column gets 320 px. */
+@container sv (min-width: 820px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); } }
 .mn-side { display: grid; gap: var(--s-5); min-width: 0; align-content: start; }
 .mn-quiet { max-width: 52ch; }
 
@@ -358,11 +371,13 @@
 .mp-over { color: var(--amber-text); }
 .mp-how { font-weight: var(--fw-strong); font-size: var(--fs-body); }
 .mp-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.mp-mode { flex-direction: row; align-items: center; gap: 12px; min-height: 64px; padding-right: 44px; }
+.mp-mode { flex-direction: row; align-items: center; gap: 12px; min-height: 56px; padding-top: 8px; padding-bottom: 8px; padding-right: 44px; }
 .mp-mode > svg { color: var(--accent-text); flex: none; }
-.mp-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; max-width: 380px; align-self: center; }
+/* Keys span the sheet (no narrow block inside a wide modal); 56 px tall so four rows and Save fit
+   a 390 x 844 phone and a 1440 x 900 laptop modal without scrolling. */
+.mp-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; }
 .mp-key {
-  display: grid; place-items: center; height: var(--touch-lg); padding: 0; border-radius: var(--r-md);
+  display: grid; place-items: center; height: var(--touch); padding: 0; border-radius: var(--r-md);
   border: 1px solid transparent; background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
   color: var(--text-hi); font-family: var(--font-num); font-size: 1.75rem; font-weight: 600; font-variant-numeric: tabular-nums;
   box-shadow: var(--depth); transition: transform 90ms var(--ease-out), box-shadow 90ms var(--ease-out);
@@ -374,10 +389,14 @@
 .mp-key-back, .mp-key-clear { color: var(--text-md); }
 .mp-err:empty { display: none; }
 @media (max-height: 700px) {
-  .mp-key { height: 56px; font-size: 1.5rem; }
+  .mp-key { height: 52px; font-size: 1.5rem; }
   .mp-pad { gap: 10px; }
-  .mp-mode { min-height: 56px; }
+  .mp-display { padding: 8px 16px 10px; }
 }
+/* The pad sheets may use more of the screen than an ordinary sheet (W1 default 85 dvh / 820 px). */
+.sheet.sv-sheet-tall { max-height: 92dvh; }
+.sheet-root[data-place="modal"] .sheet.sv-sheet-tall { max-height: min(94dvh, 940px); }
+.sheet.sv-sheet-tall .sheet-body { gap: 12px; }
 
 /* Add phone: +91 then the digits in two halves, a caret while it is not full. */
 .mp-phone {

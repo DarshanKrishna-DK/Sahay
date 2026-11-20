@@ -296,7 +296,7 @@ function form(saved, api) {
   let formNodes = null;
   function openPicker() {
     const search = h("input", {
-      class: "field-input gs-search", type: "search", inputmode: "search", autocomplete: "off", spellcheck: "false",
+      class: "field-input gs-search", type: "search", inputmode: "search", autocomplete: "off", autocapitalize: "none", spellcheck: "false",
       "aria-label": st("shop.stateSearch"), placeholder: st("shop.stateSearch"),
     });
     const clear = h("button", { class: "icon-btn gs-search-clear", type: "button", hidden: true, "aria-label": st("shop.stateClear"), dataset: { tip: st("shop.stateClear") } }, ic("x", 20));

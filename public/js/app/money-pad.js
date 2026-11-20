@@ -17,6 +17,8 @@ import { padPress, cleanPhone, phoneProblem, formatPhone } from "./sell-facts.js
 import { notifyPaid } from "./moments.js";
 
 addStrings({
+  "mn.addPhone": ["Add phone", "फ़ोन जोड़ें", "ಫೋನ್ ಸೇರಿಸಿ"],
+  "mn.addPhoneLong": ["Add a phone number for {name}", "{name} का फ़ोन नंबर जोड़ें", "{name} ಅವರ ಫೋನ್ ಸಂಖ್ಯೆ ಸೇರಿಸಿ"],
   "pp.clearAll": ["Clear the number", "पूरा नंबर हटाएँ", "ಪೂರ್ತಿ ಸಂಖ್ಯೆ ಅಳಿಸಿ"],
   "pp.of": ["{amt} owed in all", "कुल {amt} बाकी", "ಒಟ್ಟು {amt} ಬಾಕಿ"],
   "pp.more": ["This is more than they owe.", "यह बाकी से ज़्यादा है।", "ಇದು ಬಾಕಿಗಿಂತ ಹೆಚ್ಚು."],
@@ -146,7 +148,7 @@ export function openPayPad({ customerId, name, owed, opener }) {
     else if (e.key === "Enter" && digits && !busy && !(e.target.closest && e.target.closest("button"))) { e.preventDefault(); submit(); }
   });
   sync();
-  const api = panel({ title: st("mpad.title", { name }), body, footer, opener, speakKey: customerId ? `owed:${customerId}` : undefined });
+  const api = panel({ title: st("mpad.title", { name }), body, footer, opener, tall: true, speakKey: customerId ? `owed:${customerId}` : undefined });
   requestAnimationFrame(() => { const first = grid.querySelector(".mp-key"); if (first) first.focus(); });
   return api;
 }
@@ -233,7 +235,7 @@ export function openAddPhone({ name, opener, onSaved }) {
     sync();
   });
   sync();
-  const api = panel({ title: st("pp.phoneTitle", { name }), body, footer, opener });
+  const api = panel({ title: st("pp.phoneTitle", { name }), body, footer, opener, tall: true });
   requestAnimationFrame(() => { const first = grid.querySelector(".mp-key"); if (first) first.focus(); });
   return api;
 }
