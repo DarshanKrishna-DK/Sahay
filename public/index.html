@@ -58,10 +58,9 @@
           <button type="button" class="popover-item" role="menuitemradio" aria-checked="false" data-lang="kn" lang="kn"><span>ಕನ್ನಡ</span><svg class="pi-check" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
-      <a class="btn btn-primary btn-sm nav-cta" href="/app">
-        <span class="nav-cta-long" data-i18n="openSahay">Open Sahay</span>
-        <span class="nav-cta-short" data-i18n="open">Open</span>
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <a class="btn btn-secondary btn-sm nav-cta" href="/app#/login">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span data-i18n="logIn">Log in</span>
       </a>
     </div>
   </header>
@@ -111,10 +110,8 @@
         <h1 id="hero-title"><span class="h1-line" data-i18n="heroL1">Your shop's assistant.</span> <span class="h1-line h1-accent" data-i18n="heroL2">It bargains and bills,</span> <span class="h1-line h1-accent" data-i18n="heroL3">you say yes.</span></h1>
         <p class="hero-sub" data-i18n="heroSub">Say what you need in Hindi, Kannada or English, and Sahay finds sellers, bargains, makes bills and tracks stock while you mind the counter.</p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="/app#/talk" data-big-cta>
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-            <span data-i18n="start">Start talking</span>
-          </a>
+          <!-- Pushable primary (screens.md: adapted from Uiverse.io by cssbuttons-io, MIT). -->
+          <a class="btn btn-primary" href="/app" data-big-cta><span class="btn-edge" aria-hidden="true"></span><span class="btn-front"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="openSahay">Open Sahay</span></span></a>
           <a class="btn btn-secondary" href="#how">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 8.5v7l5.5-3.5Z" fill="currentColor"/></svg>
             <span data-i18n="heroMore">See how it works</span>
@@ -127,7 +124,6 @@
     <!-- How it works: three steps (Stitch 01-landing). Each card's small panel is an example. -->
     <section class="how" id="how" aria-labelledby="how-title">
       <header class="section-head">
-        <p class="eyebrow" data-i18n="howEyebrow">Voice first</p>
         <h2 id="how-title" data-i18n="howTitle">How Sahay buys for your shop in three steps</h2>
         <p class="section-sub" data-i18n="howSub">Keep serving customers at the counter. Sahay talks to sellers, bargains, and waits for your yes.</p>
       </header>
@@ -447,9 +443,6 @@
 
   <!-- Phones: the one main action floats at the bottom, within thumb reach; it steps aside while a
        big start button is on screen. -->
-  <a class="btn btn-primary bottom-cta" href="/app#/talk">
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-    <span data-i18n="start">Start talking</span>
-  </a>
+  <a class="btn btn-primary bottom-cta" href="/app"><span class="btn-edge" aria-hidden="true"></span><span class="btn-front"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h13M13 6.5 18.5 12 13 17.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="openSahay">Open Sahay</span></span></a>
 </body>
 </html>

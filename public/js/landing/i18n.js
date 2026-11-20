@@ -19,7 +19,7 @@ const S = {
   toDark: { en: "Switch to dark", hi: "गहरा रंग", kn: "ಗಾಢ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   start: { en: "Start talking", hi: "बोलकर शुरू करें", kn: "ಮಾತನಾಡಿ ಶುರು ಮಾಡಿ" },
   openSahay: { en: "Open Sahay", hi: "सहाय खोलें", kn: "ಸಹಾಯ್ ತೆರೆಯಿರಿ" },
-  open: { en: "Open", hi: "खोलें", kn: "ತೆರೆಯಿರಿ" },
+  logIn: { en: "Log in", hi: "लॉग इन", kn: "ಲಾಗ್ ಇನ್" },
   example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
 
   // The hero headline in three lines (the first white, the next two lit).
@@ -43,7 +43,6 @@ const S = {
   hudWaits: { en: "waits for your yes", hi: "आपकी हाँ का इंतज़ार", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತಿದೆ" },
   hudSpeaks: { en: "speaks", hi: "बोलता है", kn: "ಮಾತನಾಡುತ್ತದೆ" },
 
-  howEyebrow: { en: "Voice first", hi: "आवाज़ से", kn: "ಧ್ವನಿಯಿಂದ" },
   howTitle: {
     en: "How Sahay buys for your shop in three steps",
     hi: "सहाय तीन क़दम में आपकी दुकान के लिए कैसे ख़रीदता है",
