@@ -23,13 +23,12 @@
 .sh-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "greet" "status" "trackers" "figure" "actions" "hint" "notes";
+  grid-template-areas: "greet" "status" "figure" "actions" "hint" "notes";
   align-items: start;
   gap: var(--s-3);
 }
 .sh-greet { grid-area: greet; }
 .sh-status { grid-area: status; }
-.sh-trackers { grid-area: trackers; }
 .sh-figure { grid-area: figure; }
 .sh-actions { grid-area: actions; }
 .sh-hint { grid-area: hint; }
@@ -39,8 +38,8 @@
   .sh-home { --orb: 184px; gap: var(--s-6); }
   .sh-hero {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "greet figure" "status figure" "trackers figure" "actions figure" "hint figure" "notes figure";
-    grid-template-rows: auto auto auto auto auto 1fr;
+    grid-template-areas: "greet figure" "status figure" "actions figure" "hint figure" "notes figure";
+    grid-template-rows: auto auto auto auto 1fr;
     column-gap: var(--s-6);
   }
   .sh-figure { align-self: center; }
@@ -70,13 +69,17 @@
 .sh-status-line {
   margin: 0;
   max-width: 56ch;
+  font-family: var(--font-body);
   font-size: 1.125rem;
+  font-weight: 500;
   line-height: 1.55;
   color: var(--text-md);
 }
 .sh-status-line:lang(hi), .sh-status-line :lang(hi), .sh-status-line:lang(kn), .sh-status-line :lang(kn) { line-height: 1.7; }
-.sh-status-line[data-tone="busy"], .sh-status-line[data-tone="done"] { color: var(--text-hi); }
-.sh-status-line[data-tone="needs"], .sh-status-line[data-tone="bad"] { color: var(--coral-text); }
+/* The line keeps the normal text colour; only its key words take the tone. */
+.sh-key { font-weight: 700; color: var(--text-hi); }
+.sh-status-line[data-tone="busy"] .sh-key, .sh-status-line[data-tone="done"] .sh-key { color: var(--accent-text); }
+.sh-status-line[data-tone="needs"] .sh-key, .sh-status-line[data-tone="bad"] .sh-key { color: var(--coral-text); }
 .sh-lime { color: var(--accent-text); font-weight: 700; }
 .sh-status .speak-wrap { flex: none; }
 
@@ -295,12 +298,19 @@
 /* ==================================================== conversation card -- */
 
 .sh-convo-card { gap: var(--s-3); padding: var(--s-4); }
-.sh-card-head { display: flex; align-items: center; gap: var(--s-2); min-height: 32px; padding-bottom: var(--s-3); border-bottom: 1px solid var(--hairline); }
+.sh-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); min-height: 32px; padding-bottom: var(--s-3); border-bottom: 1px solid var(--hairline); }
 .sh-card-title { margin: 0; font-family: var(--font-body); font-size: var(--t-label); font-weight: 700; color: var(--text-hi); }
 :root[lang="en"] .sh-card-title { text-transform: uppercase; letter-spacing: var(--track-label); }
 :root[lang="hi"] .sh-card-title, :root[lang="kn"] .sh-card-title { font-size: var(--t-body); }
 .sh-live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-faint); }
 .sh-convo-card[data-live="true"] .sh-live-dot { background: var(--lime); box-shadow: var(--glow-lime); animation: sh-blink 1.6s ease-in-out infinite; }
+/* Trackers ride in the card head as one quiet row (laptop and tablet); phones leave them out. */
+.sh-card-head .sh-trackers { flex: 1 1 auto; justify-content: flex-end; min-width: 0; gap: 6px 8px; }
+.sh-card-head .sh-tracker { min-height: 32px; padding: 4px 10px; font-size: .875rem; }
+.sh-card-head .sh-tracker svg { width: 16px; height: 16px; }
+.sh-card-head .sh-trackers:not([hidden]) + .sh-timer { margin-left: var(--s-2); }
+@media (max-width: 599px) { .sh-card-head .sh-trackers { display: none; } }
+@media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) { .sh-card-head .sh-trackers { display: none; } }
 .sh-timer { margin-left: auto; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: var(--t-body); color: var(--text-md); }
 .sh-timer[hidden] { display: none; }
 
@@ -503,7 +513,6 @@
   .sh-hero { gap: var(--s-2); }
   .sh-greet { font-size: 32px; }
   .sh-status-line { font-size: 1rem; line-height: 1.5; }
-  .sh-trackers { display: none; }
   .sh-figure { display: flex; align-items: center; justify-content: center; gap: var(--s-3); }
   .sh-orb-wrap { padding: 8px; }
 }

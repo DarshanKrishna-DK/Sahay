@@ -60,6 +60,27 @@ function sayOnDevice(text, done) {
   return true;
 }
 
+/** The words of a now-line that carry its colour: its own key word (home.key.*), else its values. */
+const KEY_WORD = { "now.waitingYes": "home.key.yes", "now.ordered": "home.key.order", "now.failed": "home.key.stopped" };
+function keyWords(key, vars) {
+  if (KEY_WORD[key]) return [t(KEY_WORD[key])];
+  return Object.values(vars || {}).filter((v) => v !== null && v !== undefined && String(v).trim()).map(String);
+}
+/** The sentence with the first match of each key word wrapped in a toned <strong>. */
+function marked(sentence, words) {
+  const hits = words.map((w) => ({ w, i: sentence.indexOf(w) })).filter((x) => x.w && x.i >= 0).sort((a, b) => a.i - b.i);
+  const out = [];
+  let at = 0;
+  for (const { w, i } of hits) {
+    if (i < at) continue;
+    if (i > at) out.push(scripted("span", sentence.slice(at, i)));
+    out.push(scripted("strong", w, { class: "sh-key" }));
+    at = i + w.length;
+  }
+  if (at < sentence.length) out.push(scripted("span", sentence.slice(at)));
+  return out;
+}
+
 /** "Sahay is ready. Tap {talk} and say what you need." with the word Talk drawn in lime. */
 function withTalkWord(sentence) {
   const parts = sentence.split("{talk}");
@@ -82,7 +103,7 @@ export function createSahayHome() {
   const actions = h("div", { class: "sh-actions", role: "group" });
   const notes = h("div", { class: "sh-notes", hidden: true });
   const hint = h("p", { class: "sh-hint", hidden: true });
-  const hero = h("section", { class: "sh-hero", "aria-labelledby": "sh-title" }, greet, status, trackers.el, figure, actions, hint, notes);
+  const hero = h("section", { class: "sh-hero", "aria-labelledby": "sh-title" }, greet, status, figure, actions, hint, notes);
 
   /* ---- conversation card ---- */
   const convoTitle = h("h2", { class: "sh-card-title", id: "sh-convo-title" });
@@ -101,7 +122,7 @@ export function createSahayHome() {
     },
   });
   const convoCard = h("article", { class: "card sh-convo-card", "aria-labelledby": "sh-convo-title" },
-    h("header", { class: "sh-card-head" }, liveDot, convoTitle, timer), convo, tryRow, composer.el);
+    h("header", { class: "sh-card-head" }, liveDot, convoTitle, trackers.el, timer), convo, tryRow, composer.el);
 
   /* ---- today ---- */
   const todayLabel = h("h2", { class: "sh-today-label", id: "sh-today-title" });
@@ -163,8 +184,11 @@ export function createSahayHome() {
     const n = nowLine();
     const s = statusLine({ orbState: v.state, nowKey: n.key, live: inCall() });
     const sentence = s.now ? t(n.key, n.vars) : t(s.key);
+    // Normal text colour; only the key words (the item, the seller, the count, or the key's own
+    // word such as "yes") carry the tone colour.
+    const keys = s.now ? keyWords(n.key, n.vars) : [];
     patch(status, `${document.documentElement.lang}|${sentence}|${s.talk}|${n.tone}`, () => [
-      h("p", { class: "sh-status-line", dataset: { tone: s.now ? n.tone : "calm" } }, ...(s.talk ? withTalkWord(sentence) : [scripted("span", sentence)])),
+      h("p", { class: "sh-status-line", dataset: { tone: s.now ? n.tone : "calm" } }, ...(s.talk ? withTalkWord(sentence) : marked(sentence, keys))),
       speakButton("now", { size: "sm" }),
     ]);
   }

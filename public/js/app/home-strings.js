@@ -135,4 +135,7 @@ addStrings({
   "home.stat.received": ["Money received", "मिला पैसा", "ಬಂದ ಹಣ"],
   "home.stat.low": ["Low stock", "कम माल", "ಕಡಿಮೆ ಸ್ಟಾಕ್"],
   "home.statsFail": ["Some of today's numbers did not load.", "आज के कुछ आँकड़े नहीं आए।", "ಇಂದಿನ ಕೆಲವು ಅಂಕಿಗಳು ಬರಲಿಲ್ಲ."],
+  "home.key.yes": ["yes", "हाँ", "ಒಪ್ಪಿಗೆ"],
+  "home.key.order": ["Order", "ऑर्डर", "ಆರ್ಡರ್"],
+  "home.key.stopped": ["stopped", "रुक गया", "ನಿಂತಿದೆ"],
 });
