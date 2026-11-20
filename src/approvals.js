@@ -321,14 +321,7 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
   if (!Array.isArray(contents)) throw new ApprovalError("EVIDENCE_REQUIRED", "The call history is needed as evidence.");
   const readbacks = spoken.map(spokenPieces);
 
-  let anchor = -1;
-  let pieces = null;
-  for (let i = contents.length - 1; i >= 0 && anchor < 0; i--) {
-    if (!isServerLine(contents[i])) continue;
-    const line = collapse(contents[i].content);
-    pieces = readbacks.find((p) => p[p.length - 1] === line) ?? null;
-    if (pieces) anchor = i;
-  }
+  const { anchor, pieces } = readbackEnd(contents, readbacks);
   if (anchor < 0) throw new ApprovalError("READBACK_NOT_HEARD", "The read-back is not in the call history.");
   const heard = [anchor];
   for (let p = pieces.length - 2, at = anchor; p >= 0; p--) {
@@ -375,6 +368,38 @@ function answerAfterSpoken(businessId, contents, { agentId, spoken = [], subject
     }
   }
   return { text: said.content.trim(), turnId: said.turn_id, index: answerAt };
+}
+
+/** Index of the last server line that ends one of `readbacks` (each a list of /speak pieces), and that read-back's pieces; anchor -1 when none. */
+function readbackEnd(contents, readbacks) {
+  for (let i = contents.length - 1; i >= 0; i--) {
+    if (!isServerLine(contents[i])) continue;
+    const line = collapse(contents[i].content);
+    const pieces = readbacks.find((p) => p[p.length - 1] === line);
+    if (pieces) return { anchor: i, pieces };
+  }
+  return { anchor: -1, pieces: null };
+}
+
+/**
+ * The owner's LATEST spoken turn after the read-back of `spoken` (the last one in this call), in
+ * array and turn order, as `{ text, turnId, index }`; null when there is none. Not an answer and
+ * never evidence for a decision (answerAfterSpoken binds only the first): the confirmation watchdog
+ * uses it to see that a clear yes came after a first answer that was not one, and then has the
+ * question read out again (src/agora/confirm-watch.js).
+ */
+function lastOwnerTurnAfterSpoken(contents, spoken = []) {
+  if (!Array.isArray(contents) || !spoken.length) return null;
+  const { anchor } = readbackEnd(contents, spoken.map(spokenPieces));
+  if (anchor < 0) return null;
+  for (let i = contents.length - 1; i > anchor; i--) {
+    const item = contents[i];
+    if (!isOwnerAsr(item)) continue;
+    const read = contents[anchor];
+    if (!Number.isFinite(item.turn_id) || !Number.isFinite(read.turn_id) || !(item.turn_id > read.turn_id)) return null;
+    return { text: item.content.trim(), turnId: item.turn_id, index: i };
+  }
+  return null;
 }
 
 /** A lazily read phrase table entry in the three read-back languages. */
@@ -551,6 +576,6 @@ function assertOrderApproved(businessId, order) {
 module.exports = {
   ApprovalError,
   requestApproval, recordReadbackSpoken, confirmApproval, assertApproved, assertOrderApproved,
-  answerToReadback, answerAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr, spokenQuestionTables,
+  answerToReadback, answerAfterSpoken, lastOwnerTurnAfterSpoken, lastOwnerWords, isAffirmative, classifyUtterance, isOwnerAsr, spokenQuestionTables,
   buildReadback, loadDeal,
 };

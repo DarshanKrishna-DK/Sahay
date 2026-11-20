@@ -22,6 +22,20 @@
  * key (approvalId, invoiceId, receiptDraftId, ruleId, proposalId; r2 #9), so a simulated vendor's
  * deal is labelled as one (events.js).
  *
+ * Live check 129a071 (2026-11-20): read-back, the owner's "शायद थोड़ा सोचने दीजिए।", no agent reply,
+ * then "हाँ, ठीक है।" twice. The first answer was a maybe, so nothing could ever bind that yes, and
+ * the only way back (the confirm tool's own re-read on a later yes) needs the model to call it,
+ * which it never did. So when the first answer was not clear (or something else came between the
+ * read-back and it), and the owner's LATEST turn after the read-back is a clear yes that the model
+ * has left alone for `graceMs`, the server calls the confirm tool with that yes for the kinds that
+ * re-read (`rereads`): the tool's gate still refuses it (only the first answer binds), and the tool
+ * reads the question out again, exactly as when the model calls it. That approves nothing: only
+ * the owner's next answer to the fresh read-back can. Audit row action "read_again".
+ *
+ * Every poll also notes an owner turn the agent leaves unanswered: after SILENCE_LOG_MS it logs, once,
+ * the shape of the /history tail (roles, sources, turn ids, tool names; never words), as evidence of
+ * where a silent agent stopped.
+ *
  * In memory per live call; it never runs without a live owner call (narrator.liveCall).
  */
 
@@ -40,11 +54,13 @@ const settings = { pollMs: 1500, graceMs: 6000, maxAgeMs: 3 * 60 * 1000, history
 
 /**
  * What can wait for a spoken answer, newest read-back first. `pending` lists, for this call's
- * agent, every subject still waiting with the texts the server spoke for it and when.
+ * agent, every subject still waiting with the texts the server spoke for it and when. `rereads`: its
+ * confirm tool reads the question out again for a clear yes that is not the first answer.
  */
 const KINDS = {
   approval: {
     tool: "confirm_approval",
+    rereads: true,
     ref: (s) => ({ approvalId: s.id }),
     args: (s, answer) => ({ approvalId: s.id, decision: answer === "affirmative" ? "approve" : "reject" }),
     pending: (businessId, agentId) =>
@@ -57,6 +73,7 @@ const KINDS = {
   },
   invoice: {
     tool: "confirm_invoice",
+    rereads: true,
     ref: (s) => ({ invoiceId: s.invoiceId, invoiceApprovalId: s.id }),
     args: (s, answer) => ({ invoiceId: s.invoiceId, decision: answer === "affirmative" ? "approve" : "reject" }),
     pending: (businessId, agentId) =>
@@ -69,6 +86,7 @@ const KINDS = {
   },
   receipt: {
     tool: "record_payment",
+    rereads: true,
     ref: (s) => ({ receiptDraftId: s.id }),
     args: (s, answer) => ({ decision: answer === "affirmative" ? "confirm" : "cancel" }),
     pending: (businessId, agentId) =>
@@ -148,7 +166,7 @@ let historyImpl = (agentId) => require("./agent").history(agentId, { timeoutMs: 
 let liveImpl = (businessId) => require("./narrator").liveCall(businessId);
 let callToolImpl = (ctx, name, args) => require("../tools/registry").callTool(ctx, name, args);
 
-/** businessId -> { timer, seen: Map(key -> firstSeenMs), acted: Set(key) } */
+/** businessId -> { timer, seen: Map(key -> firstSeenMs), acted: Set(key), silence: {turn, since, logged} | null } */
 const watching = new Map();
 /** businessId -> { tool, at }: the confirm tool the server ran last for an owner's answer. */
 const done = new Map();
@@ -214,7 +232,7 @@ function watch(businessId) {
   if (!liveImpl(businessId)?.agentId) return;
   let state = watching.get(businessId);
   if (!state) {
-    state = { timer: null, seen: new Map(), acted: new Set(), busy: false };
+    state = { timer: null, seen: new Map(), acted: new Set(), busy: false, silence: null };
     watching.set(businessId, state);
   }
   schedule(businessId, state);
@@ -239,7 +257,8 @@ function unwatch(businessId) {
 /**
  * One look at the call. Returns what it did, for tests: "idle" (nothing waits: polling stops),
  * "waiting" (no answer yet, or an unclear one), "grace" (an answer is there, the model has
- * `graceMs` to act), "model" (the model called the confirm tool), or "acted".
+ * `graceMs` to act), "model" (the model called the confirm tool), "acted", or "read_again" (a later
+ * clear yes had the question read out again).
  */
 async function tick(businessId, now = () => Date.now()) {
   const state = watching.get(businessId);
@@ -272,17 +291,32 @@ async function look(businessId, state, call, now) {
   } catch {
     return "waiting"; // /history is unavailable now; look again on the next tick
   }
-  let answer;
+  noteSilence(state, history, now);
+  let answer = null;
+  let refusal = null;
   try {
     answer = approvals.answerAfterSpoken(businessId, history, { agentId: call.agentId, spoken: subject.spoken, subject: { ...subject.subject, kind: subject.kind } });
-  } catch {
-    return "waiting"; // no spoken answer after the read-back yet (or it was typed, or another question came after it)
+  } catch (err) {
+    refusal = err?.code ?? null; // no spoken answer after the read-back yet, a typed one, or something else came first
   }
+  if (!answer) return SUPERSEDED.has(refusal) ? readAgainOnLaterYes(businessId, state, call, subject, history, -1, now) : "waiting";
   const kindOfAnswer = approvals.classifyUtterance(answer.text);
-  if (kindOfAnswer !== "affirmative" && kindOfAnswer !== "negative") return "waiting"; // a maybe or a question is the model's to handle
+  // A maybe or a question is the model's to handle; a clear yes after it gets the question read out again.
+  if (kindOfAnswer !== "affirmative" && kindOfAnswer !== "negative") return readAgainOnLaterYes(businessId, state, call, subject, history, answer.index, now);
   if (possibleEcho(history, answer.index)) return "waiting"; // maybe the agent's own voice, heard back: the model decides
 
   const key = answerKey(subject, answer.turnId);
+  const ready = readyToAct(businessId, state, call, subject, key, now);
+  if (ready) return ready;
+  return act(businessId, call, subject, { answer: kindOfAnswer, turnId: answer.turnId, action: "decided" });
+}
+
+/**
+ * The checks before the server acts on an owner's turn (`key`), in order; returns the tick result
+ * when it must not act now, or null when it may (the turn is then marked acted on).
+ */
+function readyToAct(businessId, state, call, subject, key, now) {
+  const spec = KINDS[subject.kind];
   if (state.acted.has(key)) return "waiting";
   if (!state.seen.has(key)) state.seen.set(key, now());
   const firstSeen = state.seen.get(key);
@@ -303,16 +337,51 @@ async function look(businessId, state, call, now) {
   if (now() - firstSeen < settings.graceMs) return "grace";
   // Look again right before acting: the model may have started a tool while /history was read.
   if (toolCalls.inFlight(businessId, [spec.tool]) || otherToolSince(businessId, subject) || !stillWaiting(businessId, call.agentId, subject)) return "waiting";
-
   state.acted.add(key);
+  return null;
+}
+
+/** answerAfterSpoken refusals after which a later clear yes gets the question read out again (as the confirm tools' REREAD_ON). */
+const SUPERSEDED = new Set(["READBACK_SUPERSEDED", "ANSWER_DURING_READBACK"]);
+
+/**
+ * Live check 129a071: the first answer after the read-back was not a clear one (or something came
+ * between the read-back and it), and the owner's latest turn since the read-back (after index
+ * `after`) is a clear yes. When the model leaves it alone, the server calls the confirm tool with
+ * that yes: the gate refuses it (only the first answer binds, security review r2 #3) and the tool
+ * reads the question out again. Nothing is decided; the owner's next answer is the first one again.
+ */
+function readAgainOnLaterYes(businessId, state, call, subject, history, after, now) {
+  if (!KINDS[subject.kind].rereads) return "waiting";
+  const latest = approvals.lastOwnerTurnAfterSpoken(history, subject.spoken);
+  if (!latest || latest.index <= after) return "waiting";
+  if (approvals.classifyUtterance(latest.text) !== "affirmative") return "waiting";
+  if (possibleEcho(history, latest.index)) return "waiting";
+  const ready = readyToAct(businessId, state, call, subject, `${answerKey(subject, latest.turnId)}:again`, now);
+  if (ready) return ready;
+  return act(businessId, call, subject, { answer: "affirmative", turnId: latest.turnId, action: "read_again" });
+}
+
+/**
+ * Call the subject's confirm tool for the owner's answer, through the same registry path as the
+ * model, and write the audit row. "decided": the first answer, the gate decides. "read_again": a
+ * later yes; the tool's own re-read speaks the question again (if the gate took it after all, the
+ * row says "decided"). Returns "acted" or "read_again".
+ */
+async function act(businessId, call, subject, { answer, turnId, action }) {
+  const spec = KINDS[subject.kind];
   const ctx = { businessId, sessionId: call.sessionId ?? null, agentId: call.agentId, actor: "agent", toolScope: "owner" };
-  const args = { ...spec.args(subject, kindOfAnswer), reply_language: call.language };
+  const args = { ...spec.args(subject, answer), reply_language: call.language };
   let ok = true;
   let code = null;
+  let did = action;
   try {
     // The tool runs its gate on the owner's own words and says the result itself.
-    await callToolImpl(ctx, spec.tool, args);
-    done.set(businessId, { tool: spec.tool, at: Date.now() });
+    const result = await callToolImpl(ctx, spec.tool, args);
+    if (!result?.readAgain) {
+      did = "decided";
+      done.set(businessId, { tool: spec.tool, at: Date.now() });
+    }
   } catch (err) {
     ok = false;
     code = err?.code ?? "INTERNAL";
@@ -322,10 +391,53 @@ async function look(businessId, state, call, now) {
   events.emit(
     businessId,
     "confirm.watchdog",
-    { kind: subject.kind, subjectId: subject.id, ...spec.ref(subject), tool: spec.tool, answer: kindOfAnswer, turnId: answer.turnId, ok, ...(code ? { code } : {}) },
+    { kind: subject.kind, subjectId: subject.id, ...spec.ref(subject), tool: spec.tool, answer, turnId, action: did, ok, ...(code ? { code } : {}) },
     { sessionId: call.sessionId ?? null, actor: "system" },
   );
-  return "acted";
+  return action === "read_again" ? "read_again" : "acted";
+}
+
+/* ------------------------------------------------------------ diagnostics --- */
+
+/** How long an owner turn may stay unanswered before its /history shape is logged (once per turn). */
+const SILENCE_LOG_MS = 10_000;
+const TAIL_ITEMS = 8;
+
+/** Something the agent produced: a line (any source), a tool call or a tool result. */
+const agentItem = (item) => item?.role === "tool" || (item?.role === "assistant" && ((typeof item.content === "string" && item.content.trim()) || (Array.isArray(item.tool_calls) && item.tool_calls.length)));
+
+/** The shape of the last items of /history: role:source#turn, interrupted, tool names; never any words. */
+function historyTail(history) {
+  return history
+    .slice(-TAIL_ITEMS)
+    .map((item) => {
+      const turn = Number.isFinite(item?.turn_id) ? item.turn_id : "-";
+      const calls = Array.isArray(item?.tool_calls) && item.tool_calls.length ? ` calls ${item.tool_calls.map((c) => String(c?.name ?? c?.function?.name ?? "?").replace(/^[A-Za-z0-9]+__/, "")).join(",")}` : "";
+      const ended = Number.isFinite(item?.speech_end_ms ?? item?.metadata?.speech_timing?.speech_end_ms) ? " ended" : "";
+      return `${item?.role ?? "?"}:${item?.metadata?.source ?? "-"}#${turn}${item?.metadata?.interrupted ? " interrupted" : ""}${ended}${calls}${item?.role === "tool" ? " result" : ""}`;
+    })
+    .join(" ");
+}
+
+/**
+ * Live check 129a071: the owner's turns were transcribed and the agent said nothing for minutes.
+ * Note when the latest owner turn has no agent item after it; past SILENCE_LOG_MS, log the /history
+ * shape once, so a live check shows where the agent stopped (model line missing, read-back
+ * interrupted, tool items, timings).
+ */
+function noteSilence(state, history, now) {
+  let i = history.length - 1;
+  while (i >= 0 && !approvals.isOwnerAsr(history[i])) i--;
+  if (i < 0 || history.slice(i + 1).some(agentItem)) return;
+  const turn = Number.isFinite(history[i].turn_id) ? history[i].turn_id : `at ${i}`;
+  if (state.silence?.turn !== turn) {
+    state.silence = { turn, since: now(), logged: false };
+    return;
+  }
+  const waited = now() - state.silence.since;
+  if (state.silence.logged || waited < SILENCE_LOG_MS) return;
+  state.silence.logged = true;
+  console.warn(`[confirm-watch] no agent reply ${Math.round(waited / 1000)} s after owner turn ${turn}; /history tail: ${historyTail(history)}`);
 }
 
 /* ---------------------------------------------------------------- events --- */

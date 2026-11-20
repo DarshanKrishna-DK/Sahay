@@ -590,6 +590,31 @@ test("r2 #3: each subject allows only its own short question; a rule's question 
   );
 });
 
+test("live check 129a071: lastOwnerTurnAfterSpoken finds the owner's latest spoken turn after the read-back, never one before it, and binds nothing", () => {
+  const businessId = seedBusiness({ language: "hi-IN" });
+  const approval = putToOwner(businessId, seedQuote(businessId));
+  const spoken = [approval.readback];
+  const live = [
+    asr("हाँ", 8), // the yes to "read this deal out?", before the read-back
+    ...heard(approval.readback, { from: 10 }),
+    toolCall("request_approval", "c1", undefined),
+    toolResult("c1", undefined),
+    asr("शायद थोड़ा सोचने दीजिए।", 20),
+    asr("हाँ, ठीक है।", 21),
+  ];
+  assert.deepEqual(approvals.lastOwnerTurnAfterSpoken(live, spoken), { text: "हाँ, ठीक है।", turnId: 21, index: live.length - 1 });
+  // The gate still binds only the first answer: the maybe.
+  assert.equal(approvals.answerAfterSpoken(businessId, live, { agentId: "AG1", spoken, subject: { approvalId: approval.id } }).text, "शायद थोड़ा सोचने दीजिए।");
+  assert.throws(() => voice(businessId, approval, live), refuses("NOT_AFFIRMATIVE"));
+
+  assert.equal(approvals.lastOwnerTurnAfterSpoken(live.slice(0, -2), spoken), null, "only the offer's yes, before the read-back");
+  assert.equal(approvals.lastOwnerTurnAfterSpoken([...live, asr("हाँ", 22, { metadata: { source: "message" } })], spoken).text, "हाँ, ठीक है।", "a typed turn is not a spoken one");
+  assert.equal(approvals.lastOwnerTurnAfterSpoken([...live.slice(0, -1), asr("हाँ", undefined)], spoken), null, "a turn that cannot be ordered after the read-back");
+  assert.equal(approvals.lastOwnerTurnAfterSpoken(live, []), null, "nothing was read out");
+  assert.equal(approvals.lastOwnerTurnAfterSpoken(live.filter((item) => item.metadata?.source !== "command"), spoken), null, "the read-back is not in the history");
+  assert.equal(repo.getApproval(businessId, approval.id).status, "pending");
+});
+
 /* ----------- security review r2 #6: a trailing tag particle after a yes is not a no --- */
 
 test("r2 #6: 'हाँ कर दो ना', 'haan kar do na', 'ಹೌದು ಮಾಡಿ ನಾ' are a yes; a genuine mix stays a no", () => {
