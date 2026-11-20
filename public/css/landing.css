@@ -5,38 +5,47 @@
 
 :root {
   color-scheme: dark;
-  /* Shared with the app: names and values exactly as public/css/tokens.css (test/landing-tokens.test.js). */
+  /* Shared with the app: names and values exactly as public/css/tokens.css, which follows
+     docs/build/evidence/ux-v5/screens.md section 1 (test/landing-tokens.test.js resolves aliases). */
   --bg: #0F0D0E;
   --surface: #181416;
   --surface-2: #211C1E;
-  --surface-3: #2A2427;
-  --hairline: rgba(242, 207, 198, .14);
-  --hairline-strong: rgba(242, 207, 198, .28);
-  --edge: rgba(242, 207, 198, .42);
+  --line: rgba(242, 207, 198, .14);
+  --line-strong: rgba(242, 207, 198, .32);
   --text: #F8ECE8;
-  --text-muted: #BBA8A4;
-  --text-faint: #8E7D7A;
+  --muted: #BBA8A4;
   --pink: #F2CFC6;
   --pink-hover: #F7DDD6;
-  --pink-pressed: #E6B9AE;
-  --pink-soft: rgba(242, 207, 198, .12);
+  --pink-press: #E6B9AE;
+  --pink-edge: #C99A8F;
   --on-pink: #2A1A1C;
   --dot: rgba(242, 207, 198, .06);
   --fs-body: 1.0625rem;
-  --fs-small: .9375rem;
-  --r-sm: 10px;
-  --r: 16px;
-  --r-lg: 20px;
+  --r-card: 18px;
   --r-pill: 999px;
-  --pink-edge: #C99A8F;  /* landing only until tokens.css has it: the pushable under-edge (screens.md) */
-  --shadow: 0 8px 24px -12px rgba(0, 0, 0, .6);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
   --tap: 48px;
-  --tap-primary: 56px;
-  --tap-hero: 64px;
+  --btn: 56px;
+  --btn-lg: 64px;
+  --btn-sm: 48px;
+  --focus-color: var(--pink-hover);
   --t-fast: 120ms;
   --t: 200ms;
-  --ease: cubic-bezier(.22, 1, .36, 1);
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--pink);
+  --ease: cubic-bezier(.3, .7, .4, 1);
+  /* The first v5 kit's names, as tokens.css keeps them. */
+  --hairline: var(--line);
+  --hairline-strong: var(--line-strong);
+  --edge: var(--line-strong);
+  --text-muted: var(--muted);
+  --text-faint: #8E7D7A;
+  --surface-3: #2A2427;
+  --pink-pressed: var(--pink-press);
+  --pink-soft: rgba(242, 207, 198, .10);
+  --fs-small: .9375rem;
+  --r-sm: 10px;
+  --r: var(--r-card);
+  --tap-primary: var(--btn);
+  --tap-hero: var(--btn-lg);
   /* Landing only. Type (UI v4, kept): display Jaini Purva (Latin + Devanagari; Kannada falls to
      Baloo Tamma 2); UI face Manrope falling back per glyph to Hind and Noto Sans Kannada. */
   --font-display: "Jaini Purva", "Baloo Tamma 2", "Hind", system-ui, sans-serif;
@@ -74,7 +83,7 @@ img, svg, canvas { display: block; }
 :lang(kn) { --font-display: "Baloo Tamma 2", "Noto Sans Kannada", system-ui, sans-serif; --fw-display: 700; }
 html:lang(hi) body, html:lang(kn) body { font-size: 1.0625rem; line-height: 1.7; }
 
-:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 10px; }
+:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
 main:focus { outline: none; }
 
 .sr-only {
@@ -142,8 +151,6 @@ main, .site-foot { position: relative; z-index: 1; }
 }
 .btn-primary:hover .btn-front { background: var(--pink-hover); transform: translateY(-4px); transition-duration: 200ms; }
 .btn-primary:active .btn-front { background: var(--pink-pressed); transform: translateY(-1px); transition-duration: 34ms; }
-.btn-primary:focus-visible { box-shadow: none; }
-.btn-primary:focus-visible .btn-front { box-shadow: var(--focus); }
 .btn-secondary {
   border-color: var(--hairline-strong); background: transparent; color: var(--text); font-weight: 600;
   box-shadow: inset 0 -3px 0 rgba(242, 207, 198, .10);
@@ -190,12 +197,6 @@ main, .site-foot { position: relative; z-index: 1; }
 .brand-mark { display: inline-flex; flex: none; }
 .brand-img { width: 29px; height: 36px; object-fit: contain; }
 .brand-name { color: var(--text); font-family: "Jaini Purva", system-ui, sans-serif; font-weight: 400; font-size: 1.75rem; line-height: 1; }
-.ai-chip {
-  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px;
-  border-radius: 999px; font-size: 0.875rem; font-weight: 600; color: var(--text); white-space: nowrap;
-  background: rgba(242, 207, 198, 0.08); border: 1px solid rgba(242, 207, 198, 0.35);
-}
-.ai-chip svg { color: var(--pink); flex: none; }
 /* Stitch v4 order: brand and notice left, page links centred, language and start on the right. */
 .nav-links { display: flex; flex: 1; justify-content: center; gap: 4px; }
 .nav-links a {
@@ -241,14 +242,11 @@ main, .site-foot { position: relative; z-index: 1; }
 @media (max-width: 1099px) { .nav-links { display: none; } .lang-switch-wrap { margin-left: auto; } }
 @media (min-width: 760px) and (max-width: 899px) { .brand-name { display: none; } }
 @media (max-width: 759px) {
-  .nav-cta { display: none; }
   .glass-nav { min-height: 58px; padding: 6px 10px 6px 12px; justify-content: space-between; }
 }
-/* Phones: the logo alone, so the disclosure chip and the language switcher both fit. */
 @media (max-width: 559px) { .brand-name { display: none; } }
 @media (max-width: 399px) {
   .brand { padding-right: 0; } /* the mark alone still gets a 48 x 48 target */
-  .ai-chip { font-size: 0.8125rem; padding: 0 9px; gap: 5px; }
   .lang-switch { padding: 0 10px; gap: 6px; font-size: 0.875rem; }
   .lang-switch-caret { display: none; }
   .glass-nav { gap: 6px; padding-left: 8px; }
@@ -355,13 +353,12 @@ main, .site-foot { position: relative; z-index: 1; }
   .chapter { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 72px); }
 }
 .ch-step {
-  display: inline-flex; align-items: center; gap: 12px; color: var(--text-muted);
-  font-size: 0.875rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 10px; height: 28px; color: var(--text);
+  font-size: 1.125rem; line-height: 28px; font-weight: 600;
 }
-:lang(hi) .ch-step, :lang(kn) .ch-step { font-size: 0.9375rem; }
 .ch-num {
-  display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
-  font: 700 0.875rem/1 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--pink);
+  display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%;
+  font: 700 0.8125rem/1 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: 0; color: var(--pink);
   border: 1.5px solid var(--pink); background: rgba(242, 207, 198, 0.08);
 }
 .ch-copy h3 {
@@ -541,9 +538,10 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--pink); opacity: 1; }
   width: min(var(--max), calc(100% - 2 * var(--page-gutter))); margin-inline: auto;
 }
 .story.is-staged .story-head { margin-bottom: 0; }
+.story.is-staged { --stage-top: calc(92px + clamp(4px, 2.5svh, 28px)); }
 .story.is-staged .chapter {
-  position: absolute; inset: 92px 0 32px 200px;
-  align-items: start; align-content: start; padding-top: clamp(4px, 2.5svh, 28px);
+  position: absolute; inset: var(--stage-top) 0 32px 200px;
+  align-items: start; align-content: start;
   opacity: var(--o, 0);
 }
 .story.is-staged .chapter:not(.is-shown) { pointer-events: none; }
@@ -552,7 +550,7 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--pink); opacity: 1; }
 .story.is-staged .v-figure .iso-figure { width: min(100%, calc((100svh - 400px) * 1.25)); margin-inline: auto; }
 .story.is-staged .iso-legend { font-size: 0.9375rem; }
 .story.is-staged .story-rail {
-  display: block; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 172px;
+  display: block; position: absolute; left: 0; top: calc(var(--stage-top) - 10px); width: 172px;
 }
 .story-rail ol { position: relative; display: grid; gap: 2px; }
 .rail-line { position: absolute; left: 11px; top: 22px; bottom: 22px; width: 2px; background: var(--hairline); border-radius: 2px; }
@@ -571,7 +569,8 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--pink); opacity: 1; }
 .story-rail a.is-current .rail-dot { border-color: var(--pink); }
 .story-rail a.is-current .rail-dot::after { background: var(--pink); }
 @media (max-height: 760px) {
-  .story.is-staged .chapter { inset: 84px 0 20px 200px; padding-top: 4px; }
+  .story.is-staged { --stage-top: 88px; }
+  .story.is-staged .chapter { bottom: 20px; }
   .story.is-staged .speak-card, .story.is-staged .bill-card, .story.is-staged .gauge-card { padding: 22px; }
   .story.is-staged .gauge { height: 200px; }
   .story.is-staged .loop-box { width: min(calc(100% - 96px), 230px); }
@@ -664,18 +663,14 @@ html[data-lang="en"] .script-word[lang="en"] { color: var(--pink); opacity: 1; }
 }
 
 /* ---- Phones, 599 px and below (Stitch 02-landing-phone) ------------------------------------------
-   Nav: logo + wordmark, language, a short "Open" (after the hero scrolls away: logo, disclosure chip,
-   language). Hero: disclosure line, centred headline and sentence, full-width stacked buttons, then
+   Nav: logo + wordmark, language, Log in. Hero: disclosure line, centred headline and sentence, full-width stacked buttons, then
    the point cloud. Sections stack in the same order as the laptop. */
 @media (max-width: 599px) {
   .brand-name { display: inline; font-size: 1.5rem; }
-  .ai-chip { display: none; }
   .nav-cta { display: inline-flex; padding: 0 16px; }
   .nav-cta svg { display: none; }
   .glass-nav { justify-content: flex-start; }
   .glass-nav .lang-switch-wrap { margin-left: auto; }
-  .glass-nav.is-scrolled .brand-name, .glass-nav.is-scrolled .nav-cta { display: none; }
-  .glass-nav.is-scrolled .ai-chip { display: inline-flex; }
 
   .hero { align-content: start; }
   .hero-copy { order: -1; padding: calc(max(10px, env(safe-area-inset-top)) + 84px) var(--page-gutter) 8px; text-align: center; }

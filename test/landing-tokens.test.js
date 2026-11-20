@@ -19,15 +19,25 @@ function rootTokens(file) {
   return out;
 }
 
+/** The value with every var(--x) replaced by --x's own (resolved) value from the same file. */
+function resolve(map, name, seen = new Set()) {
+  if (seen.has(name)) return map.get(name);
+  seen.add(name);
+  return (map.get(name) ?? "").replace(/var\((--[a-z0-9-]+)\)/g, (all, ref) => (map.has(ref) ? resolve(map, ref, seen) : all));
+}
+
 test("landing tokens that share a name with the app's tokens carry the same value", (t) => {
   if (!fs.existsSync(path.join(CSS, "tokens.css"))) { t.skip("tokens.css not in this tree"); return; }
   const app = rootTokens("tokens.css");
   const landing = rootTokens("landing.css");
   const shared = [...landing.keys()].filter((k) => app.has(k));
-  for (const must of ["--bg", "--surface", "--surface-2", "--text", "--text-muted", "--pink", "--pink-hover", "--pink-pressed", "--on-pink", "--hairline", "--edge", "--shadow", "--r", "--tap-primary"]) {
+  for (const must of ["--bg", "--surface", "--surface-2", "--text", "--muted", "--pink", "--pink-hover", "--pink-press", "--pink-edge", "--on-pink", "--line", "--line-strong", "--shadow", "--r-card", "--btn"]) {
     assert.ok(shared.includes(must), `landing declares ${must}`);
   }
-  for (const k of shared) assert.equal(landing.get(k), app.get(k), `${k}: landing ${landing.get(k)} vs app ${app.get(k)}`);
+  for (const k of shared) {
+    const mine = resolve(landing, k), theirs = resolve(app, k);
+    assert.equal(mine, theirs, `${k}: landing ${mine} vs app ${theirs}`);
+  }
 });
 
 test("the landing has no lime, neon glow or glass blur left", () => {
