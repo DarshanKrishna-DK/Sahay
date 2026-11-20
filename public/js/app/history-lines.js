@@ -5,6 +5,7 @@
 //   historyRows(auditRows) -> rows to show (newest first, at most 150)
 //   historyLine(row, fmt)  -> { key, vars, detail, tone, via, icon } | null
 //   dayGroups(rows, now)   -> [{ day: "today"|"yesterday"|"YYYY-MM-DD", rows }]
+//   clockWords(date, lang) -> "सुबह 10:30" / "ಸಂಜೆ 6:05" / "10:30 am" (time of day in the owner's words)
 
 /** Icon per audit type (names from dom.js ICONS). */
 export const HISTORY_ICON = {
@@ -127,4 +128,26 @@ export function dayGroups(rows, now = new Date()) {
     cur.rows.push(r);
   }
   return groups;
+}
+
+/* Time of day in the owner's words. The browser's hi-IN format writes a Latin "am/pm" (QA #18), so
+   Hindi and Kannada say the part of the day instead: morning 4-11, afternoon 12-15, evening 16-19,
+   night 20-3, with a 12-hour clock. English keeps "10:30 am". */
+const DAY_PART = {
+  hi: ["रात", "सुबह", "दोपहर", "शाम"],
+  kn: ["ರಾತ್ರಿ", "ಬೆಳಿಗ್ಗೆ", "ಮಧ್ಯಾಹ್ನ", "ಸಂಜೆ"],
+};
+export function dayPart(hour) {
+  if (hour >= 4 && hour < 12) return 1;
+  if (hour >= 12 && hour < 16) return 2;
+  if (hour >= 16 && hour < 20) return 3;
+  return 0;
+}
+export function clockWords(d, lang = "en") {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "";
+  const hr = d.getHours();
+  const clock = `${hr % 12 || 12}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const words = DAY_PART[lang];
+  if (words) return `${words[dayPart(hr)]} ${clock}`;
+  return `${clock} ${hr < 12 ? "am" : "pm"}`;
 }

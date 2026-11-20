@@ -7,10 +7,10 @@
 //   createHistory()      -> screen { el, update(state, parts) } for an old #/history route
 
 import { h, icon, patch, scripted, rupees, toDate } from "./dom.js";
-import { t, when, unitWord, has } from "./i18n.js";
+import { t, when, unitWord, has, lang } from "./i18n.js";
 import { state } from "./store.js";
 import { stateView, talkAction } from "./empty.js";
-import { historyLine, historyRows, dayGroups } from "./history-lines.js";
+import { historyLine, historyRows, dayGroups, clockWords } from "./history-lines.js";
 import "./me-strings.js";
 
 const FMT = { rupees, unit: (u) => unitWord(u) };
@@ -36,7 +36,7 @@ function row(r) {
       h("p", { class: "hx-label", text: label }),
       L.detail ? scripted("p", String(L.detail), { class: "hx-detail" }) : null,
       tags.length ? h("p", { class: "hx-tags" }, ...tags) : null),
-    d ? h("time", { class: "hx-time", datetime: d.toISOString(), text: when(d, { hour: "numeric", minute: "2-digit" }) }) : null);
+    d ? h("time", { class: "hx-time", datetime: d.toISOString(), text: clockWords(d, lang()) }) : null);
 }
 
 function skeleton() {

@@ -20,7 +20,9 @@ body.pay {
   font: var(--fw-body) var(--fs-body) / var(--lh-body) var(--font-body);
   overflow-x: hidden;
 }
-:lang(hi) body.pay, :lang(kn) body.pay, body.pay :lang(hi), body.pay :lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-indic); }
+/* Indic body size on the body only: a descendant selector like `body.pay :lang(hi)` would match every
+   element and flatten the amount and titles to 19px (QA #10). */
+body.pay:lang(hi), body.pay:lang(kn) { font-size: var(--fs-body-indic); line-height: var(--lh-indic); }
 
 /* Hex-dot field: a true hex lattice (rows half a pitch apart, 0.866 pitch high), lime at low alpha,
    faded at the edges, static. Tile 22 x 38.1 px, two dot layers. */
@@ -59,16 +61,23 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 .pay-brand {
   display: flex; align-items: center; gap: var(--s-3);
   margin: 0;
-  color: var(--text-md);
+  color: var(--text-hi);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-strong);
   line-height: 1.35;
 }
-.pay-logo { width: 36px; height: 36px; border-radius: 50%; flex: none; box-shadow: var(--shadow-1); }
+.pay-logo {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 50%;
+  background: var(--btn-surface); color: var(--on-accent); border: 1px solid var(--btn-rim); box-shadow: var(--depth-soft);
+}
+.pay-logo svg { width: 24px; height: 24px; stroke-width: 2.4; }
+/* Test mode: a compact pill, never a banner that outweighs the bill. */
 .pay-test {
-  display: flex; align-items: flex-start; gap: var(--s-2);
-  margin: 0;
-  padding: var(--s-3) var(--s-4);
-  border-radius: var(--r-md);
+  display: inline-flex; align-items: center; gap: var(--s-2); align-self: flex-start;
+  margin: 0; max-width: 100%;
+  min-height: 36px;
+  padding: var(--s-1) var(--s-3) var(--s-1) var(--s-2);
+  border-radius: var(--r-pill);
   border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent);
   background: color-mix(in srgb, var(--amber) 12%, var(--piano-1));
   color: var(--amber-text);
@@ -76,7 +85,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
   font-weight: var(--fw-strong);
   line-height: 1.4;
 }
-.pay-test svg { width: 22px; height: 22px; margin-top: 1px; }
+.pay-test svg { width: 20px; height: 20px; }
 
 /* ------------------------------------------------------------------- back link -- */
 .pay-back {
@@ -122,7 +131,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 .pay-card > * { position: relative; z-index: 1; margin: 0; }
 
 .pay-ref {
-  color: var(--text-lo);
+  color: var(--text-md);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -153,7 +162,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 /* Amount: the biggest thing on the page. */
 .pay-amount { display: flex; flex-direction: column; gap: var(--s-1); }
 .pay-amount > p { margin: 0; }
-.pay-amount-label { color: var(--text-lo); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
+.pay-amount-label { color: var(--text-md); font-size: var(--fs-sm); font-weight: var(--fw-strong); }
 .pay-amount-value {
   font-family: var(--font-num);
   font-size: var(--fs-total);
@@ -172,7 +181,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
   padding: var(--s-3) 0;
   border-bottom: 1px solid var(--hairline);
 }
-.pay-fact dt { color: var(--text-lo); font-size: var(--fs-sm); }
+.pay-fact dt { color: var(--text-md); font-size: var(--fs-sm); }
 .pay-fact dd { margin: 0; text-align: right; font-weight: var(--fw-strong); overflow-wrap: anywhere; min-width: 0; flex: 1 1 12ch; }
 
 /* ----------------------------------------------------------------- the action -- */
@@ -312,7 +321,7 @@ svg { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; s
 
 .pay-done-back { display: flex; }
 
-.pay-fine { margin: 0; color: var(--text-lo); font-size: var(--fs-sm); line-height: 1.5; }
+.pay-fine { margin: 0; color: var(--text-md); font-size: var(--fs-sm); line-height: 1.5; }
 
 /* ------------------------------------------------------------------ layouts -- */
 @media (min-width: 400px) {

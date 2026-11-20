@@ -76,3 +76,15 @@ test("day groups: today, yesterday, then the date", async () => {
   ];
   assert.deepEqual(H.dayGroups(rows, now).map((g) => [g.day, g.rows.length]), [["today", 1], ["yesterday", 1], ["2026-11-12", 1]]);
 });
+
+test("times say the part of the day in Hindi and Kannada, never a Latin am / pm (QA #18)", async () => {
+  const H = await load();
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 10, 5), "hi"), "सुबह 10:05");
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 14, 30), "hi"), "दोपहर 2:30");
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 18, 0), "kn"), "ಸಂಜೆ 6:00");
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 23, 45), "kn"), "ರಾತ್ರಿ 11:45");
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 0, 15), "hi"), "रात 12:15");
+  assert.equal(H.clockWords(new Date(2026, 10, 20, 9, 0), "en"), "9:00 am");
+  assert.doesNotMatch(H.clockWords(new Date(2026, 10, 20, 9, 0), "hi"), /am|pm/i);
+  assert.equal(H.clockWords(new Date("x"), "hi"), "");
+});

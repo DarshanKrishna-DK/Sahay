@@ -349,7 +349,10 @@ export function createAuth({ mode: firstMode } = {}) {
     }
     if (busy) pad.setBusy(true);
     if (kind === "pinEnter" && locked && typeof pad.setLocked === "function") pad.setLocked(locked.minutes ? t("au.locked", { n: locked.minutes }) : t("au.lockedSoon"));
-    if (fieldError && typeof pad.setError === "function") pad.setError(null); // the line below the pad carries it
+    // The v3 keypad shows the error between the PIN dots and the keys, in view (QA #11); the older
+    // one gets the line under the pad.
+    const padHasError = typeof pad.setError === "function";
+    if (padHasError && fieldError) pad.setError(fieldError);
     const lockedBox = kind === "pinEnter" && locked ? h("div", { class: "auth-locked", role: "alert" },
       h("span", { class: "auth-locked-mark", "aria-hidden": "true" }, icon("lock", 30)),
       h("p", { class: "auth-locked-title", text: locked.minutes ? t("au.locked", { n: locked.minutes }) : t("au.lockedSoon") }),
@@ -363,7 +366,7 @@ export function createAuth({ mode: firstMode } = {}) {
         h("p", { class: "auth-honest-why", text: t("au.notVerifiedWhy") })) : null,
       h("div", { class: "auth-answer-zone auth-pad-zone" },
         lockedBox || pad.el,
-        fieldErrorLine(),
+        padHasError ? null : fieldErrorLine(),
         busy ? h("p", { class: "auth-busy", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }), h("span", { text: t(mode === "signup" ? "au.creating" : "au.checking") })) : null),
     ];
   }
