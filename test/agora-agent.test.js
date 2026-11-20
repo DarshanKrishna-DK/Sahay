@@ -429,29 +429,35 @@ test("Track POLISH: buildJoinBody adds Agora filler words and turn detection onl
   }
 });
 
-test("Track POLISH: an owner call joins with the voice tuning; if Agora refuses it (400) the call still starts with the verified body and the model's own filler", async (t) => {
+test("Track POLISH: an owner call joins with the voice tuning; if Agora refuses generated then static fillers (400) the call still starts with the verified body and the model's own filler", async (t) => {
   const businessId = seedBusiness("hi-IN");
   const session = repo.createSession(businessId, { kind: "owner", channel: "own-tune", status: "connecting" });
   let joins = 0;
   const calls = fakeAgora(t, (url) => {
     if (!url.endsWith("/join")) return { json: {} };
     joins += 1;
-    return joins === 1 ? { status: 400, json: { detail: "bad", reason: "InvalidFieldValue" } } : { json: { agent_id: "AGT2", create_ts: 1, status: "RUNNING" } };
+    return joins <= 2 ? { status: 400, json: { detail: "bad", reason: "InvalidFieldValue" } } : { json: { agent_id: "AGT2", create_ts: 1, status: "RUNNING" } };
   });
   const warned = [];
   t.mock.method(console, "warn", (line) => warned.push(line));
   const started = await agent.startOwnerAgent({ businessId, sessionId: session.id, channel: "own-tune", agentUid: 1001, userUid: 1002 });
   assert.equal(started.agentId, "AGT2");
   assert.equal(started.voiceTuning, false);
-  assert.ok(calls[0].body.properties.filler_words, "first try carries the filler words");
-  assert.equal(calls[1].body.properties.filler_words, undefined, "the retry is the S0 body");
-  assert.ok(calls[1].body.properties.llm.system_messages[0].content.includes(agent.FILLER["hi-IN"]), "without Agora fillers the model says one itself");
+  assert.equal(started.fillerMode, null);
+  assert.equal(calls[0].body.properties.filler_words.content.mode, "generated", "first try: generated filler words");
+  assert.equal(calls[1].body.properties.filler_words.content.mode, "static", "second try: static filler words, no generated_config");
+  assert.equal(calls[1].body.properties.filler_words.content.generated_config, undefined);
+  assert.ok(calls[1].body.properties.turn_detection, "the static try keeps turn detection");
+  assert.equal(calls[2].body.properties.filler_words, undefined, "the last try is the S0 body");
+  assert.ok(calls[2].body.properties.llm.system_messages[0].content.includes(agent.FILLER["hi-IN"]), "without Agora fillers the model says one itself");
   assert.match(warned.join(" "), /refused the voice tuning block/);
+  assert.match(warned.join(" "), /trying static filler words/);
 
   const ok = repo.createSession(businessId, { kind: "owner", channel: "own-tune2", status: "connecting" });
   const calls2 = fakeAgora(t, () => ({ json: { agent_id: "AGT3", create_ts: 1, status: "RUNNING" } }));
   const second = await agent.startOwnerAgent({ businessId, sessionId: ok.id, channel: "own-tune2", agentUid: 1001, userUid: 1002 });
   assert.equal(second.voiceTuning, true);
+  assert.equal(second.fillerMode, "generated");
   assert.equal(calls2.length, 1);
   assert.ok(calls2[0].body.properties.filler_words);
 
@@ -856,4 +862,19 @@ test("withHistorySnapshot: inside one tool call the first read of that agent is 
   assert.deepEqual(inside, ["turn 3", "turn 1", "turn 4"], "another agent reads afresh; the snapshot is used once");
   assert.equal(reads, 4);
   assert.equal(await agent.withHistorySnapshot("AGX", null, async () => (await agent.history("AGX", { timeoutMs: 1000 }))[0].content), "turn 5", "no snapshot: a plain read");
+});
+
+test("answer every turn: the prompt routes shop questions to get_business_facts and gives one honest out-of-scope line per language", () => {
+  const prompt = agent.systemPrompt({ name: "Asha Stores", city: "Bengaluru", language: "hi-IN" });
+  assert.match(prompt, /Answer every turn/);
+  assert.match(prompt, /Never stay silent/);
+  assert.match(prompt, /call get_business_facts with the matching topic/);
+  assert.match(prompt, /Out of scope \(weather, news, cricket/);
+  assert.match(prompt, /No reason, no lecture, no made-up answer, no tool call/);
+  assert.ok(prompt.includes("माफ़ कीजिए, इसकी जानकारी मेरे पास नहीं है; मैं आपकी दुकान का स्टॉक, बिल, उधार, ऑर्डर और ख़रीद संभालती हूँ।"));
+  assert.ok(prompt.includes("ಕ್ಷಮಿಸಿ, ಅದರ ಬಗ್ಗೆ ನನ್ನ ಬಳಿ ಮಾಹಿತಿ ಇಲ್ಲ;"));
+  assert.ok(prompt.includes("Sorry, I don't have information on that;"));
+  assert.match(prompt, /ask one short question to clarify/);
+  // The rule comes before the long tool instructions, so the model reads it early.
+  assert.ok(prompt.indexOf("Answer every turn") < prompt.indexOf("To understand a purchase"));
 });

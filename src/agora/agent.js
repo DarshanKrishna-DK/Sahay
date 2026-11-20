@@ -217,17 +217,22 @@ const TURN_DETECTION = {
   },
 };
 
-/** The owner-call tuning block: filler words in the call language plus turn detection. */
-function voiceTuning(language) {
+/**
+ * The owner-call tuning block: filler words in the call language plus turn detection.
+ * `fillerMode` "generated" (Agora writes a filler in the owner's language, static phrases as its
+ * fallback) or "static" (the call language's phrases only). Agora's platform docs say generated
+ * fillers are refused with a managed LLM ("Generated fillers require a cascaded OpenAI, Groq or xAI
+ * BYOK LLM"); the v2 /join page does not say so. So an owner /join that is refused with generated
+ * fillers is tried once with static ones before it drops the whole block (startOwnerAgent).
+ */
+function voiceTuning(language, fillerMode = "generated") {
+  const content = { mode: fillerMode === "static" ? "static" : "generated", static_config: { phrases: [...FILLER_PHRASES[languageOf(language)]], selection_rule: "shuffle" } };
+  if (content.mode === "generated") content.generated_config = { prompt: FILLER_PROMPT, context_message_limit: 1 };
   return {
     filler_words: {
       enable: true,
       trigger: { fixed_time_config: { response_wait_ms: FILLER_WAIT_MS } },
-      content: {
-        mode: "generated",
-        static_config: { phrases: [...FILLER_PHRASES[languageOf(language)]], selection_rule: "shuffle" },
-        generated_config: { prompt: FILLER_PROMPT, context_message_limit: 1 },
-      },
+      content,
     },
     turn_detection: structuredClone(TURN_DETECTION),
     interruption: { enable: true, mode: "start_of_speech" },
@@ -333,6 +338,19 @@ const SHOP_WORK = [
 const DONE_ONLY_FROM_TOOLS =
   "Results: never say that something was done (a bill made, a payment written down, an order placed, a deal approved, a rule kept, a search started, a customer saved) unless a tool you called in THIS turn returned it; then say that tool's `say` and nothing more about it. When the owner says yes or no to something the server read out, always call its confirm tool in that same turn, even if you think it is already done: never answer a yes from memory or from earlier turns. If a tool returned an error, say only its `say`: nothing was done.";
 
+/**
+ * Every owner turn gets an answer (owner requirement 2026-11-20: "no matter what the question is or
+ * how it is asked, the agent has to answer with respect to the business"). Shop questions go to the
+ * shop's own records (get_business_facts), anything else gets one honest sentence. The server also
+ * speaks a line itself when a turn is left unanswered (src/agora/answer-watch.js).
+ */
+const ANSWER_EVERY_TURN = [
+  "Answer every turn: whenever the owner speaks or types, reply out loud in the owner's language, one or two short sentences. Never stay silent, never leave a question hanging. The only silence allowed is when a tool returned an empty `say` because the server itself is speaking.",
+  "Questions about this shop (what is in stock or running low, who owes money and how much, today's bills or sales, payments received, orders and their payment, what is being bought now, suppliers and past deals and prices, the owner's rules and settings, the shop's own details, or a summary of the day): call get_business_facts with the matching topic, or a more specific tool when it fits (get_stock with an item, who_owes_me with a customer, get_order_status), and say its `say`. Never answer them from memory, never say you cannot see the records, and never fill a gap yourself: an empty record is said honestly by the tool.",
+  'Out of scope (weather, news, cricket, films, politics, general knowledge, homework, coding, health or legal advice, anything not about running this shop): say one short polite sentence in the owner\'s language that you do not have information on that, then what you can help with, and stop. No reason, no lecture, no made-up answer, no tool call. Hindi: "माफ़ कीजिए, इसकी जानकारी मेरे पास नहीं है; मैं आपकी दुकान का स्टॉक, बिल, उधार, ऑर्डर और ख़रीद संभालती हूँ।" Kannada: "ಕ್ಷಮಿಸಿ, ಅದರ ಬಗ್ಗೆ ನನ್ನ ಬಳಿ ಮಾಹಿತಿ ಇಲ್ಲ; ನಿಮ್ಮ ಅಂಗಡಿಯ ಸ್ಟಾಕ್, ಬಿಲ್, ಬಾಕಿ, ಆರ್ಡರ್ ಮತ್ತು ಖರೀದಿ ನೋಡಿಕೊಳ್ಳುತ್ತೇನೆ." English: "Sorry, I don\'t have information on that; I can help with your shop\'s stock, bills, dues, orders and buying."',
+  "Greetings, thanks or small talk: one warm short line, then ask what they need. Who are you or are you a person: you are Sahay, an automated assistant for this shop. Unclear, cut off or half-heard words: ask one short question to clarify (which item, how much, say it again), never guess and never go quiet.",
+];
+
 /** What happens while a tool runs: Agora plays a filler itself, or (without it) the model says one. */
 function waitingLine(fillerWords) {
   return fillerWords
@@ -352,6 +370,7 @@ function systemPrompt(business, { now = new Date(), rules = [], fillerWords = tr
   return [
     `You are Sahay, an automated assistant that runs the shop for ${where || "an Indian small business"}: buying from vendors, selling to customers, the khata (who owes the shop) and stock. You talk to the owner by voice.`,
     "The system has already told the owner that you are an automated assistant. Do not greet again; answer what the owner says.",
+    ...ANSWER_EVERY_TURN,
     `Today's date in India is ${todayInIndia(now)}.`,
     ...LANGUAGE_RULES,
     "Script: a Hindi reply uses only Devanagari and a Kannada reply only Kannada script, for every word: fillers, loanwords, item names and city names (बेंगलुरु in Hindi, ಬೆಂಗಳೂರು in Kannada). Never put a Devanagari word in a Kannada reply or a Kannada word in a Hindi reply, and never a word that joins Latin letters to Devanagari or Kannada letters. Inside Hindi or Kannada the only Latin letters allowed are a vendor's, customer's or business's own name, a purchase-order or bill number and the word Razorpay; digits are fine. If a tool's `say` has a city or an item in another script, say that word in the reply's script.",
@@ -402,7 +421,7 @@ function murfBaseUrl() {
  * @param {{name: string, endpoint: string, bearer: string, allowedTools: string[]}} [o.mcp]
  * @param {number} [o.idleTimeout]
  * @param {object} [o.labels]
- * @param {boolean} [o.tuning]           add filler words, turn detection and interruption (owner calls)
+ * @param {boolean|"generated"|"static"} [o.tuning]  add filler words (generated by default, or static), turn detection and interruption (owner calls)
  * @param {number} [o.maxHistory]        llm.max_history (default 32, the docs default)
  */
 function buildJoinBody(o) {
@@ -481,7 +500,7 @@ function buildJoinBody(o) {
     },
   };
   if (o.labels) body.properties.labels = o.labels;
-  if (o.tuning) Object.assign(body.properties, voiceTuning(language));
+  if (o.tuning) Object.assign(body.properties, voiceTuning(language, o.tuning === "static" ? "static" : "generated"));
   return body;
 }
 
@@ -529,7 +548,7 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
   const bearer = auth.signSession({ businessId, sessionId, scope: "mcp", exp });
   const { token } = buildRtcRtmToken(channel, agentUid, OWNER_SESSION_SECONDS);
   const rules = require("../agent/rules").active(businessId);
-  const promptFor = (fillerWords) => systemPrompt({ ...business, language: lang }, { now: new Date(now), rules, fillerWords });
+  const promptFor = (fillerWords) => systemPrompt({ ...business, language: lang }, { now: new Date(now), rules, fillerWords: Boolean(fillerWords) });
   const bodyFor = (tuning) => buildJoinBody({
     name: `sahay-${sessionId}-${now}`.slice(0, 64),
     channel,
@@ -549,22 +568,24 @@ async function startOwnerAgent({ businessId, sessionId, channel, agentUid, userU
     tuning,
     maxHistory: OWNER_MAX_HISTORY,
   });
-  let tuning = true;
+  // Generated fillers, then static fillers, then the S0-verified body: the tuning block is DOCS
+  // ONLY until a live /join takes it, and a 400 for it must not cost the owner the call.
   let started;
-  try {
-    started = await startAgent(bodyFor(true));
-  } catch (err) {
-    // The tuning block (filler words, turn detection) is DOCS ONLY until a live /join takes it:
-    // a 400 for it must not cost the owner the call, so join once more with the S0-verified body.
-    if (!(err instanceof AgoraError) || err.status !== 400) throw err;
-    console.warn(`[agora] /join refused the voice tuning block (${err.message}); joining without filler words and turn tuning.`);
-    tuning = false;
-    started = await startAgent(bodyFor(false));
+  let tuning;
+  for (const attempt of ["generated", "static", false]) {
+    tuning = attempt;
+    try {
+      started = await startAgent(bodyFor(attempt));
+      break;
+    } catch (err) {
+      if (!attempt || !(err instanceof AgoraError) || err.status !== 400) throw err;
+      console.warn(`[agora] /join refused the voice tuning block with ${attempt} filler words (${err.message}); ${attempt === "generated" ? "trying static filler words" : "joining without filler words and turn tuning"}.`);
+    }
   }
-  const prompt = promptFor(tuning);
-  callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "", fillerWords: tuning });
+  const prompt = promptFor(Boolean(tuning));
+  callPrompts.set(started.agentId, { prompt, businessId, language: lang, now, status: "", fillerWords: Boolean(tuning) });
   bindLane(started.agentId, businessId);
-  return { ...started, language: lang, voiceTuning: tuning, disclosure: disclosureText({ ...business, language: lang }) };
+  return { ...started, language: lang, voiceTuning: Boolean(tuning), fillerMode: tuning || null, disclosure: disclosureText({ ...business, language: lang }) };
 }
 
 /**
