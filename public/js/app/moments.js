@@ -275,10 +275,10 @@ function offline() {
   offlineShown = true;
 }
 function online() {
-  if (!offlineShown) return;
+  // A short visible "back online" (2.5 s); the offline state itself is the shell's banner.
   offlineShown = false;
   dismiss("net:offline");
-  notify({ id: "net:online", replace: true, tone: "success", icon: "wifi", title: t("toast.online.title"), duration: 4000 });
+  notify({ id: "net:online", replace: true, tone: "success", icon: "wifi", title: t("toast.online.title"), duration: 2500 });
 }
 window.addEventListener("offline", offline);
 window.addEventListener("online", online);

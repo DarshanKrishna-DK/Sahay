@@ -23,9 +23,20 @@ const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function createNavJelly({ items, onOrb, onLang, onTheme }) {
   const gid = `nj-rim-${Math.random().toString(36).slice(2, 7)}`;
+  // The shadow is cut out where the glass is (an SVG mask), so the glass never blurs its own
+  // shadow: behind the glass there is only the hex field.
+  const cutId = `nj-cut-${Math.random().toString(36).slice(2, 7)}`;
   const shadow = svgEl("svg", { class: "nj-shadow", "aria-hidden": "true", focusable: "false" });
-  const shadowPath = svgEl("path");
-  shadow.append(shadowPath);
+  const cutRect = svgEl("rect", { fill: "#fff" });
+  const cutPath = svgEl("path", { fill: "#000" });
+  const cut = svgEl("mask", { id: cutId, maskUnits: "userSpaceOnUse" });
+  cut.append(cutRect, cutPath);
+  const shadowDefs = svgEl("defs");
+  shadowDefs.append(cut);
+  const shadowPath = svgEl("path", { transform: "translate(6 12)" });
+  const shadowGroup = svgEl("g", { mask: `url(#${cutId})` });
+  shadowGroup.append(shadowPath);
+  shadow.append(shadowDefs, shadowGroup);
   const glass = h("div", { class: "nj-glass", "aria-hidden": "true" });
   const rim = svgEl("svg", { class: "nj-rim", "aria-hidden": "true", focusable: "false" });
   const defs = svgEl("defs");
@@ -103,6 +114,8 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
     rimPath.setAttribute("d", d);
     rimGlow.setAttribute("d", d);
     shadowPath.setAttribute("d", d);
+    cutPath.setAttribute("d", d);
+    for (const [k, v] of Object.entries({ x: -80, y: -80, width: w + 160, height: hgt + 160 })) { cut.setAttribute(k, v); cutRect.setAttribute(k, v); }
     for (const link of links) {
       const yc = link.offsetTop + link.offsetHeight / 2;
       const dx = Math.round(bellyX(yc, v.body, v.bulge, centre, span, v.follow) - v.body / 2);

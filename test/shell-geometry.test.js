@@ -122,3 +122,13 @@ test("the jelly sidebar swells into a clear belly where the items sit, and items
   const xs = [-0.75, -0.25, 0.25, 0.75].map((u) => bellyX(centre + u * span * 0.8, body, bulge, centre, span));
   assert.ok(xs[1] - xs[0] > 8 && xs[2] - xs[3] > 8, `items visibly stagger along the belly (${xs.map((x) => x.toFixed(1)).join(", ")})`);
 });
+
+test("the hex fade can be switched off on the sidebar's side", async () => {
+  const { hexLattice } = await load();
+  const pts = hexLattice(1440, 900, 22, 0.12, { l: false, r: true, t: true, b: true });
+  const nearLeftMid = pts.filter((p) => p.x < 120 && p.y > 300 && p.y < 600);
+  assert.ok(nearLeftMid.length > 20);
+  assert.ok(nearLeftMid.every((p) => p.a === 1), "full strength under the sidebar");
+  const nearRight = pts.filter((p) => p.x > 1430 && p.y > 300 && p.y < 600);
+  assert.ok(nearRight.every((p) => p.a < 0.2), "still faded on the right edge");
+});

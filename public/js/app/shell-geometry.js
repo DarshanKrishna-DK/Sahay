@@ -158,9 +158,10 @@ export function svgPath(pts) {
 /**
  * True hex lattice: rows `pitch * sqrt(3) / 2` apart, every other row shifted by pitch / 2, so each
  * dot has six equidistant neighbours. `a` is the edge fade (0 at the viewport edge, 1 inside `fade`
- * of the shorter side), smoothstepped. Starts half a pitch outside so the edges are covered.
+ * of the shorter side), smoothstepped; `edges` turns the fade off per side (the sidebar's side, so
+ * the dots read through its glass). Starts half a pitch outside so the edges are covered.
  */
-export function hexLattice(w, h, pitch = 22, fade = 0.2) {
+export function hexLattice(w, h, pitch = 22, fade = 0.2, edges = { l: true, r: true, t: true, b: true }) {
   const dy = (pitch * Math.sqrt(3)) / 2;
   const band = Math.max(1, Math.min(w, h) * fade);
   const pts = [];
@@ -168,7 +169,7 @@ export function hexLattice(w, h, pitch = 22, fade = 0.2) {
   for (let y = dy / 2; y < h; y += dy, row++) {
     const shift = row % 2 ? pitch / 2 : 0;
     for (let x = shift + pitch / 2; x < w; x += pitch) {
-      const d = Math.min(x, w - x, y, h - y) / band;
+      const d = Math.min(edges.l ? x : Infinity, edges.r ? w - x : Infinity, edges.t ? y : Infinity, edges.b ? h - y : Infinity) / band;
       const s = d >= 1 ? 1 : d <= 0 ? 0 : d * d * (3 - 2 * d);
       if (s > 0.02) pts.push({ x, y, a: s });
     }

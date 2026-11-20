@@ -34,8 +34,9 @@
 .top-zone::before {
   content: ""; position: absolute; z-index: -1; pointer-events: none;
   left: -16px; right: -16px; top: calc(-40px - var(--safe-t)); bottom: -14px;
-  background: linear-gradient(to bottom, var(--piano-0) 0, var(--piano-0) 62%, transparent);
-  opacity: .94;
+  /* Solid down through the waiting pill, then a short fade: scrolled content never shows behind them. */
+  background: linear-gradient(to bottom, var(--piano-0) 0, var(--piano-0) calc(100% - 18px), transparent);
+  opacity: .96;
 }
 .top-capsule {
   display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px;
@@ -185,12 +186,12 @@
   flex-direction: column; align-items: flex-start; padding: 0 0 12px;
 }
 .nj-shadow, .nj-rim { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.nj-shadow { transform: translate(6px, 12px); opacity: .9; }
+.nj-shadow { opacity: .9; }
 .nj-shadow path { fill: rgba(0, 0, 0, .6); filter: blur(16px); }
 :root[data-theme="light"] .nj-shadow path { fill: rgba(30, 40, 15, .22); }
 .nj-glass {
   position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .015) 70%), var(--glass-nav-fill);
+  background: linear-gradient(90deg, rgba(255, 255, 255, .05), transparent 60%), var(--glass-nav-fill);
   -webkit-backdrop-filter: var(--glass-nav-blur); backdrop-filter: var(--glass-nav-blur);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .nj-glass { background: var(--glass-fill-strong); } }

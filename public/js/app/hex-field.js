@@ -44,7 +44,9 @@ export function createHexField() {
     // Snap each centre to the device pixel grid so dots stay round and crisp at 1, 1.25, 1.5, 2.
     const snap = (v) => Math.round(v * dpr) / dpr;
     const buckets = new Map();
-    for (const p of hexLattice(w, h, tk.pitch)) {
+    // No fade on the left from 600px: the sidebar floats there and its glass must show the dots.
+    const edges = { l: w < 600, r: true, t: true, b: true };
+    for (const p of hexLattice(w, h, tk.pitch, 0.12, edges)) {
       const a = Math.round(p.a * 10) / 10;
       if (!buckets.has(a)) buckets.set(a, []);
       buckets.get(a).push(p);
