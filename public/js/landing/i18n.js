@@ -226,7 +226,7 @@ const S = {
     kn: "ಮೈಕ್ ಇರುವ ಫೋನ್ ಅಥವಾ ಲ್ಯಾಪ್‌ಟಾಪ್. ಸಹಾಯ್ ತೆರೆಯಿರಿ, ನಿಮ್ಮ ಮೊಬೈಲ್ ನಂಬರ್ ಮತ್ತು ಪಿನ್‌ನಿಂದ ಖಾತೆ ಮಾಡಿ, ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ.",
   },
 
-  // ---- Footer (kept from commit 1425810) ----
+  // ---- Footer ----
   footLine: {
     en: "A voice assistant for Indian shops: buying, bills, khata and stock.",
     hi: "भारतीय दुकानों के लिए आवाज़ वाला सहायक: ख़रीद, बिल, खाता और स्टॉक।",
@@ -242,9 +242,9 @@ const S = {
   },
   footCode: { en: "Code on GitHub", hi: "GitHub पर कोड", kn: "GitHub ನಲ್ಲಿ ಕೋಡ್" },
   footArt: {
-    en: "Pixel picture: a shop owner at the counter, Sahay in the middle as a small speaker, and a supplier with a delivery tempo.",
-    hi: "पिक्सेल चित्र: काउंटर पर दुकानदार, बीच में छोटे स्पीकर जैसा सहाय, और डिलीवरी टेम्पो के साथ सप्लायर।",
-    kn: "ಪಿಕ್ಸೆಲ್ ಚಿತ್ರ: ಕೌಂಟರ್ ಬಳಿ ಅಂಗಡಿಯವರು, ನಡುವೆ ಚಿಕ್ಕ ಸ್ಪೀಕರ್‌ನಂತೆ ಸಹಾಯ್, ಮತ್ತು ಡೆಲಿವರಿ ಟೆಂಪೋ ಜೊತೆ ಸರಬರಾಜುದಾರ.",
+    en: "Pixel picture at night: a shop owner at the counter, Sahay in the middle as a small round helper, and a supplier with a delivery tempo.",
+    hi: "रात का पिक्सेल चित्र: काउंटर पर दुकानदार, बीच में छोटे गोल साथी जैसा सहाय, और डिलीवरी टेम्पो के साथ सप्लायर।",
+    kn: "ರಾತ್ರಿಯ ಪಿಕ್ಸೆಲ್ ಚಿತ್ರ: ಕೌಂಟರ್ ಬಳಿ ಅಂಗಡಿಯವರು, ನಡುವೆ ಚಿಕ್ಕ ದುಂಡನೆಯ ಸಹಾಯಕನಂತೆ ಸಹಾಯ್, ಮತ್ತು ಡೆಲಿವರಿ ಟೆಂಪೋ ಜೊತೆ ಸರಬರಾಜುದಾರ.",
   },
   footDisclose: {
     en: "Sahay is an automated assistant. Payments are in test mode.",

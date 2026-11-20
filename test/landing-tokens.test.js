@@ -2,7 +2,7 @@
 // the landing keeps its own stylesheet (public/css/landing.css), but every token it shares with the app
 // (public/css/tokens.css) carries exactly the app's value; square shapes, pixel borders and hard shadows;
 // Jersey 10 / Amarna with Hindi and Kannada in their own faces; the nine-section structure; only true
-// numbers; and the footer kept from commit 1425810.
+// numbers; and the footer, with the content of commit 1425810, in the same v7 look.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -12,9 +12,7 @@ const PUBLIC = path.join(__dirname, "..", "public");
 const CSS = path.join(PUBLIC, "css");
 const html = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
 const cssAll = fs.readFileSync(path.join(CSS, "landing.css"), "utf8");
-// The v7 part of the sheet; the kept footer (scoped to .site-foot) follows it.
-const FOOT_AT = cssAll.indexOf("/* ---- Footer: kept exactly as commit 1425810");
-const css = cssAll.slice(0, FOOT_AT).replace(/\/\*[\s\S]*?\*\//g, "");
+const css = cssAll.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** Custom properties declared in the first `:root { ... }` block, values with whitespace normalised. */
 function rootTokens(text) {
@@ -145,7 +143,7 @@ test("pictures: every one is our art (or the brand mark), sized, pixel-crisp, la
     }
     assert.match(attrs, /width="\d+" height="\d+"/, `${src} has its size`);
     assert.match(attrs, /alt="/, `${src} has alt`);
-    if (at > heroEnd && !html.slice(heroEnd, at).includes("<footer")) assert.match(attrs, /loading="lazy"/, `${src} is lazy`);
+    if (at > heroEnd) assert.match(attrs, /loading="lazy"/, `${src} is lazy`);
   }
   for (const big of ["hero-scene", "market-model", "guidemap"]) {
     const attrs = imgs.find((a) => a.includes(`/art/${big}`));
@@ -154,13 +152,33 @@ test("pictures: every one is our art (or the brand mark), sized, pixel-crisp, la
   assert.doesNotMatch(css, /image-rendering:\s*(auto|smooth)/);
 });
 
-test("the footer is the one kept from commit 1425810", () => {
-  assert.match(html, /<footer class="site-foot">\s*<div class="foot-card">/);
+test("the footer keeps its content (1425810) and follows v7: navy night, square card, Jersey 10, HUD links, lime, no warm black", () => {
+  // Content kept
+  assert.match(html, /<footer class="site-foot">\s*<div class="stars" aria-hidden="true"><\/div>\s*<div class="foot-card">/);
   assert.match(html, /<!-- footer-art:start \(scripts\/build-footer-art\.js\) -->\n<svg class="foot-art"/);
   assert.match(html, /<span data-i18n="footTagA">Your shop,<\/span> <span class="foot-tag-accent" data-i18n="footTagB">your yes\.<\/span>/);
   assert.match(html, /data-i18n="footDisclose">Sahay is an automated assistant\. Payments are in test mode\./);
+  assert.match(html, /data-i18n="footSim">A simulated vendor is always labelled "simulated vendor"\./);
   assert.match(html, /href="https:\/\/github\.com\/DarshanKrishna-DK\/Sahay"/);
-  const foot = cssAll.slice(FOOT_AT);
-  assert.match(foot, /\.site-foot \{[^}]*--pink: #F2CFC6;[^}]*background: #0F0D0E;/, "its own warm tokens, scoped");
-  assert.match(foot, /\.foot-card \{[^}]*background: linear-gradient\(180deg, #1A1517, #110E0F\);/);
+  // v7 look
+  assert.match(rule(".site-foot"), /background:\s*linear-gradient\(180deg, var\(--navy\) 0%, var\(--deep\) 100%\)/);
+  const card = rule(".foot-card");
+  assert.match(card, /background:\s*var\(--card\)/);
+  assert.match(card, /box-shadow:\s*0 0 0 2px var\(--line\), 6px 6px 0 0 var\(--deep\)/);
+  assert.match(rule(".foot-tagline"), /var\(--f-display\)/);
+  assert.match(rule(".foot-tag-accent"), /color:\s*var\(--lime\)/);
+  const link = rule(".foot-links a");
+  assert.match(link, /min-height:\s*48px/);
+  assert.match(link, /text-transform:\s*uppercase/);
+  assert.match(link, /letter-spacing:\s*\.14em/);
+  // Nothing of the old warm footer is left anywhere on the page.
+  assert.doesNotMatch(cssAll + html, /#0F0D0E|#1A1517|#F2CFC6|#F8ECE8|Georgia|Roboto|Source Serif/i);
+  // The pixel street is drawn only in v7 colours.
+  const art = /<svg class="foot-art"[\s\S]*?<\/svg>/.exec(html)[0];
+  const fills = new Set([...art.matchAll(/fill="(#[0-9A-F]{6})"/gi)].map((m) => m[1].toUpperCase()));
+  const v7 = new Set(["#112A60", "#133D7E", "#185091", "#163A73", "#0F2753", "#D9A520", "#3B5F9E", "#1D3566", "#2B4C8A", "#061431", "#F3F1E2", "#A7B6D6",
+    "#A8E27C", "#6FAF4A", "#D4F3B4", "#E3EDA6", "#9B6A3C", "#6B4424", "#A4503A", "#7A3826", "#3A2418", "#E39B3A", "#2481AA", "#C9D84A", "#4E9A35",
+    "#7CC24F", "#B07A55", "#2A1E18", "#F2C6DA", "#BFB6EA", "#8FB0E6"]);
+  for (const f of fills) assert.ok(v7.has(f), `footer art colour ${f} is in the v7 palette`);
+  assert.ok(fills.has("#A8E27C") && fills.has("#E3EDA6") && fills.has("#112A60"), "lime Sahay, the moon, a navy sky");
 });

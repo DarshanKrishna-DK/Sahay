@@ -2,8 +2,8 @@
    docs/superpowers/plans/2026-11-20-ui-v7-brief.md). Navy night sections with stars, pixel clouds and a
    moon alternate with cream paper sections; square corners everywhere; pixel borders and hard shadows,
    no blur and no glow except the moon's soft halo. Jersey 10 for display, Amarna for body and the
-   uppercase HUD labels; Hindi and Kannada keep their own faces and never go uppercase. The footer is
-   kept exactly as commit 1425810 (its own tokens, scoped to .site-foot, at the end of this file). */
+   uppercase HUD labels; Hindi and Kannada keep their own faces and never go uppercase. The footer keeps
+   the content of commit 1425810 in the same v7 look (owner, 2026-11-21). */
 
 :root {
   color-scheme: dark;
@@ -544,65 +544,54 @@ button.board { cursor: pointer; }
   .fx-card:hover, .fx-card:focus-visible, .fx-card:hover .fx-art, .btn:hover, .sq-btn:hover { transform: none; }
 }
 
-/* ---- Footer: kept exactly as commit 1425810 (owner, v7). Its own v5 tokens and faces are scoped
-   here so the v7 page around it cannot change it. ---------------------------------------------------- */
+/* ---- Footer (v7): the same content as before (brand and links, the big line, a short about, the
+   pixel street at night, the disclosure notes) on a navy night with faint stars: one square card with
+   the pixel border and a hard shadow, the street full bleed across its foot; the notes under the card. */
 .site-foot {
-  --page-gutter: clamp(16px, 4vw, 56px);
-  --max: 1240px;
-  --line: rgba(242, 207, 198, .14);
-  --text: #F8ECE8;
-  --muted: #BBA8A4;
-  --pink: #F2CFC6;
-  --font-display: Georgia, "Source Serif 4", "Hind", "Noto Sans Kannada", serif;
-  --fw-display: 400;
-  position: relative; z-index: 1;
-  color: var(--text); background: #0F0D0E;
-  font: 400 1.0625rem/1.6 "Roboto", "Hind", "Noto Sans Kannada", system-ui, -apple-system, "Segoe UI", sans-serif;
+  position: relative; overflow: hidden; color: var(--cream);
+  padding: clamp(56px, 7vw, 96px) var(--page-gutter) 28px;
+  background: linear-gradient(180deg, var(--navy) 0%, var(--deep) 100%);
 }
-.site-foot:lang(hi), .site-foot :lang(hi) { --font-display: Georgia, "Source Serif 4", "Hind", serif; --fw-display: 600; }
-.site-foot:lang(kn), .site-foot :lang(kn) { --font-display: Georgia, "Source Serif 4", "Noto Sans Kannada", serif; --fw-display: 600; }
-.site-foot :focus-visible { outline: 2px solid #F7DDD6; outline-offset: 3px; }
-/* ---- Footer: KrowdKraft's footer card (src/components/shell.tsx Footer, refinement.css .footer-*):
-   brand and links on one row, a big line in the display face, a short about, and a pixel street
-   across the card's foot, full bleed; the legal notes sit under the card. ---------------------------- */
-.site-foot { padding: clamp(80px, 10vw, 128px) var(--page-gutter) 28px; }
 .foot-card {
   --foot-pad: clamp(20px, 3.4vw, 40px);
-  position: relative; overflow: hidden; isolation: isolate;
+  position: relative; z-index: 1; overflow: hidden;
   width: min(var(--max), 100%); margin-inline: auto; padding: var(--foot-pad) var(--foot-pad) 0;
-  border: 1px solid var(--line); border-radius: 22px;
-  background: linear-gradient(180deg, #1A1517, #110E0F);
+  background: var(--card); box-shadow: 0 0 0 2px var(--line), 6px 6px 0 0 var(--deep);
 }
 .foot-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 32px; }
-.foot-brand {
-  display: inline-flex; align-items: center; gap: 10px; min-height: 48px; border-radius: 12px;
-  color: var(--text); text-decoration: none;
-  font-family: Georgia, "Source Serif 4", serif; font-size: 1.75rem; line-height: 1; letter-spacing: -0.01em;
+.foot-brand { display: inline-flex; align-items: center; gap: 9px; min-height: 48px; color: var(--cream); text-decoration: none; }
+.foot-brand .brand-img { width: 26px; height: 32px; object-fit: contain; }
+.foot-brand > span:last-child {
+  font: 400 34px/1 "Jersey 10", "Amarna", system-ui, sans-serif; letter-spacing: .03em; color: #E6F5C4;
+  text-shadow: 0 2px 0 #4E8F3A, 0 4px 0 var(--deep), 2px 0 0 var(--deep), -2px 0 0 var(--deep), 0 -2px 0 var(--deep);
 }
-.foot-brand .brand-img { width: 26px; height: 32px; }
-.foot-links { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 4px; margin-inline: -10px; }
+.foot-links { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; margin-inline: -12px; }
 .foot-links a {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border-radius: 10px;
-  color: rgba(248, 236, 232, .74); text-decoration: none; font-size: .9375rem; font-weight: 500;
-  transition: color 200ms ease;
+  display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px;
+  color: #C9D3E8; text-decoration: none;
+  font: 600 13px/1 var(--f-hud); letter-spacing: .14em; text-transform: uppercase;
+  background-image: linear-gradient(var(--lime), var(--lime)); background-repeat: no-repeat;
+  background-size: 0% 2px; background-position: 12px calc(100% - 8px);
+  transition: color .2s ease-out, background-size .25s ease-out;
 }
-.foot-links a:hover, .foot-links a:focus-visible { color: var(--text); }
-.foot-links svg { flex: none; color: var(--pink); }
-.foot-divider { width: 1px; height: 18px; margin: 0 6px; background: rgba(248, 236, 232, .22); }
+.foot-links a:lang(hi), .foot-links a:lang(kn), :lang(hi) .foot-links a, :lang(kn) .foot-links a { font-size: 15px; }
+@media (hover: hover) { .foot-links a:hover { color: var(--cream); background-size: calc(100% - 24px) 2px; } }
+.foot-links a:focus-visible { color: var(--cream); background-size: calc(100% - 24px) 2px; }
+.foot-links svg { flex: none; color: var(--lime); }
+.foot-divider { width: 1px; height: 18px; margin: 0 6px; background: var(--line); }
 .foot-tagline {
-  margin-top: clamp(26px, 3.4vw, 40px); color: var(--text);
-  font-family: var(--font-display); font-weight: var(--fw-display);
-  font-size: clamp(38px, 5.4vw, 76px); line-height: 1; letter-spacing: -0.02em;
+  margin-top: clamp(22px, 3vw, 36px); color: var(--cream);
+  font: 400 clamp(48px, 6.4vw, 92px)/.95 var(--f-display); letter-spacing: .02em;
 }
-.foot-tag-accent { color: var(--pink); font-style: italic; }
-:lang(hi) .foot-tagline, :lang(kn) .foot-tagline { line-height: 1.4; font-size: clamp(32px, 4.4vw, 60px); }
-:lang(hi) .foot-tag-accent, :lang(kn) .foot-tag-accent { font-style: normal; }
-.foot-about { max-width: 46em; margin-top: 16px; color: var(--muted); font-size: 1rem; line-height: 1.6; text-wrap: pretty; }
-/* The pixel street: crisp cells, full bleed to the card's edges. Wide screens show most of the street
+:lang(hi) .foot-tagline, :lang(kn) .foot-tagline { font-size: clamp(36px, 4.6vw, 64px); line-height: 1.3; }
+:lang(kn) .foot-tagline { font-weight: 700; }
+.foot-tag-accent { color: var(--lime); }
+.foot-about { max-width: 46em; margin-top: 16px; color: var(--muted); font-size: 17px; line-height: 1.6; text-wrap: pretty; }
+/* The pixel street at night: crisp cells, full bleed to the card's edges. Wide screens show most of it
    (slice crops the ends); phones keep the middle 124 cells: shop, Sahay, supplier and tempo. */
-.foot-art-wrap { margin: clamp(22px, 3vw, 36px) calc(-1 * var(--foot-pad)) 0; }
-.foot-art { display: block; width: 100%; height: clamp(150px, 15vw, 212px); }
-@media (max-width: 699px) { .foot-art { height: auto; aspect-ratio: 124 / 36; } }
+.foot-art-wrap { margin: clamp(22px, 3vw, 36px) calc(-1 * var(--foot-pad)) 0; border-top: 2px solid var(--line); }
+.foot-art { display: block; width: 100%; height: clamp(190px, 19vw, 280px); }
+@media (max-width: 699px) { .foot-art { height: auto; aspect-ratio: 124 / 48; } }
 .px-frame-b { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .px-orb { animation: px-bob 2.4s steps(1, end) infinite; }
@@ -615,14 +604,13 @@ button.board { cursor: pointer; }
 @keyframes px-blink { 50% { opacity: 0; } }
 @keyframes px-swap { 0% { opacity: 1; } 50% { opacity: 0; } }
 .foot-legal {
-  display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 32px;
-  width: min(var(--max), 100%); margin-inline: auto; padding: 18px 4px 0;
+  position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 32px;
+  width: min(var(--max), 100%); margin-inline: auto; padding: 22px 4px 0;
 }
-.foot-notice { display: flex; align-items: flex-start; gap: 10px; color: var(--text); font-size: .9375rem; font-weight: 600; }
-.foot-notice svg { flex: none; color: var(--pink); margin-top: 2px; }
-.foot-small { max-width: 44em; color: var(--muted); font-size: .9375rem; }
-
+.foot-notice { display: flex; align-items: flex-start; gap: 10px; color: var(--cream); font-size: 15px; font-weight: 600; }
+.foot-notice svg { flex: none; color: var(--lime); margin-top: 2px; }
+.foot-small { max-width: 44em; color: var(--muted); font-size: 15px; }
 @media (max-width: 599px) {
-  .foot-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .foot-head { flex-direction: column; align-items: flex-start; gap: 4px; }
   .foot-divider { flex-basis: 100%; height: 0; margin: 0; }
 }
