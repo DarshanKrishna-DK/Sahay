@@ -4,9 +4,9 @@
 
 .iso {
   --anatomy-card: #181416;
-  --anatomy-text: var(--text-lo, #BBA8A4);
-  --anatomy-strong: var(--text-hi, #F8ECE8);
-  --anatomy-muted: var(--text-lo, #BBA8A4);
+  --anatomy-text: var(--text-muted, #BBA8A4);
+  --anatomy-strong: var(--text, #F8ECE8);
+  --anatomy-muted: var(--text-muted, #BBA8A4);
   --anatomy-paper: #181416; --anatomy-face: #241E21; --anatomy-top: #2A2326;
   --anatomy-shade-0: #0F0C0D; --anatomy-shade-1: #141012; --anatomy-shade-2: #1A1517; --anatomy-shade-3: #201A1C;
   --anatomy-lit-top: #4A3638; --anatomy-lit-shade: #3A2A2C;
