@@ -1,68 +1,71 @@
-/* Sahay app shell (UI v5; spec docs/build/evidence/ux-v5/screens.md section 3): a slim top bar
-   (64px laptop / 56px phone) and, under 768px, a 64px bottom tab bar. No sidebars, no side columns.
-   Content max 1120px, centred. Tokens: tokens.css; components: components.css; contract: README.md. */
+/* Sahay app shell (UI v7: the yugaantar.org nav, Sahay-themed). A 66px night bar (56 on phones):
+   logo left; HOME · BUY · SELL · STOCK · MONEY in HUD caps centre, the active one lime with a 2px lime
+   underline; right: language, NEEDS YOU (n), account. Under 768px a 64px pixel tab bar at the bottom.
+   No sidebars, no side columns; content max 1120px, centred. Contract: README.md. */
 
 /* ============================================================ top bar -- */
 .topbar {
   position: sticky; z-index: var(--z-bar); top: 0;
-  padding-top: var(--safe-t); background: var(--bg); border-bottom: 1px solid var(--line);
+  padding-top: var(--safe-t); background: rgba(6, 20, 49, .96); border-bottom: 1px solid var(--border);
 }
 .topbar-in {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 20px;
   max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: 0 auto;
   min-height: var(--topbar-h); padding: 0 calc(var(--gutter) + var(--safe-r)) 0 calc(var(--gutter) + var(--safe-l));
 }
-.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
-/* Tabs in the bar (768px and up): 44px pills, icon 20 + word 15/600; active = pink fill. */
-.tabs-top { display: none; align-items: center; gap: 4px; margin: 0 auto; }
+/* Tabs in the bar (768px and up): HUD caps words; active = lime text + 2px lime underline. */
+.tabs-top { display: none; align-items: stretch; gap: 4px; margin: 0 auto; align-self: stretch; }
 .tab {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px;
-  border-radius: var(--r-pill); color: var(--muted); text-decoration: none; font: 600 .9375rem/1 var(--font);
-  transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; min-height: var(--tap);
+  color: var(--muted); text-decoration: none; font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track);
+  transition: color var(--t-fast) var(--ease);
 }
-.tab::before { content: ""; position: absolute; inset: -2px 0; } /* 48px tap area */
-.tab:hover { color: var(--text); background: var(--surface); }
-.tab[aria-current="page"] { background: var(--pink); color: var(--on-pink); }
-.tab-ico { position: relative; display: grid; place-items: center; }
-.tab-ico svg { width: 20px; height: 20px; }
-.tab-badge { position: absolute; top: -2px; right: -3px; }
+.tab::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: transparent; }
+.tab:hover { color: var(--text); }
+.tab[aria-current="page"] { color: var(--lime); }
+.tab[aria-current="page"]::after { background: var(--lime); }
+.tab-ico { position: relative; display: none; place-items: center; }
+.tab-ico svg { width: 18px; height: 18px; }
+.tab-word { position: relative; }
+.tab-badge { position: absolute; top: -4px; right: -12px; }
+.tab .tab-ico .tab-badge { display: none; }
 
-/* "Needs you": outline pill, 40px, 8px needs dot + word + count; hidden when nothing waits. */
+/* NEEDS YOU (n): a square navy HUD button with the pixel border; hidden when nothing waits. */
 .needs-btn {
   position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
-  border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: transparent; color: var(--text);
-  font: var(--t-label); white-space: nowrap;
+  border: 0; border-radius: 0; background: var(--navy); color: var(--text); box-shadow: var(--pixel-edge);
+  font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap;
 }
 .needs-btn::before { content: ""; position: absolute; inset: -4px; } /* 48px tap area */
-.needs-btn:hover { background: var(--surface-2); }
-.needs-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--needs); flex: none; }
-.needs-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.needs-btn:hover { background: var(--sky); }
+.needs-dot { width: 8px; height: 8px; background: var(--needs); flex: none; }
+.needs-n { color: var(--lime); font-variant-numeric: tabular-nums; }
 
-/* Account: a 40px circle with the shop's initials (a person icon without a name). */
+/* Account: a square with the shop's initials (a person icon without a name). */
 .account-btn {
-  position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border-radius: 50%;
-  border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+  position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
+  border: 0; border-radius: 0; background: var(--card); color: var(--text); box-shadow: var(--pixel-edge);
 }
 .account-btn::before { content: ""; position: absolute; inset: -4px; }
-.account-btn:hover { background: var(--surface-2); }
-.account-btn[aria-current="page"], .account-btn[aria-expanded="true"] { border-color: var(--pink); }
-.account-ini { font: 700 .8125rem/1 var(--font); letter-spacing: .02em; }
+.account-btn:hover { background: var(--sky); }
+.account-btn[aria-current="page"], .account-btn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--lime); }
+.account-ini { font: 400 1.25rem/1 var(--font-display); letter-spacing: .04em; }
 .account-btn.has-ini .account-ico, .account-btn:not(.has-ini) .account-ini { display: none; }
 
-/* The automated-assistant notice: small, always visible. In the bar from 1280px; below that a thin line
-   just under the bar. On Home the screen's own line under "Talk to Sahay" says it (spec), so this one
-   steps aside there. */
-.notice { display: flex; align-items: center; gap: 6px; color: var(--muted); font: var(--t-meta); white-space: nowrap; }
+/* The automated-assistant notice: small HUD words, always visible. In the bar from 1280px; a thin
+   line under the bar below that. On Home the screen's own line under Talk says it, so this steps aside. */
+.notice { display: flex; align-items: center; gap: 8px; color: var(--muted); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); white-space: nowrap; }
 .notice svg { width: 16px; height: 16px; }
-.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; margin-left: 2px; }
-.live-dot[data-state="open"] { background: var(--good); }
+.live-dot { width: 8px; height: 8px; background: var(--muted); flex: none; }
+.live-dot[data-state="open"] { background: var(--lime); }
 .live-dot[data-state="connecting"], .live-dot[data-state="reconnecting"] { background: var(--warn); }
-.live-dot[data-state="closed"] { background: transparent; border: 2px solid var(--needs); }
+.live-dot[data-state="closed"] { background: transparent; box-shadow: inset 0 0 0 2px var(--needs); }
 @media (max-width: 1279px) {
   .topbar .notice {
     position: absolute; left: 0; right: 0; top: 100%; justify-content: center;
-    min-height: 26px; padding: 2px var(--gutter) 4px; background: var(--bg); border-bottom: 1px solid var(--line);
+    min-height: 26px; padding: 3px var(--gutter) 4px; background: var(--deep); border-bottom: 1px solid var(--border);
   }
 }
 :root[data-route="home"] .topbar .notice { display: none; }
@@ -80,33 +83,35 @@
 .banner-slot:not(:empty), .live-banner:not(:empty) { margin-top: 16px; }
 .boot-view { display: grid; place-items: center; min-height: 50dvh; }
 .boot-loading { width: 100%; display: flex; flex-direction: column; gap: 16px; padding-top: 32px; }
-.boot-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font: var(--t-label); }
+.boot-line { display: flex; align-items: center; gap: 12px; color: var(--muted); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
 
 /* ======================================================= phone tab bar -- */
-/* 64px + safe area, --surface, 5 equal tabs, icon 24 above word 13/600; the active one sits in a
-   56x52 pink pill. "Needs you" shows as an 8px dot on the Home tab icon. */
+/* 64px + safe area, deep night, a 2px pixel line on top; icon 24 over a HUD word; the active tab is
+   lime with a lime bar on top. "Needs you" = a square needs dot on the Home tab. */
 .tabbar {
   position: fixed; z-index: var(--z-bar); left: 0; right: 0; bottom: 0;
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: stretch;
   min-height: calc(var(--tabbar-h) + var(--safe-b)); padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
-  background: var(--surface); border-top: 1px solid var(--line);
+  background: var(--deep); border-top: 2px solid var(--border);
 }
 .tabbar-item {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0;
-  width: 56px; max-width: calc(100% - 4px); height: 52px; margin: 6px auto; border-radius: 16px;
-  color: var(--muted); text-decoration: none; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0;
+  min-height: var(--tabbar-h); color: var(--muted); text-decoration: none; transition: color var(--t-fast) var(--ease);
 }
+.tabbar-item::before { content: ""; position: absolute; left: 18%; right: 18%; top: -2px; height: 3px; background: transparent; }
 .tabbar-item-ico { position: relative; display: grid; place-items: center; }
 .tabbar-item-ico svg { width: 24px; height: 24px; }
-.tabbar-item-word { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .8125rem/1.1 var(--font); }
-.tabbar-item[aria-current="page"] { background: var(--pink); color: var(--on-pink); }
-.tabbar-item .tab-badge { top: -1px; right: -3px; }
+.tabbar-item-word { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 .6875rem/1.1 var(--font-hud); text-transform: var(--hud-case); letter-spacing: .1em; }
+.tabbar-item-word:lang(hi), .tabbar-item-word:lang(kn), :lang(hi) .tabbar-item-word, :lang(kn) .tabbar-item-word { font-size: .8125rem; letter-spacing: 0; }
+.tabbar-item[aria-current="page"] { color: var(--lime); }
+.tabbar-item[aria-current="page"]::before { background: var(--lime); }
+.tabbar-item .tab-badge { top: -2px; right: -5px; }
 
-/* Phone: language shows "Eng" / "हिं" / "ಕನ್"; the Needs-you pill lives on Home and the Home tab dot. */
+/* Phone: language shows "ENG" / "हिं" / "ಕನ್"; Needs you lives on Home and the Home tab dot. */
 @media (max-width: 767px) {
-  .topbar-in { gap: 8px; }
-  .lang-switch-name { font-size: 0; }
-  .lang-switch-name::after { content: attr(data-short); font: var(--t-label); }
+  .topbar-in { gap: 10px; }
+  .lang-switch-name { font-size: 0; letter-spacing: 0; }
+  .lang-switch-name::after { content: attr(data-short); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
   .lang-switch-caret { display: none; }
   .needs-btn { display: none; }
 }
@@ -120,9 +125,10 @@
 /* 768-1023: keep the bar on one row. */
 @media (min-width: 768px) and (max-width: 1023px) {
   .topbar .brand-word { display: none; }
-  .tab { padding: 0 12px; }
+  .tab { padding: 0 8px; }
+  .tab::after { left: 8px; right: 8px; }
   .lang-switch-name { font-size: 0; }
-  .lang-switch-name::after { content: attr(data-short); font: var(--t-label); }
+  .lang-switch-name::after { content: attr(data-short); font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); }
   .needs-word { display: none; }
 }
 

@@ -5,6 +5,35 @@ Warm black, creamy pink accent, calm and solid. Owner: W1. Ask W1 (through the c
 primitive instead of styling one locally. Sentence case only: no all caps, no letter-spaced eyebrows,
 no "A · B · C" meta strings.
 
+## v7 look (brief `docs/superpowers/plans/2026-11-20-ui-v7-brief.md`: yugaantar.org, Sahay-themed) — current
+The NAMES below (tokens, classes, JS exports) are unchanged from v5; only their look changed, so every screen
+restyles by itself. Where the v5 notes further down describe colours, radii or button shapes, this section wins.
+- Colours: page navy `--navy` #0B1F4B (`--bg`), `--deep` #061431 (bars, inputs, hard shadows), cards `--card` #112A60
+  (`--surface`) / `--card-2` #0F2753 (`--surface-2`), pixel border `--border` #2B4C8A (`--line`), `--line-strong` #4A6DAE,
+  cream text `--cream` #F3F1E2 (`--text`), `--muted` #A7B6D6, accent LIME `--lime` #A8E27C (`--accent`; the v5 slot
+  `--pink` now holds lime and `--on-pink` navy), paper panels `--paper` #F3F1E2 with `--paper-ink` #0F2753, `--sky`
+  #133D7E (hover), `--blue` #1C61A1, `--moon`, `--gold`; status `--good` #A8E27C, `--warn` #F0C47E, `--needs` #F2877A,
+  `--info` #8EC5F0; `--scrim` #03091AED.
+- Shape: radius 0 everywhere (`--r-*` are all 0). Pixel edge `--pixel-edge` (0 0 0 2px border); buttons
+  `--shadow-btn` (pixel edge + 2px 2px 0 deep), cards `--shadow` (4px 4px 0 deep), sheets `--shadow-sheet`. No blur,
+  no glow, no gradients except the page's star field / dot grid.
+- Type: titles and big numbers Jersey 10 (`--font-display`, weight 400, tracking `--display-track` .02em); body Amarna
+  (`--font`, 17px/1.55); HUD labels Amarna 600 13px UPPERCASE .14em (`font: var(--t-label)` +
+  `text-transform: var(--hud-case); letter-spacing: var(--hud-track)`, or class `.hud`). Hindi: Jaini Purva display +
+  Hind body; Kannada: Baloo Tamma 2 display + Noto Sans Kannada body; on those pages `--hud-case` is none and the
+  tracking tokens are 0. Sizes: `--fs-display` 56 (phone 40), `--fs-amount-xl` 56, `--fs-title` 30 (phone 26),
+  `--fs-amount` 24 (Jersey), `--fs-body` 17, `--fs-label` 13, `--fs-meta` 15.
+- Buttons: square, 48px (`.btn-lg` 56, `.btn-sm` 44 + 48 tap area), HUD caps. `.btn-primary` = lime fill, navy text,
+  pixel edge + hard shadow; hover lifts 1px, press drops 2px. `.btn-secondary` = translucent navy + 1.6px cream border
+  + an automatic "→" (not on the No of `yesNo()`; add `.btn-noarrow` to drop it). `.btn-danger` = needs-red border.
+- Cards, lists, tiles, inputs, tabs, toggles, sheets, menus, toasts: square, 2px pixel border, hard shadow. A cream
+  paper panel: add `.card-paper` (or `.paper-panel`) to a card or list — it re-points `--text`/`--muted`/`--line`
+  inside so the same components read navy on cream.
+- Shell: 66px night bar (56 phone) — logo + "Sahay" (Jersey, lime) | HOME · BUY · SELL · STOCK · MONEY in HUD caps,
+  active = lime text + 2px lime underline | language, NEEDS YOU (n), account (square initials). Phone: 64px deep tab
+  bar, icon over a HUD word, active = lime with a lime bar on top. Background: navy with a faint star field and dot grid.
+- Fonts in app.html: Jersey 10, Amarna 400-700, Jaini Purva, Hind, Baloo Tamma 2, Noto Sans Kannada (Google Fonts).
+
 ## Files
 | File | What |
 |---|---|
