@@ -21,7 +21,7 @@ against the name now).
 Rules: tokens only (no raw hex in screen CSS except inside `rgba(var(--hex-rgb), a)`-style token use);
 `letter-spacing: 0` on hi/kn; owner text >= 16px (body 18px, Indic 19px); every animation has a
 `prefers-reduced-motion: reduce` branch; never put `filter`, `opacity < 1`, `mask`, `transform`,
-`will-change`, `mix-blend-mode` or `backdrop-filter` on an ANCESTOR of a glass element (it becomes the
+`will-change`, `mix-blend-mode`, `view-transition-name` or `backdrop-filter` on an ANCESTOR of a glass element (it becomes the
 backdrop root and the hex field stops showing through). Screens live inside `#main`; do not wrap `#main`.
 
 ## 1. Tokens (`css/tokens-v3.css`) **ready**

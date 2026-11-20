@@ -54,7 +54,12 @@ function screenKey(r) {
 function transition(swap) {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!document.startViewTransition || reduce || document.visibilityState !== "visible") { swap(); return; }
-  try { document.startViewTransition(swap); } catch { swap(); }
+  const html = document.documentElement;
+  html.classList.add("vt-screen");
+  try {
+    const vt = document.startViewTransition(swap);
+    vt.finished.finally(() => html.classList.remove("vt-screen"));
+  } catch { html.classList.remove("vt-screen"); swap(); }
 }
 
 function screen(key) {

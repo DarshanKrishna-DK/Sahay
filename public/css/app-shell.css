@@ -312,13 +312,13 @@ body[data-boot="auth"] .shell, body[data-boot="welcome"] .shell { display: none;
 body:not([data-boot="ready"]) #main { padding-bottom: 48px; }
 
 /* =================================================== view transitions -- */
-.nav-jelly { view-transition-name: sahay-nav; }
-.nav-dock { view-transition-name: sahay-dock; }
-.top-zone { view-transition-name: sahay-top; }
-.agent-column { view-transition-name: sahay-column; }
-.dock-float { view-transition-name: sahay-calldock; }
-::view-transition-old(root) { animation: vt-out var(--t-page-out) cubic-bezier(.4, 0, 1, 1) both; }
-::view-transition-new(root) { animation: vt-in var(--t-page-in) var(--ease-soft) both; }
+/* Only the screen moves. A view-transition-name makes its element a backdrop root (View Transitions
+   spec), so no chrome element carries one, and #main gets its name only while a switch runs
+   (main.js adds .vt-screen to <html>): glass inside screens keeps seeing the hex field. */
+.vt-screen #main { view-transition-name: sahay-main; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-old(sahay-main) { animation: vt-out var(--t-page-out) cubic-bezier(.4, 0, 1, 1) both; }
+::view-transition-new(sahay-main) { animation: vt-in var(--t-page-in) var(--ease-soft) both; }
 @keyframes vt-out { to { opacity: 0; transform: translateY(-6px); } }
 @keyframes vt-in { from { opacity: 0; transform: translateY(14px); } }
 .screen-in { animation: screen-in var(--t-slow) var(--ease-out); }
@@ -326,7 +326,7 @@ body:not([data-boot="ready"]) #main { padding-bottom: 48px; }
 @keyframes fade-in { from { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  ::view-transition-old(sahay-main), ::view-transition-new(sahay-main) { animation: none; }
   .screen-in { animation: fade-in var(--t-med) linear; animation-duration: var(--t-med) !important; }
   .nj-item, .dk-ico, .nj-marker { transition: none; }
   .dk-item:active .dk-ico, .nj-item:active .nj-ico, .dk-orb:active .dk-orb-ball, .nj-orb:active .nj-socket { transform: none; }
