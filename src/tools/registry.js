@@ -44,6 +44,7 @@ const agentRules = require("../agent/rules");
 const agentProfile = require("../agent/profile");
 const agentMemories = require("../agent/memories");
 const policy = require("../agent/policy");
+const suppliers = require("../suppliers");
 
 /** Which agent may call a tool. The bearer's sessions row kind decides the scope. */
 const SCOPES = Object.freeze({ owner: "owner", negotiation: "negotiation" });
@@ -202,6 +203,26 @@ const PHRASES = {
     "hi-IN": (v) => `${v.count} विक्रेता मिले, ${v.comparable} के भाव प्रति ${v.unit} में हैं; सबसे अच्छे ${v.name}${v.city ? `, ${v.city}` : ""}, ${v.price} रुपये प्रति ${v.unit}।`,
     "kn-IN": (v) => `${v.count} ಮಾರಾಟಗಾರರು ಸಿಕ್ಕಿದ್ದಾರೆ, ${v.comparable} ಜನರ ಬೆಲೆ ಒಂದು ${v.unit}ಗೆ ಇದೆ; ಉತ್ತಮರು ${v.name}${v.city ? `, ${v.city}` : ""}, ಒಂದು ${v.unit}ಗೆ ${v.price} ರೂಪಾಯಿ.`,
     "en-IN": (v) => `${v.count} vendors found, ${v.comparable} with a price per ${v.unit}; the best is ${v.name}${v.city ? ` in ${v.city}` : ""}, at ${v.price} rupees per ${v.unit}.`,
+  },
+  shortlist_own: {
+    "hi-IN": (v) => `आपके अपने सप्लायर ${v.name} सबसे ऊपर हैं, उनसे टेलीग्राम पर बात हो सकती है।`,
+    "kn-IN": (v) => `ನಿಮ್ಮದೇ ಪೂರೈಕೆದಾರರು ${v.name} ಮೊದಲಿದ್ದಾರೆ, ಅವರನ್ನು ಟೆಲಿಗ್ರಾಮ್ ಮೂಲಕ ಸಂಪರ್ಕಿಸಬಹುದು.`,
+    "en-IN": (v) => `Your own supplier ${v.name} is first; I can reach them on Telegram.`,
+  },
+  negotiation_started_supplier: {
+    "hi-IN": (v) => `मैंने ${v.vendor} को टेलीग्राम पर संदेश भेज दिया है; वे जुड़ते ही मोल-भाव शुरू करूँगी।`,
+    "kn-IN": (v) => `${v.vendor} ಅವರಿಗೆ ಟೆಲಿಗ್ರಾಮ್‌ನಲ್ಲಿ ಸಂದೇಶ ಕಳುಹಿಸಿದ್ದೇನೆ; ಅವರು ಸೇರಿದ ತಕ್ಷಣ ಚೌಕಾಸಿ ಶುರು ಮಾಡುತ್ತೇನೆ.`,
+    "en-IN": (v) => `I've sent ${v.vendor} a message on Telegram; I'll start as soon as they join.`,
+  },
+  supplier_not_linked: {
+    "hi-IN": (v) => `${v.vendor} ने अभी सहाय का टेलीग्राम लिंक नहीं खोला है, इसलिए उन तक संदेश नहीं जा सकता।`,
+    "kn-IN": (v) => `${v.vendor} ಅವರು ಇನ್ನೂ ಸಹಾಯ್ ಟೆಲಿಗ್ರಾಮ್ ಲಿಂಕ್ ತೆರೆದಿಲ್ಲ, ಹಾಗಾಗಿ ಅವರಿಗೆ ಸಂದೇಶ ಕಳುಹಿಸಲು ಆಗುವುದಿಲ್ಲ.`,
+    "en-IN": (v) => `${v.vendor} has not opened the Sahay Telegram link yet, so I cannot message them.`,
+  },
+  supplier_unreachable: {
+    "hi-IN": (v) => `${v.vendor} को टेलीग्राम पर संदेश नहीं जा पाया, इसलिए मोल-भाव शुरू नहीं किया; कारण स्क्रीन पर है।`,
+    "kn-IN": (v) => `${v.vendor} ಅವರಿಗೆ ಟೆಲಿಗ್ರಾಮ್ ಸಂದೇಶ ಹೋಗಲಿಲ್ಲ, ಹಾಗಾಗಿ ಚೌಕಾಸಿ ಶುರು ಮಾಡಲಿಲ್ಲ; ಕಾರಣ ಪರದೆಯ ಮೇಲಿದೆ.`,
+    "en-IN": (v) => `My Telegram message to ${v.vendor} did not go through, so I have not started; the reason is on the screen.`,
   },
   shortlist_no_comparable: {
     "hi-IN": (v) => `${v.count} विक्रेता मिले, पर किसी की लिस्टिंग में प्रति ${v.unit} भाव नहीं है; सबसे ऊपर ${v.name}।`,
@@ -623,7 +644,8 @@ function sourcingResultSpoken(businessId, requirementId) {
  * rules: avoided vendors left out, a preferred one first on a tie); the order vendorRank counts in.
  */
 function rankedVendors(businessId, requirement) {
-  return policy.rankedVendors(businessId, requirement);
+  // The owner's own, real suppliers (src/suppliers) come first, then the listings as ranked.
+  return suppliers.ownFirst(businessId, requirement.id, policy.rankedVendors(businessId, requirement));
 }
 
 /** "Several qualify" is never resolved by guessing: the owner hears the choices. */
@@ -642,6 +664,7 @@ function approvalChoice(businessId, approval, language) {
 
 function vendorSummary(v, requirement, rank) {
   const comparable = comparableListedPrice(v, requirement.unit);
+  const own = v.kind === "human" && Boolean(suppliers.supplierForVendor(v.business_id, v.id));
   return {
     rank,
     vendorId: v.id,
@@ -649,6 +672,8 @@ function vendorSummary(v, requirement, rank) {
     city: v.city,
     kind: v.kind,
     simulated: v.simulated,
+    ownSupplier: own,
+    real: v.kind !== "simulated",
     listedPrice: v.listed_price,
     listedUnit: v.listed_unit,
     listedPriceText: v.listed_price_text,
@@ -741,21 +766,39 @@ async function runSourcing(job) {
   const requirement = repo.getRequirement(businessId, input.requirementId);
   if (!requirement) throw new Error("The requirement no longer exists.");
 
+  // The owner's own suppliers who sell this and are reachable on Telegram go on the list first.
+  const own = suppliers.addToShortlist(businessId, requirement);
+  if (own.added.length) job.progress(`Your own supplier${own.added.length > 1 ? "s" : ""} ${own.added.map((v) => v.name).join(", ")} sell${own.added.length > 1 ? "" : "s"} this; listed first (real, reached on Telegram).`, { ownSuppliers: own.added.map((v) => v.id) });
+  if (own.unlinked.length) job.progress(`${own.unlinked.join(", ")} also sell${own.unlinked.length > 1 ? "" : "s"} this but ${own.unlinked.length > 1 ? "have" : "has"} not opened the Sahay Telegram link yet, so cannot be reached.`);
+  const ownCount = repo.listVendors(businessId, { requirement_id: requirement.id, kind: "human" }).length;
+
   job.progress(`Searching IndiaMART for ${requirement.item}${requirement.city ? ` in ${requirement.city}` : ""}.`);
-  const found = await findVendors({ item: requirement.item, city: requirement.city ?? null, limit: DISCOVERY_LIMIT, signal });
+  let found;
+  try {
+    found = await findVendors({ item: requirement.item, city: requirement.city ?? null, limit: DISCOVERY_LIMIT, signal });
+  } catch (err) {
+    // With an own supplier on the list the search still has a result; the failure is said, not hidden.
+    if (!ownCount || signal.aborted) throw err;
+    job.progress(`IndiaMART could not be searched (${err.message}); only your own supplier${ownCount > 1 ? "s are" : " is"} on the list.`);
+    found = [];
+  }
   const reason = found.reason;
   const source = found.source ?? {};
-  if (!found.length) {
+  if (!found.length && ownCount) {
+    job.progress(reason === "no_category_found" ? `IndiaMART has no category page with listings for "${requirement.item}".` : "IndiaMART returned no listings.");
+  } else if (!found.length) {
     throw new Error(
       reason === "no_category_found"
         ? `IndiaMART has no category page with listings for "${requirement.item}".${source.detail ? ` ${source.detail}` : ""}`
         : `IndiaMART returned no listings for "${requirement.item}".`,
     );
   }
-  job.progress(
-    `Found ${found.length} listings in "${source.category ?? source.slug ?? requirement.item}"${source.scope === "national" ? " (nationwide: no page for this city)" : ""}.`,
-    { total: found.length, scope: source.scope ?? null, category: source.category ?? null, url: source.url ?? null },
-  );
+  if (found.length) {
+    job.progress(
+      `Found ${found.length} listings in "${source.category ?? source.slug ?? requirement.item}"${source.scope === "national" ? " (nationwide: no page for this city)" : ""}.`,
+      { total: found.length, scope: source.scope ?? null, category: source.category ?? null, url: source.url ?? null },
+    );
+  }
 
   const seen = new Set(repo.listVendors(businessId, { requirement_id: requirement.id }).map(listingKey));
   let stored = 0;
@@ -787,6 +830,7 @@ async function runSourcing(job) {
     category: source.category ?? null,
     scope: source.scope ?? null,
     sourceUrl: source.url ?? null,
+    ownSuppliers: shortlist.filter((v) => v.ownSupplier).map((v) => v.name),
     shortlist,
   };
 }
@@ -1398,7 +1442,9 @@ const TOOLS = [
       const comparable = ranked
         .map((vendor) => ({ vendor, price: comparableListedPrice(vendor, requirement.unit)?.value ?? null }))
         .filter((x) => x.price != null);
-      const say = comparable.length
+      const ownTop = ranked[0].kind === "human" && suppliers.supplierForVendor(ctx.businessId, ranked[0].id);
+      const ownSay = ownTop ? `${phrase("shortlist_own", language, { name: ranked[0].name })} ` : "";
+      const listed = comparable.length
         ? phrase("shortlist", language, {
             count: ranked.length,
             comparable: comparable.length,
@@ -1408,6 +1454,7 @@ const TOOLS = [
             unit,
           })
         : phrase("shortlist_no_comparable", language, { count: ranked.length, name: ranked[0].name, unit });
+      const say = ownTop && !comparable.length ? phrase("shortlist_own", language, { name: ranked[0].name }) : `${ownSay}${listed}`;
       return { requirementId: requirement.id, vendors, say };
     },
   },
@@ -1415,15 +1462,15 @@ const TOOLS = [
     name: "start_negotiation",
     scopes: OWNER,
     description:
-      "Starts a voice negotiation for the current requirement. Pick the vendor with vendorRank (1 = best, as get_shortlist ranks them) or leave both vendorRank and vendorId out to use the best-ranked vendor whose listing has a price per the requirement unit. counterpart 'simulated' (default) = a clearly labelled simulated vendor priced from that vendor's listing; 'human' = a real person joins by link. Returns a jobId at once.",
+      "Starts a voice negotiation for the current requirement. Pick the vendor with vendorRank (1 = best, as get_shortlist ranks them) or leave both vendorRank and vendorId out to use the owner's own supplier when one is on the list (a real person, reached on Telegram), else the best-ranked vendor whose listing has a price per the requirement unit. With the owner's own supplier the counterpart is always the real person ('human'). counterpart 'simulated' = a clearly labelled simulated vendor priced from a listing (use it only when the owner asks for one, e.g. after a supplier did not join); 'human' = a real person joins by link. Returns a jobId at once.",
     inputSchema: ownerObj({
       requirementId: idArg("requirement", "the latest requirement"),
       vendorRank: { type: "integer", minimum: 1, maximum: 50, description: "Optional. The vendor's place in the shortlist, 1 = best." },
       vendorId: idArg("vendor", "vendorRank, or the best vendor with a comparable price"),
-      counterpart: { type: "string", enum: ["simulated", "human"], description: "Default simulated." },
+      counterpart: { type: "string", enum: ["simulated", "human"], description: "Default: human for the owner's own supplier, else simulated." },
     }),
     async handler(ctx, args, language, { businessLanguage }) {
-      const counterpart = args.counterpart ?? "simulated";
+      let counterpart = args.counterpart ?? "simulated";
       let vendor = null;
       let requirement;
       if (args.vendorId) {
@@ -1444,9 +1491,17 @@ const TOOLS = [
         vendor = ranked[args.vendorRank - 1];
         if (!vendor) throw new ToolError("NOT_FOUND", phrase("rank_out_of_range", language, { count: ranked.length }), { status: 404 });
       }
+      // Unless the owner asked for a simulated vendor, their own supplier (ranked first) is the one to talk to.
+      if (!vendor && args.counterpart !== "simulated" && suppliers.supplierForVendor(ctx.businessId, ranked[0].id)) vendor = ranked[0];
       if (!vendor) {
         vendor = comparableAt >= 0 ? ranked[comparableAt] : counterpart === "human" ? ranked[0] : null;
         if (!vendor) throw new ToolError("NO_LISTED_PRICE", phrase("no_comparable_vendor", language, { unit }), { status: 409 });
+      }
+      // The owner's own supplier is a real person: never simulated, always invited on Telegram.
+      const supplier = vendor.kind === "human" ? suppliers.supplierForVendor(ctx.businessId, vendor.id) : null;
+      if (supplier) {
+        counterpart = "human";
+        if (!supplier.telegram_chat_id) throw new ToolError("SUPPLIER_NOT_LINKED", phrase("supplier_not_linked", language, { vendor: vendor.name }), { status: 409 });
       }
       if (counterpart === "simulated" && !comparableListedPrice(vendor, requirement.unit)) {
         throw new ToolError(
@@ -1465,18 +1520,35 @@ const TOOLS = [
         requirementId: requirement.id,
         vendorId: vendor.id,
         counterpart,
-        language: businessLanguage,
+        // A supplier is spoken to in their own language; anyone else in the business's.
+        language: supplier?.language ?? businessLanguage,
         sayLanguage: language,
+        supplier,
       });
-      const startedSay = counterpart === "human"
-        ? phrase("negotiation_started_human", language)
-        : phrase("negotiation_started_simulated", language, { vendor: vendor.name });
+      if (supplier) {
+        try {
+          await suppliers.sendInvite({ businessId: ctx.businessId, supplier, requirement, joinUrl: started.joinUrl });
+        } catch (err) {
+          // Nobody can join a link that never arrived: the waiting negotiation is withdrawn at once.
+          try {
+            jobs.cancelJob(ctx.businessId, started.jobId);
+          } catch {
+            /* already ended */
+          }
+          throw new ToolError("SUPPLIER_UNREACHABLE", phrase("supplier_unreachable", language, { vendor: vendor.name }), { status: 502, message: `Telegram: ${err.message}` });
+        }
+      }
+      const startedSay = supplier
+        ? phrase("negotiation_started_supplier", language, { vendor: vendor.name })
+        : counterpart === "human"
+          ? phrase("negotiation_started_human", language)
+          : phrase("negotiation_started_simulated", language, { vendor: vendor.name });
       // The owner hears when their own rule set the ceiling, and which figure it replaced.
       const cap = started.ceiling?.byRule
         ? ` ${phrase("negotiation_rule_cap", language, { price: money(started.ceiling.price), unit, owner: started.ceiling.ownerMax != null ? money(started.ceiling.ownerMax) : null })}`
         : "";
       const say = `${startedSay}${cap}`;
-      return { ...started, vendorId: vendor.id, vendorName: vendor.name, vendorRank: ranked.findIndex((v) => v.id === vendor.id) + 1, counterpart, say };
+      return { ...started, vendorId: vendor.id, vendorName: vendor.name, vendorRank: ranked.findIndex((v) => v.id === vendor.id) + 1, counterpart, ownSupplier: Boolean(supplier), real: counterpart === "human", ...(supplier ? { invitedOn: "telegram" } : {}), say };
     },
   },
   {
@@ -1810,6 +1882,7 @@ const TOOLS = [
 TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields, askRule })); // STK: stock tools
 TOOLS.push(...require("./sell")({ ownerObj, idArg, withHistory })); // SELL: add_customer, set_item, draft_invoice, request_invoice_approval, confirm_invoice
 TOOLS.push(...require("./khata").TOOLS); // KHATA: record_payment, who_owes_me, send_payment_reminder
+TOOLS.push(...require("./suppliers").TOOLS); // SUPPLIERS: add_supplier, list_suppliers
 // Shop knowledge: one read-only tool for any question about this shop (topics reuse the handlers above).
 TOOLS.push(
   ...require("./facts")({

@@ -987,3 +987,38 @@ BEGIN
   SELECT RAISE(ABORT, 'the figures of a receipt draft cannot be changed; make a new one');
 END;
 -- ===================================== end KHATA ============================================
+
+-- ===================================== SUPPLIERS ============================================
+-- The owner's own, real suppliers (src/db/suppliers.js). They are reached on Telegram: the supplier
+-- opens https://t.me/<bot>?start=sup_<code> once, which links their chat to this row. A linked
+-- supplier whose items cover a need is put on that need's shortlist as a vendor of kind 'human'.
+CREATE TABLE IF NOT EXISTS suppliers (
+  id               TEXT PRIMARY KEY,
+  business_id      TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name             TEXT NOT NULL,
+  items            TEXT NOT NULL DEFAULT '[]', -- JSON array of item words, any script
+  language         TEXT NOT NULL CHECK (language IN ('hi-IN', 'kn-IN', 'en-IN')),
+  phone            TEXT,
+  telegram_chat_id TEXT,
+  linked_at        TEXT,
+  created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS suppliers_by_business ON suppliers (business_id, created_at);
+
+-- One-time Telegram link codes for a supplier (distinct from link_codes, the owner's own chat).
+CREATE TABLE IF NOT EXISTS supplier_link_codes (
+  code        TEXT PRIMARY KEY,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  expires_at  TEXT NOT NULL
+);
+
+-- Which shortlisted vendor row is which of the owner's suppliers. The vendor row outlives a removed
+-- supplier (its quotes and orders keep pointing at it); only this mapping goes.
+CREATE TABLE IF NOT EXISTS supplier_vendors (
+  vendor_id   TEXT PRIMARY KEY REFERENCES vendors(id) ON DELETE CASCADE,
+  business_id TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS supplier_vendors_by_supplier ON supplier_vendors (business_id, supplier_id);
+-- ===================================== end SUPPLIERS ========================================
