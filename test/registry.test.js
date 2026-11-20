@@ -130,7 +130,7 @@ test("every tool has a JSON-schema input, a description and one scope; owner and
     "get_ranked_deals", "request_approval", "confirm_approval", "create_order", "create_payment_link", "get_order_status",
     "teach_rule", "confirm_rule", "forget_rule", "get_my_agent",
     "set_opening_stock", "get_stock", "mark_order_delivered", "set_reorder_level", "confirm_reorder", "add_customer", "set_item", "draft_invoice", "request_invoice_approval", "confirm_invoice",
-    "record_payment", "who_owes_me", "send_payment_reminder",
+    "record_payment", "who_owes_me", "send_payment_reminder", "get_business_facts",
   ]);
   assert.deepEqual(registry.toolNames("negotiation"), ["get_negotiation_brief", "record_vendor_offer"]);
 });
@@ -1221,4 +1221,54 @@ test("E2E regress bug 5: create_payment_link takes the purchase order number as 
   const tool = registry.toolsFor("owner").find((x) => x.name === "create_payment_link");
   assert.match(tool.description, /Never ask which order/);
   assert.ok(tool.inputSchema.properties.po_number);
+});
+
+test("in a call a slow tool answers before Agora's MCP timeout: the model gets a 'still working' say, the work goes on and its own say is spoken when it ends", async (t) => {
+  const businessId = seedBusiness("en-IN");
+  const ctx = { businessId, sessionId: null, agentId: "AGSLOW", actor: "agent", toolScope: "owner" };
+  require("../src/agora/language").configure({ history: async () => [] });
+  t.after(() => require("../src/agora/language").configure(null));
+  const spoken = [];
+  require("../src/agora/outcome").configure({ speak: async (agentId, text) => spoken.push({ agentId, text }) });
+  t.after(() => require("../src/agora/outcome").configure({ speak: null }));
+  registry.configureToolTiming({ deadlineMs: 30 });
+  t.after(() => registry.configureToolTiming({ deadlineMs: 8000 }));
+  const tool = registry.TOOLS.find((x) => x.name === "get_business_profile");
+  let finish;
+  t.mock.method(tool, "handler", () => new Promise((resolve) => (finish = resolve)));
+  const warned = [];
+  t.mock.method(console, "warn", (line) => warned.push(line));
+
+  const out = await registry.callTool(ctx, "get_business_profile", { reply_language: "en-IN" });
+  assert.equal(out.pending, true);
+  assert.equal(out.say, registry.STILL_WORKING["en-IN"]);
+  assert.match(out.hint, /never claim a result/);
+  assert.equal(require("../src/tools/calls").inFlight(businessId, ["get_business_profile"]), true, "still running for the watchdogs");
+  finish({ say: "Asha Kirana is in Bengaluru." });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(spoken, [{ agentId: "AGSLOW", text: "Asha Kirana is in Bengaluru." }]);
+  assert.equal(require("../src/tools/calls").inFlight(businessId, ["get_business_profile"]), false);
+  assert.ok(warned.some((l) => /still running after 30 ms/.test(l)));
+
+  // A late failure is spoken too, as its own say.
+  t.mock.method(tool, "handler", () => new Promise((_, reject) => setTimeout(() => reject(new Error("boom")), 60)));
+  const late = await registry.callTool(ctx, "get_business_profile", { reply_language: "en-IN" });
+  assert.equal(late.pending, true);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(spoken.at(-1).text, "Something went wrong and I could not do that just now.");
+
+  // Off a call there is no deadline: the caller waits for the result.
+  t.mock.method(tool, "handler", () => new Promise((resolve) => setTimeout(() => resolve({ say: "done" }), 60)));
+  const offCall = await registry.callTool({ ...ctx, agentId: null }, "get_business_profile", {});
+  assert.equal(offCall.say, "done");
+});
+
+test("a thrown error with no spoken line still reaches the model with one", async (t) => {
+  const businessId = seedBusiness("hi-IN");
+  const tool = registry.TOOLS.find((x) => x.name === "get_business_profile");
+  t.mock.method(tool, "handler", async () => {
+    throw new ToolError("SOMETHING", "");
+  });
+  await assert.rejects(registry.callTool({ businessId, toolScope: "owner", agentId: null }, "get_business_profile", {}), (err) => err.say === "कुछ गड़बड़ हो गई, मैं यह काम अभी नहीं कर पाई।");
 });

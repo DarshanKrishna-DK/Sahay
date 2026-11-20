@@ -1810,6 +1810,13 @@ const TOOLS = [
 TOOLS.push(...require("./stock")({ ownerObj, idArg, withHistory, unheardFields, askRule })); // STK: stock tools
 TOOLS.push(...require("./sell")({ ownerObj, idArg, withHistory })); // SELL: add_customer, set_item, draft_invoice, request_invoice_approval, confirm_invoice
 TOOLS.push(...require("./khata").TOOLS); // KHATA: record_payment, who_owes_me, send_payment_reminder
+// Shop knowledge: one read-only tool for any question about this shop (topics reuse the handlers above).
+TOOLS.push(
+  ...require("./facts")({
+    ownerObj,
+    run: (name, ctx, args, language) => TOOLS.find((t) => t.name === name).handler(ctx, args, language, {}),
+  }),
+);
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
@@ -1854,10 +1861,7 @@ async function callTool(ctx, name, args = {}) {
   const end = toolCalls.begin(ctx.businessId, name, { answer: Boolean(args?.decision || args?.confirm) });
   // The owner has answered a read-back by voice, so it has finished playing: the result line need not wait for its estimate.
   if (ctx.agentId && (args?.decision || args?.confirm)) require("../agora/agent").releaseLane(ctx.agentId);
-  try {
-    // The tool's own first /history read reuses the one just made for the language (one round trip).
-    return await require("../agora/agent").withHistorySnapshot(ctx.agentId, snapshot, () => tool.handler(ctx, args ?? {}, language, { businessLanguage }));
-  } catch (err) {
+  const recover = (err) => {
     const toolError = toToolError(err, language);
     if (toolError.code === "INTERNAL" || toolError.status >= 500) {
       events.emit(ctx.businessId, "error", { code: toolError.code, message: toolError.message, say: toolError.say ?? null, tool: name }, { sessionId: ctx.sessionId ?? null, actor: "system" });
@@ -1867,14 +1871,72 @@ async function callTool(ctx, name, args = {}) {
     if (NOTHING_WAITING.has(toolError.code) && require("../agora/confirm-watch").doneRecently(ctx.businessId, name)) {
       return { alreadyDone: true, by: "server", hint: outcome.DONE_HINT, say: outcome.HAND_BACK[langKey(language)] };
     }
+    if (!toolError.say) toolError.say = sayFor("internal", language);
     throw toolError;
-  } finally {
-    end();
+  };
+  const work = (async () => {
+    try {
+      // The tool's own first /history read reuses the one just made for the language (one round trip).
+      return await require("../agora/agent").withHistorySnapshot(ctx.agentId, snapshot, () => tool.handler(ctx, args ?? {}, language, { businessLanguage }));
+    } catch (err) {
+      return recover(err);
+    } finally {
+      end();
+    }
+  })();
+  // Off a call (REST, tests) nothing can be spoken later, so the caller waits for the result.
+  if (!ctx.agentId || ctx.toolScope !== SCOPES.owner) return work;
+  return withinDeadline(ctx, name, work, language);
+}
+
+/**
+ * Agora stops waiting for an MCP tool after timeout_ms (10 s, src/agora/agent.js) and the model
+ * then often says nothing at all. So in a call a tool answers within `deadlineMs` whatever
+ * happens: if its work is not done by then, the model gets a short "still working, I will tell
+ * you" line to speak, the work goes on (it stays in flight for the watchdogs), and when it ends
+ * its own `say` (or its error's) is spoken into the call by the server. A result whose `say` is
+ * empty was already spoken by the server itself and adds nothing.
+ */
+const toolTiming = { deadlineMs: 8000 };
+const STILL_WORKING = {
+  "hi-IN": "इसमें थोड़ा समय लग रहा है; जैसे ही हो जाएगा, मैं आपको बता दूँगी।",
+  "kn-IN": "ಇದಕ್ಕೆ ಸ್ವಲ್ಪ ಸಮಯ ಆಗುತ್ತಿದೆ; ಆದ ತಕ್ಷಣ ನಿಮಗೆ ಹೇಳುತ್ತೇನೆ.",
+  "en-IN": "This is taking a little longer; I will tell you as soon as it is done.",
+};
+const STILL_WORKING_HINT =
+  "The tool is still working. Say `say` now, as it is, and nothing else: never claim a result. The server will speak the result itself when it is ready.";
+
+async function withinDeadline(ctx, name, work, language) {
+  const LATE = Symbol("late");
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(LATE), toolTiming.deadlineMs);
+    timer.unref?.();
+  });
+  const first = await Promise.race([work.then((value) => ({ value }), (error) => ({ error })), late]);
+  clearTimeout(timer);
+  if (first !== LATE) {
+    if ("error" in first) throw first.error;
+    return first.value;
   }
+  console.warn(`[tools] ${name} still running after ${toolTiming.deadlineMs} ms; the model was told it is still working`);
+  work.then(
+    (result) => outcome.announce(ctx, result?.say),
+    (err) => outcome.announce(ctx, err?.say),
+  );
+  return { pending: true, hint: STILL_WORKING_HINT, say: STILL_WORKING[langKey(language)] };
+}
+
+/** Tests: change the in-call tool deadline (pass nothing to read it). */
+function configureToolTiming(overrides = {}) {
+  Object.assign(toolTiming, overrides);
+  return { ...toolTiming };
 }
 
 module.exports = {
   knDative,
+  configureToolTiming,
+  STILL_WORKING,
   TOOLS,
   SCOPES,
   callTool,
