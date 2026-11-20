@@ -258,7 +258,9 @@ export function stateWord({ view, nowKey, waitingYes = 0 }) {
   const st = view && view.state;
   if (STATE_WORD[st]) return { key: STATE_WORD[st], now: false, tone: view.tone || "calm" };
   if (waitingYes > 0) return { key: "home.state.waitingYes", now: false, tone: "warn" };
-  if (nowKey && nowKey !== "now.idle") return { key: nowKey, now: true, tone: "live" };
+  // "Waiting for your yes" comes only from the Needs-you rows (waitingYes), never from the store's
+  // own approvals line, so the state word and the Needs you card always agree.
+  if (nowKey && nowKey !== "now.idle" && nowKey !== "now.waitingYes") return { key: nowKey, now: true, tone: "live" };
   return { key: "home.state.ready", now: false, tone: "calm" };
 }
 

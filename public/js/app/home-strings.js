@@ -9,6 +9,7 @@ addStrings({
   "home.greet.morning": ["Good morning", "सुप्रभात", "ಶುಭೋದಯ"],
   "home.greet.afternoon": ["Good afternoon", "नमस्ते", "ಶುಭ ಮಧ್ಯಾಹ್ನ"],
   "home.greet.evening": ["Good evening", "शुभ संध्या", "ಶುಭ ಸಂಜೆ"],
+  "home.figure": ["Sahay, your voice assistant", "सहाय, आपकी आवाज़ वाली सहायक", "ಸಹಾಯ್, ನಿಮ್ಮ ಧ್ವನಿ ಸಹಾಯಕ"],
   "home.assistant": ["Sahay is an automated assistant.", "सहाय एक स्वचालित सहायक है।", "ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ."],
   "home.state.ready": ["Ready", "तैयार", "ಸಿದ್ಧ"],
   "home.state.listening": ["Listening", "सुन रही है", "ಕೇಳುತ್ತಿದೆ"],

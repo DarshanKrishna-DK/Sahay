@@ -192,6 +192,7 @@ test("figure state, state word and greeting follow the call and the waiting deci
   assert.deepEqual(stateWord({ view: v({}), nowKey: "now.idle" }), { key: "home.state.ready", now: false, tone: "calm" });
   assert.equal(stateWord({ view: v({}), nowKey: "now.idle", waitingYes: 1 }).key, "home.state.waitingYes");
   assert.deepEqual(stateWord({ view: v({}), nowKey: "now.searching" }), { key: "now.searching", now: true, tone: "live" });
+  assert.equal(stateWord({ view: v({}), nowKey: "now.waitingYes", waitingYes: 0 }).key, "home.state.ready", "waiting comes only from the Needs-you rows");
   assert.equal(stateWord({ view: v({ status: "live", agentState: "listening" }), nowKey: "now.searching" }).key, "home.state.listening", "the call answers first");
   assert.equal(stateWord({ view: v({ status: "connecting", route: "proxy" }) }).key, "home.state.safer");
   assert.equal(stateWord({ view: v({ status: "error", error: { code: "network_blocked" } }) }).tone, "bad");

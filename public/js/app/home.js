@@ -13,7 +13,9 @@ import { t } from "./i18n.js";
 import "./home-strings.js";
 import { state } from "./store.js";
 import { sell, stock, loadSell, loadStock } from "./store-sell.js";
-import { needsRows, onNeedsRows, openNeeds, waitingCount, onCount, typedYesHint } from "./yes.js";
+// yes.js is imported here directly so Home never depends on boot order (W3 owns the decisions).
+import { needsRows, onNeedsRows, openNeeds, onCount, typedYesHint } from "./yes.js";
+import { createVoicebox } from "./voicebox.js";
 import { call, inCall, busy, startCall, endCall, setMuted, sendText, textSupported, resumeAudio, endServerCall, onLevels } from "./call.js";
 import { runningJobs, nowLine } from "./activity.js";
 import { speakButton } from "./speak.js";
@@ -30,38 +32,51 @@ if (!document.querySelector('link[href="/css/home.css"]')) {
 const online = () => navigator.onLine !== false;
 const MAX_TEXT = 500;
 
-/** The agent figure: voicebox.js when it loads, else a quiet empty box of the same size. */
+/**
+ * The agent figure (voicebox.js), the hero of Home: 168px on laptops, 144px on phones, 120px on
+ * short phones. If its art cannot load, the box keeps its size (empty) and the console says why.
+ */
+const FIG_QUERIES = ["(max-width: 767px)", "(max-height: 700px)"];
+function figureSize() {
+  if (matchMedia("(max-width: 767px)").matches) return matchMedia("(max-height: 700px)").matches ? 120 : 144;
+  return 168;
+}
 function createFigure() {
-  const host = h("div", { class: "hm-figure", "aria-hidden": "true" });
+  const host = h("div", { class: "hm-figure" });
   let box = null;
-  let wanted = { state: "idle", label: "" };
   let size = 0;
-  const pick = () => (matchMedia("(max-width: 767px) and (max-height: 700px)").matches ? 104
-    : matchMedia("(max-width: 767px)").matches ? 128
-    : matchMedia("(max-height: 760px)").matches ? 104 : 144);
-  async function mount() {
-    const want = pick();
-    if (want === size) return;
+  let current = "idle";
+  function mount() {
+    const want = figureSize();
+    if (want === size && box) return;
     size = want;
     host.style.setProperty("--fig", `${size}px`);
     if (box) { try { box.destroy(); } catch { /* gone */ } box = null; }
-    fill(host, h("span", { class: "hm-figure-blank" }));
     try {
-      const m = await import("./voicebox.js");
-      if (size !== want) return;
-      const b = m.createVoicebox({ size: want });
-      if (b.ready && typeof b.ready.catch === "function") b.ready.catch(() => { if (box === b) { fill(host, h("span", { class: "hm-figure-blank" })); box = null; } });
-      box = b;
-      fill(host, b.el);
-      b.setState(wanted.state);
-    } catch { /* no figure on this build: the blank box stays */ }
+      box = createVoicebox({ size, label: t("home.figure") });
+      host.replaceChildren(box.el);
+      box.setState(current);
+      box.ready.then(() => { host.dataset.load = "ready"; }, (err) => {
+        host.dataset.load = "error";
+        console.warn("Home: the voice box art did not load", err);
+      });
+    } catch (err) {
+      host.dataset.load = "error";
+      host.replaceChildren(h("span", { class: "hm-figure-blank" }));
+      console.warn("Home: the voice box could not be made", err);
+    }
   }
-  for (const q of ["(max-width: 767px)", "(max-height: 700px)", "(max-height: 760px)"]) matchMedia(q).addEventListener("change", mount);
+  for (const q of FIG_QUERIES) matchMedia(q).addEventListener("change", mount);
   mount();
   return {
     el: host,
-    set(st) { wanted.state = st; if (box) box.setState(st); host.dataset.state = st; },
+    set(st) {
+      current = st;
+      host.dataset.state = st;
+      if (box) { try { box.setState(st); } catch (err) { console.warn(err); } }
+    },
     level(n) { if (box) box.setLevel(n); },
+    relabel() { if (box && box.el) box.el.setAttribute("aria-label", t("home.figure")); },
   };
 }
 
@@ -78,7 +93,7 @@ export function createHome() {
   const assistant = h("p", { class: "hm-assistant" });
   const notes = h("div", { class: "hm-notes", hidden: true });
   const hero = h("section", { class: "hm-hero", "aria-labelledby": "hm-title" },
-    greet, h("div", { class: "hm-figure-row" }, figure.el, word), actions, typeLink, composer, assistant, notes);
+    greet, h("div", { class: "hm-figure-row" }, figure.el, word), h("div", { class: "hm-talk-row" }, actions, typeLink), composer, assistant, notes);
 
   /* ---- conversation (only during / just after a call, or after typing) ---- */
   const convoList = h("ol", { class: "hm-convo" });
@@ -112,7 +127,7 @@ export function createHome() {
     const text = input.value.trim();
     if (!text || call.sending) return;
     failedText = null;
-    typedYes = isTypedYes(text) && waitingCount() > 0 ? text : false;
+    typedYes = isTypedYes(text) && needsRows().length > 0 ? text : false;
     const ok = await sendText(text);
     if (ok) { input.value = ""; typed = true; } else { failedText = text; typedYes = false; }
     renderComposer();
@@ -168,7 +183,7 @@ export function createHome() {
   }
 
   function renderState(v) {
-    const waiting = waitingCount();
+    const waiting = needsRows().length; // the same rows the Needs you card lists
     figure.set(boxState(v, waiting));
     const n = nowLine();
     const w = stateWord({ view: v, nowKey: n.key, waitingYes: waiting });
@@ -330,12 +345,21 @@ export function createHome() {
     renderToday();
   }
 
+  /* ---- data for Today: the same loads Sell, Money and Stock use ---- */
+  const tried = { sell: false, stock: false };
+  function ensureData() {
+    if (state.boot !== "ready") return;
+    if (sell.status === "idle" || (sell.status === "error" && !tried.sell)) { tried.sell = sell.status === "error"; loadSell({ quiet: true }); }
+    if (stock.status === "idle" || (stock.status === "error" && !tried.stock)) { tried.stock = stock.status === "error"; loadStock({ quiet: true }); }
+  }
+
   /* ---- render ---- */
   function render(parts) {
+    ensureData();
     const all = parts.has("all") || parts.has("lang");
     if (all) { fill(cards); needsBody.__key = null; todayBody.__key = null; convo.__key = null; }
     const v = view();
-    if (all || parts.has("business")) renderGreeting();
+    if (all || parts.has("business")) { renderGreeting(); figure.relabel(); }
     renderState(v);
     if (all || parts.has("call") || parts.has("business") || parts.has("agent")) { renderActions(); renderNotes(); renderComposer(); }
     if (all || parts.has("call") || parts.has("transcript") || parts.has("business")) renderConvo();
@@ -360,14 +384,15 @@ export function createHome() {
   // The Yes card's state machine (yes.js) owns the waiting decisions; Home follows it.
   onNeedsRows(() => { renderNeeds(); renderState(view()); });
   onCount(() => renderState(view()));
+  ensureData();
 
   return {
     el,
     update: (_s, parts) => render(parts),
     enter() {
-      // Today reads sell and stock; load them quietly once (a failed load shows its own line).
-      if (sell.status === "idle") loadSell({ quiet: true });
-      if (stock.status === "idle") loadStock({ quiet: true });
+      // Today reads sell (bills, money in) and stock (low items): load them on every visit when
+      // they are not loaded yet; a failed load shows its own line with Try again.
+      ensureData();
       render(new Set(["all"]));
     },
     leave() { if (composerOpen) setComposer(false, false); },
