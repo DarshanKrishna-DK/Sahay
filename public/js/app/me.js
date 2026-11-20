@@ -4,7 +4,7 @@
 // the right.
 //   Teach   "Teach Sahay" starts a call in place with the teaching hint (D11); a suggested rule
 //           waits here as W3's Yes card (waiting.js renderCard, the only Yes-card renderer, D6);
-//           the constellation of rules and memories; a star opens its sheet (sentence, why,
+//           the Rules and Memory lists (Stitch 09); a row opens its sheet (sentence, why,
 //           read-aloud; a suggested rule's sheet holds its Yes card, an active rule can be
 //           forgotten, a memory is read only). Typed text never keeps a rule.
 //   Voice   language, speaking speed and the bargaining dial (PUT /api/agent/profile), each with
@@ -14,11 +14,10 @@
 //   History the timeline (history.js).
 
 import { h, icon, patch, scripted } from "./dom.js";
-import { t, LANGS, cityWord, lang as currentLang } from "./i18n.js";
+import { t, LANGS, lang as currentLang } from "./i18n.js";
 import * as store from "./store.js";
 import { state, loadAgent, updateProfile, decideRule, ownerLanguage, logout } from "./store.js";
 import { createTelegramLink } from "./orders.js";
-import { createThinkingOrb } from "./thinking-orb.js";
 import { passkeyAvailable, addPasskey, cancelled } from "./passkey.js";
 import { sell, loadSell } from "./store-sell.js";
 import { openShopSheet } from "./shop-settings.js";
@@ -29,7 +28,7 @@ import { speakButton } from "./speak.js";
 import { openSheet, closeSheet } from "./sheet.js";
 import { renderCard } from "./waiting.js";
 import { pageHead } from "./ui.js";
-import { renderSky, renderStarList, renderLegend, starWord, sentenceOf } from "./constellation.js";
+import { starWord, starIcon, sentenceOf } from "./star-words.js";
 import { createHistoryPanel } from "./history.js";
 import { ME_SECTIONS, sectionFromHash, sectionHash, STYLES, SPEEDS, dialKey, starItems } from "./me-logic.js";
 import { phoneLine } from "./auth-logic.js";
@@ -78,7 +77,6 @@ export function createMe() {
   body.append(...Object.values(panels));
   el.append(head, h("div", { class: "me-layout" }, tabs, body));
 
-  const skyOrb = createThinkingOrb({ size: 56, state: "idle" });
   const history = createHistoryPanel();
   panels.history.append(history.el);
 
@@ -95,12 +93,11 @@ export function createMe() {
   /* ------------------------------------------------------------ header -- */
   // v4 page head: display title, one plain line (the shop and its city), the primary action.
   function renderHead() {
-    const b = state.business || {};
-    patch(head, JSON.stringify([b.name, b.city, currentLang()]), () => {
-      const sub = b.name ? `${b.name}, ${b.city ? cityWord(b.city) : t("me3.noCity")}` : t("me3.pageSub");
+    patch(head, currentLang(), () => {
+      const sub = t("me3.pageSub");
       const node = pageHead({
         title: t("me.title"), sub,
-        actions: [h("button", { class: "keycap keycap-primary keycap-md", type: "button", on: { click: teach } }, icon("mic", 24), h("span", { text: t("me3.teachNow") }))],
+        actions: [h("button", { class: "keycap keycap-primary keycap-md", type: "button", on: { click: teach } }, icon("mic", 24), h("span", { text: t("me3.teachNew") }))],
       });
       const h1 = node.querySelector("h1");
       if (h1) h1.id = "me-title";
@@ -118,9 +115,7 @@ export function createMe() {
       },
       h("span", { class: "me-tab-ico", "aria-hidden": "true" }, icon(s.icon, 24),
         s.id === "teach" && waiting ? h("span", { class: "badge me-tab-badge", text: waiting > 9 ? "9+" : String(waiting) }) : null),
-      h("span", { class: "me-tab-text" },
-        h("span", { class: "me-tab-word", text: t(s.word) }),
-        h("span", { class: "me-tab-sub", text: t(`${s.word}.sub`) })))))));
+      h("span", { class: "me-tab-word", text: t(s.word) }))))));
   }
 
   function show(next, { focus = false } = {}) {
@@ -204,36 +199,95 @@ export function createMe() {
     setSheetBody(it);
   }
 
-  function renderTeach() {
-    const A = state.agent;
-    const code = ownerLanguage() || "en-IN";
-    const items = A.status === "ready" ? starItems([...A.rules.values()], [...A.memories.values()]) : [];
+  /* v4 (Stitch 09-mysahay): Rules and Memory are lists of cards (icon, sentence, why), with the
+     waiting suggestions as W3 Yes cards on top and, from 1024px, a side column: Sahay's promise
+     (nothing is ordered or paid without the owner's yes) and how to add a rule by voice. */
+  function freshKeys(items) {
     const fresh = new Set();
     for (const it of items) { const k = `${it.type}:${it.data.id}`; if (!seen.has(k)) { if (!firstStars) fresh.add(k); seen.add(k); } }
-    if (A.status === "ready") firstStars = false;
-    const waiting = items.filter((i) => i.type === "rule" && i.data.status === "suggested").length;
-    const key = JSON.stringify([A.status, items.map((i) => [i.type, i.data.id, i.data.status, i.data.sentence]), [...fresh], currentLang()]);
+    if (state.agent.status === "ready") firstStars = false;
+    return fresh;
+  }
+
+  async function forgetInline(it) {
+    const id = String(it.data.id);
+    ruleUi.set(id, { busy: "forget" });
+    renderRules(true);
+    try {
+      await decideRule(id, "forget");
+      ruleUi.delete(id);
+    } catch (err) {
+      ruleUi.set(id, { error: err.status === 409 ? t("me3.gone") : sayOf(err, "me.saveFail") });
+    }
+    renderRules(true);
+  }
+
+  function itemRow(it, fresh, code) {
+    const d = it.data;
+    const ui = ruleUi.get(String(d.id)) || {};
+    const why = d.why ? sentenceOf({ sentence: d.why }, code) : "";
+    const isNew = fresh.has(`${it.type}:${d.id}`);
+    const sub = why || (it.type === "memory" ? t("me3.legend.memory") : t("me3.legend.rule"));
+    return h("li", { class: `me-item${ui.busy ? " is-busy" : ""}` },
+      h("button", { class: "me-item-main", type: "button", on: { click: (e) => onPick(it, e.currentTarget) } },
+        h("span", { class: `me-item-ico is-${it.type}`, "aria-hidden": "true" }, icon(starIcon(it), 24)),
+        h("span", { class: "me-item-text" },
+          scripted("span", sentenceOf(d, code), { class: "me-item-title" }),
+          scripted("span", sub, { class: "me-item-sub" })),
+        isNew ? h("span", { class: "pill pill-ok me-item-new" }, h("span", { text: t("me3.new") })) : null),
+      it.type === "rule" && d.status === "active"
+        ? h("button", { class: "keycap keycap-ghost keycap-sm me-item-forget", type: "button", "aria-label": `${t("me3.forgetLong")}: ${sentenceOf(d, code)}`, "aria-busy": ui.busy ? "true" : undefined, disabled: ui.busy ? true : undefined, on: { click: () => forgetInline(it) } },
+          ui.busy ? busySpin() : icon("x", 20), h("span", { text: t("me.forget") }))
+        : null,
+      ui.error ? h("p", { class: "me-item-err" }, errLine(ui.error)) : null);
+  }
+
+  function sideColumn() {
+    return h("aside", { class: "me-side" },
+      h("article", { class: "card me-promise" },
+        h("p", { class: "t-label me-side-label" }, icon("shield", 20), h("span", { text: t("me3.promiseLabel") })),
+        h("h2", { class: "me-promise-title", text: t("me3.promiseTitle") }),
+        h("p", { class: "me-side-text", text: t("me3.promiseText") })),
+      h("article", { class: "card me-speak-card" },
+        h("p", { class: "t-label me-side-label" }, icon("mic", 20), h("span", { text: t("me3.speakLabel") })),
+        h("p", { class: "me-side-text" }, h("span", { text: `${t("me3.speakSay")} ` }), h("strong", { class: "me-say", text: t("me3.speakPhrase") }), h("span", { text: ` ${t("me3.speakOr")}` }))));
+  }
+
+  function listBlock({ label, text, count, items, fresh, code, empty }) {
+    return h("section", { class: "me-list" },
+      h("header", { class: "me-list-head" },
+        h("p", { class: "t-label me-list-label", text: label }),
+        h("p", { class: "me-list-text", text }),
+        h("p", { class: "me-list-count", text: count })),
+      items.length ? h("ul", { class: "me-items" }, ...items.map((it) => itemRow(it, fresh, code))) : empty);
+  }
+
+  function renderRules(force = false) {
+    if (force) panels.teach.__key = null;
+    const A = state.agent;
+    const code = ownerLanguage() || "en-IN";
+    const items = A.status === "ready" ? starItems([...A.rules.values()], []) : [];
+    const fresh = freshKeys(items);
+    const suggested = items.filter((i) => i.data.status === "suggested");
+    const active = items.filter((i) => i.data.status === "active");
+    const key = JSON.stringify([A.status, items.map((i) => [i.data.id, i.data.status, i.data.sentence, i.data.why]), [...fresh], [...ruleUi], currentLang()]);
     patch(panels.teach, key, () => {
-      const cta = h("article", { class: "card card-pad-lg me-teach" },
-        cardHead(t("me3.teachNow"), "spark"),
-        h("p", { class: "me-lead", text: t("me3.teachHow") }),
-        waiting ? h("p", { class: "pill pill-wait me-waiting" }, icon("clock", 18), h("span", { text: t(waiting === 1 ? "me3.waitingRules" : "me3.waitingRulesMany", { n: waiting }) })) : null);
       const gate = agentGate(A);
-      if (gate) return [cta, gate];
-      const suggested = items.filter((i) => i.type === "rule" && i.data.status === "suggested");
-      const cards = suggested.length ? h("section", { class: "me-waiting-cards", "aria-label": t("me3.legend.suggested") },
-        h("h2", { class: "section-title me-list-title" }, h("span", { text: t("me3.legend.suggested") })),
-        ...suggested.map((i) => renderCard({ key: `rule:${i.data.id}` }, { place: "inline" }))) : null;
-      if (!items.length) {
-        return [cta, cards, h("article", { class: "card me-sky-card" },
-          stateView({ kind: "empty", icon: "star", title: t("empty.rules.title"), text: t("empty.rules.text"), action: { label: t("me3.teach"), icon: "mic", run: teach }, compact: true }))];
+      const main = h("div", { class: "me-main" });
+      if (gate) main.append(gate);
+      else {
+        if (suggested.length) {
+          main.append(h("section", { class: "me-waiting-cards", "aria-label": t("me3.legend.suggested") },
+            h("p", { class: "t-label me-list-label me-waiting-label" }, icon("clock", 18), h("span", { text: t(suggested.length === 1 ? "me3.waitingRules" : "me3.waitingRulesMany", { n: suggested.length }) })),
+            ...suggested.map((i) => renderCard({ key: `rule:${i.data.id}` }, { place: "inline" }))));
+        }
+        main.append(listBlock({
+          label: t("me3.rulesLabel"), text: t("me3.rulesText"), count: t("me3.activeCount", { n: active.length }),
+          items: active, fresh, code,
+          empty: stateView({ kind: "empty", icon: "star", title: t("empty.rules.title"), text: t("empty.rules.text"), action: { label: t("me3.teachNow"), icon: "mic", run: teach }, compact: true }),
+        }));
       }
-      return [cta, h("article", { class: "card me-sky-card" },
-        cardHead(t("me.rulesTitle"), "star"),
-        renderSky(items, { langCode: code, onPick, fresh, orb: skyOrb.el }),
-        renderLegend(),
-        h("h3", { class: "section-title me-list-title", text: t("me3.list") }),
-        renderStarList(items, { langCode: code, onPick, fresh }))];
+      return h("div", { class: "me-split" }, main, sideColumn());
     });
     // An open sheet follows SSE (decided in another tab or by voice). A suggested rule's sheet
     // keeps its Yes card a moment so the owner sees it done, then closes.
@@ -245,6 +299,25 @@ export function createMe() {
         else setSheetBody({ type: "rule", data: now });
       }
     }
+  }
+
+  function renderMemory() {
+    const A = state.agent;
+    const code = ownerLanguage() || "en-IN";
+    const items = A.status === "ready" ? starItems([], [...A.memories.values()]) : [];
+    const fresh = freshKeys(items);
+    const key = JSON.stringify([A.status, items.map((i) => [i.data.id, i.data.sentence, i.data.why]), [...fresh], currentLang()]);
+    patch(panels.memory, key, () => {
+      const gate = agentGate(A);
+      const main = h("div", { class: "me-main" });
+      if (gate) main.append(gate);
+      else main.append(listBlock({
+        label: t("me3.memoryLabel"), text: t("me3.memoryText"), count: t("me3.memoryCount", { n: items.length }),
+        items, fresh, code,
+        empty: stateView({ kind: "empty", icon: "box", title: t("me3.memoryEmpty.title"), text: t("me3.memoryEmpty.text"), compact: true }),
+      }));
+      return h("div", { class: "me-split" }, main, sideColumn());
+    });
   }
 
   /* ------------------------------------------------------------- Voice -- */
@@ -466,7 +539,8 @@ export function createMe() {
     const all = parts.has("all") || parts.has("lang");
     if (all || parts.has("business")) renderHead();
     if (all || parts.has("agent")) renderTabs();
-    if (section === "teach" && (all || parts.has("agent"))) renderTeach();
+    if (section === "teach" && (all || parts.has("agent"))) renderRules();
+    else if (section === "memory" && (all || parts.has("agent"))) renderMemory();
     else if (all || parts.has("agent")) firstStarsSeen();
     if (section === "voice" && (all || parts.has("agent"))) renderVoice();
     if (section === "shop" && (all || parts.has("sell") || parts.has("orders") || parts.has("business") || parts.has("boot"))) renderShop();

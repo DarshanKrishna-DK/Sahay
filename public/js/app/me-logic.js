@@ -1,10 +1,12 @@
-// My Sahay rules with no DOM (tested in test/me-logic.test.js): its four sections and their
-// routes, the order rules and memories take in the constellation, star positions, and the checks
-// on the Telegram deep link before it ever becomes an href.
+// My Sahay rules with no DOM (tested in test/me-logic.test.js): its five sections and their
+// routes (Stitch 09-mysahay: Rules, Memory, Voice, Shop, History), the order rules and memories
+// are listed in, and the checks on the Telegram deep link before it ever becomes an href.
 
-/** Sections in order (spec 1.1 row 6, D4): route #/me/<id>, icon from dom.js ICONS. */
+/** Sections in order (spec 1.1 row 6, D4; v4 Stitch 09): route #/me/<id>, icon from dom.js ICONS.
+ *  "teach" keeps its route id (links and the shell use it) and is called Rules on screen. */
 export const ME_SECTIONS = [
-  { id: "teach", icon: "spark", word: "me3.teach" },
+  { id: "teach", icon: "star", word: "me3.rules" },
+  { id: "memory", icon: "box", word: "me3.memoryTab" },
   { id: "voice", icon: "speaker", word: "me3.voice" },
   { id: "shop", icon: "store", word: "me3.shop" },
   { id: "history", icon: "history", word: "me3.history" },
@@ -36,7 +38,7 @@ export function dialKey(key, index, count = STYLES.length) {
 }
 
 /**
- * Constellation items: suggested rules first (they wait for the owner), then active rules, then
+* List items: suggested rules first (they wait for the owner), then active rules, then
  * memories. Rules switched off are not stars. -> [{ type: "rule"|"memory", data }]
  */
 export function starItems(rules = [], memories = []) {
@@ -45,27 +47,6 @@ export function starItems(rules = [], memories = []) {
     .sort((a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1));
   return [...rs.map((d) => ({ type: "rule", data: d })), ...[...memories].filter(Boolean).map((d) => ({ type: "memory", data: d }))];
 }
-
-/**
- * Star positions in percent of a square box: up to 6 on the inner orbit, up to 10 more outside,
- * the rest are listed only (the list below the sky always holds every item).
- * -> [{ x, y, ring: 0|1 }] for the first min(n, 16) items.
- */
-export function starPositions(n) {
-  const out = [];
-  const inner = Math.min(n, 6);
-  const outer = Math.min(Math.max(n - 6, 0), 10);
-  for (let i = 0; i < inner; i++) {
-    const a = (-90 + (360 / inner) * i) * (Math.PI / 180);
-    out.push({ x: round(50 + 27 * Math.cos(a)), y: round(50 + 27 * Math.sin(a)), ring: 0 });
-  }
-  for (let i = 0; i < outer; i++) {
-    const a = (-90 + (360 / outer) * i + 180 / outer) * (Math.PI / 180);
-    out.push({ x: round(50 + 43 * Math.cos(a)), y: round(50 + 43 * Math.sin(a)), ring: 1 });
-  }
-  return out;
-}
-const round = (v) => Math.round(v * 100) / 100;
 
 /** A rule's or memory's sentence in the owner's language (object by language code, or one string). */
 export function sentenceOf(x, langCode) {

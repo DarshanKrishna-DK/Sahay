@@ -14,7 +14,7 @@ const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const W5_JS = ["me.js", "constellation.js", "history.js", "auth.js", "welcome.js", "boot-screens.js", "me-strings.js", "me-logic.js", "auth-logic.js", "history-lines.js"].map((f) => `public/js/app/${f}`);
+const W5_JS = ["me.js", "star-words.js", "history.js", "auth.js", "welcome.js", "boot-screens.js", "me-strings.js", "me-logic.js", "auth-logic.js", "history-lines.js"].map((f) => `public/js/app/${f}`);
 const W5_CSS = ["public/css/app-me.css", "public/css/app-auth.css", "public/css/pay.css"];
 
 /** Rows of an addStrings({...}) call: key -> [en, hi, kn]. */
