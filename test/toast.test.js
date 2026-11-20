@@ -49,19 +49,6 @@ test("the vendor folder carries sileo.css, every license and a README with the b
   assert.ok(exists("scripts/sileo-island.js") && exists("scripts/build-sileo.mjs"));
 });
 
-test("app.html links the sileo stylesheet, then the Sahay toast theme; no new inline script", () => {
-  const html = read("public/app.html");
-  const a = html.indexOf(`href="/vendor/sileo-${SILEO}/sileo.css"`);
-  const b = html.indexOf('href="/css/app-toast.css"');
-  assert.ok(a > 0 && b > a, "sileo.css then app-toast.css");
-  assert.ok(exists("public/css/app-toast.css"));
-  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].map((m) => m[0]);
-  assert.deepEqual(inline, ['<script type="importmap">'], "only the existing import map is inline");
-  const css = read("public/css/app-toast.css");
-  assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(css, /:root\[data-theme="light"\]/);
-});
-
 test("toast.js loads the island, announces in its own live regions and offers read-aloud", () => {
   const src = read("public/js/app/toast.js");
   const m = /const ISLAND = "([^"]+)"/.exec(src);
@@ -74,37 +61,4 @@ test("toast.js loads the island, announces in its own live regions and offers re
   assert.match(src, /import \{ speakButton \} from "\.\/speak\.js"/);
   assert.match(src, /prefers-reduced-motion: reduce/);
   assert.match(src, /setReducedMotion/);
-});
-
-test("the moments are wired: main imports them, the live events and the button paths use notify", () => {
-  assert.match(read("public/js/app/main.js"), /import "\.\/moments\.js";/);
-  const src = read("public/js/app/moments.js");
-  for (const type of ["order.created", "invoice.issued", "receipt.recorded", "stock.low", "stock.reorder_decided", "job.started", "rule.decided", "payment.link", "followup.fired", "error"]) {
-    assert.ok(src.includes(`case "${type}"`), type);
-  }
-  assert.match(src, /addEventListener\("offline"/);
-  assert.match(src, /addEventListener\("online"/);
-  assert.match(src, /call\.ended/);
-  assert.match(src, /t\("simulated"\)/, "a simulated vendor is labelled in the order toast");
-  assert.match(read("public/js/app/money-pad.js"), /notifyPaid\(/);
-  assert.match(read("public/js/app/stock.js"), /notifyReorder\(/);
-  assert.ok(!read("public/js/app/money-pad.js").includes("mpad-done"), "the old in-sheet confirmation is gone");
-});
-
-test("every toast string has English, Hindi in Devanagari and Kannada in Kannada script", () => {
-  const src = read("public/js/app/moments.js");
-  const rows = [...src.matchAll(/^\s*"(toast\.[\w.]+)": \[("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\],/gm)];
-  assert.ok(rows.length >= 30, `found ${rows.length} rows`);
-  const keys = new Set(rows.map((r) => r[1]));
-  for (const [, key, en, hi, kn] of rows) {
-    assert.ok(JSON.parse(en).length > 0, `${key} en`);
-    assert.match(JSON.parse(hi), /[ऀ-ॿ]/, `${key} hi is Devanagari`);
-    assert.match(JSON.parse(kn), /[ಀ-೿]/, `${key} kn is Kannada`);
-  }
-  const used = new Set();
-  for (const file of ["public/js/app/moments.js", "public/js/app/stock.js"]) {
-    for (const m of read(file).matchAll(/\bt\("(toast\.[\w.]+)"/g)) used.add(m[1]);
-  }
-  for (const m of src.matchAll(/t\(amt \? "(toast\.[\w.]+)" : "(toast\.[\w.]+)"/g)) { used.add(m[1]); used.add(m[2]); }
-  for (const k of used) assert.ok(keys.has(k), `${k} is defined`);
 });

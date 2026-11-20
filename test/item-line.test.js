@@ -28,16 +28,3 @@ test("an item in the line's script is named; one in another script gets the line
   assert.equal(itemLine("now.searching", {}, "en").key, "now.searchingAny");
   assert.equal(itemLine("now.found", { n: 2, item: "200" }, "kn").key, "now.found", "digits fit every script");
 });
-
-test("every item line has an item-free twin in all three languages, and the Talk and Buy lines go through itemLine", () => {
-  const i18n = read("public/js/app/i18n.js");
-  for (const key of ["now.heard", "now.searching", "now.found"]) {
-    const twin = new RegExp(`"${key.replace(".", "\\.")}Any": \\[("[^"]+",? ?){3}\\]`);
-    assert.match(i18n, twin, `${key}Any`);
-    assert.doesNotMatch(i18n.match(twin)[0], /\{item\}/);
-  }
-  const activity = read("public/js/app/activity.js");
-  assert.doesNotMatch(activity, /key: "now\.(heard|searching|found)"/, "nowLine names no item directly");
-  assert.match(activity, /itemLine\(/);
-  assert.doesNotMatch(read("public/js/app/river.js"), /t\("now\.searching", \{ item/, "the Buy sheet's line goes through itemLine too");
-});

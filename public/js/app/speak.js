@@ -26,6 +26,11 @@ export function stopSpeaking() {
   emit();
 }
 
+/** The read-aloud keys the server knows (src/agent/speak.js KEY); a card with one of these asks the
+ * server for its sentence, never the device voice. Kept identical to the server's list (test). */
+export const SERVER_KEY = /^(?:(?:now|customers|khata)|(?:rule|memory|approval|order|need|invoice|item|owed):[A-Za-z0-9_]{1,64})$/;
+export const isServerKey = (key) => SERVER_KEY.test(String(key));
+
 export class SpeakError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }

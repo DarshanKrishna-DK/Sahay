@@ -22,7 +22,7 @@ import * as store from "./store.js";
 import { state } from "./store.js";
 import { stock, rupeesOf } from "./store-sell.js";
 import { call } from "./call.js";
-import { money, qtyText, itemName } from "./sell-kit.js";
+import { money, qtyText, itemName } from "./format.js";
 import { safeUrl, num } from "./dom.js";
 import { notify, dismiss, preloadToasts } from "./toast.js";
 

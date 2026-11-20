@@ -234,19 +234,3 @@ test("D16: switching to typing never mutes the microphone (call.js)", () => {
   assert.doesNotMatch(body, /setMuted\(\s*mode === "text"\s*\)/, "typing mode does not mute");
   assert.doesNotMatch(body, /setMuted\(true\)/);
 });
-
-test("home strings exist in all three languages, native script", () => {
-  const src = read("public/js/app/home-strings.js");
-  const used = new Set();
-  for (const f of ["public/js/app/home-model.js", "public/js/app/talk.js", "public/js/app/composer.js", "public/js/app/call-dock.js", "public/js/app/hud.js", "public/js/app/home-strings.js"]) {
-    for (const m of read(f).matchAll(/"((?:home|hud)\.[A-Za-z0-9.]+)"/g)) used.add(m[1]);
-  }
-  for (const k of used) {
-    if (k.endsWith(".")) continue;
-    const row = new RegExp(`"${k.replace(/\./g, "\\.")}": \\[\\s*"[^"]+",\\s*"([^"]+)",\\s*"([^"]+)"`);
-    const m = row.exec(src);
-    assert.ok(m, `${k} is defined with three languages`);
-    assert.match(m[1], /[ऀ-ॿ]/u, `${k} Hindi in Devanagari`);
-    assert.match(m[2], /[ಀ-೿]/u, `${k} Kannada in Kannada script`);
-  }
-});

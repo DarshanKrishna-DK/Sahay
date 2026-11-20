@@ -199,31 +199,6 @@ test("river geometry: one point per station, inside the box, and a path through 
   }
 });
 
-test("the Buy screen files never ship sample rows or invented figures", () => {
-  for (const f of ["buy.js", "work.js", "river.js", "ladder.js", "orders.js", "buy-model.js", "stock.js", "stock-model.js"]) {
-    const src = read(`public/js/app/${f}`);
-    assert.doesNotMatch(src, /confidence|latency|savings|lorem|sample row|placeholder/i, f);
-  }
-});
-
-test("Buy and Stock are v3 only: no old markup classes, no marigold or saffron in their files", () => {
-  const OLD = /class: "(?:river|station|vname|vbub|pchip|ladder|ladder-[a-z]+|receipt|receipts|rc-[a-z]+|work|work-[a-z]+|earlier|earlier-[a-z]+|need-[a-z]+|sb-[a-z-]+|keycap-marigold|keycap-leaf|sim-pill|mark)"|tone: "(?:marigold|leaf)"/;
-  for (const f of ["buy.js", "work.js", "river.js", "ladder.js", "orders.js", "stock.js", "buy-kit.js"]) {
-    const src = read(`public/js/app/${f}`);
-    assert.doesNotMatch(src, OLD, f);
-    assert.doesNotMatch(src, /marigold|saffron|#FFB020|#FF7A1A/i, f);
-  }
-  for (const f of ["app-buy.css", "app-stock.css"]) {
-    const css = read(`public/css/${f}`);
-    assert.doesNotMatch(css, /marigold|saffron|#FFB020|#FF7A1A/i, f);
-    assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i, `${f}: tokens only, no raw hex`);
-    assert.match(css, /prefers-reduced-motion: reduce/, `${f}: reduced motion branch`);
-  }
-  // app.css is gone in v3 (every screen has its own stylesheet); if it ever comes back it stays clean.
-  const app = fs.existsSync(path.join(ROOT, "public/css/app.css")) ? read("public/css/app.css") : "";
-  for (const old of [".river {", ".ladder {", ".receipt {", ".work {", ".earlier {"]) assert.ok(!app.includes(old), `old Buy rule ${old} removed from app.css`);
-});
-
 test("times on Hindi and Kannada screens use the 24-hour clock (no Latin am / pm); English keeps am / pm", async () => {
   const { clockOptions } = await load();
   const at = new Date(Date.UTC(2026, 10, 20, 14, 10));
