@@ -2,12 +2,14 @@
 // Voice, Shop and History, at #/me/<section>. Phone, phone landscape and tablet: a segmented
 // control on top, the section below. Laptop and wide: the section list on the left, the body on
 // the right.
-//   Teach   "Teach Sahay" starts a call in place with the teaching hint (D11); the constellation of
-//           rules and memories; a star opens its sheet (sentence, why, read-aloud, keep / forget).
-//           Typed text never keeps a rule: only the spoken yes or the Yes button here.
+//   Teach   "Teach Sahay" starts a call in place with the teaching hint (D11); a suggested rule
+//           waits here as W3's Yes card (waiting.js renderCard, the only Yes-card renderer, D6);
+//           the constellation of rules and memories; a star opens its sheet (sentence, why,
+//           read-aloud; a suggested rule's sheet holds its Yes card, an active rule can be
+//           forgotten, a memory is read only). Typed text never keeps a rule.
 //   Voice   language, speaking speed and the bargaining dial (PUT /api/agent/profile), each with
 //           its own saving / saved / error.
-//   Shop    shop details and GST (W4B's shop sheet), Telegram link with the code, account: phone
+//   Shop    shop details and GST (W4B's shop sheet), Telegram link (W4A's createTelegramLink), account: phone
 //           (not verified, and why), add fingerprint, log out; a device-only shop makes an account.
 //   History the timeline (history.js).
 
@@ -15,7 +17,7 @@ import { h, icon, patch, scripted } from "./dom.js";
 import { t, LANGS, cityWord, lang as currentLang } from "./i18n.js";
 import * as store from "./store.js";
 import { state, loadAgent, updateProfile, decideRule, ownerLanguage, logout } from "./store.js";
-import * as api from "../api.js";
+import { createTelegramLink } from "./orders.js";
 import { createThinkingOrb } from "./thinking-orb.js";
 import { passkeyAvailable, addPasskey, cancelled } from "./passkey.js";
 import { sell, loadSell } from "./store-sell.js";
@@ -25,10 +27,10 @@ import { st } from "./sell-i18n.js";
 import { stateView } from "./empty.js";
 import { speakButton } from "./speak.js";
 import { openSheet, closeSheet } from "./sheet.js";
-import { yesNo } from "./ui.js";
+import { renderCard } from "./waiting.js";
 import { renderSky, renderStarList, renderLegend, starWord, sentenceOf } from "./constellation.js";
 import { createHistoryPanel } from "./history.js";
-import { ME_SECTIONS, sectionFromHash, sectionHash, STYLES, SPEEDS, dialKey, starItems, telegramLink } from "./me-logic.js";
+import { ME_SECTIONS, sectionFromHash, sectionHash, STYLES, SPEEDS, dialKey, starItems } from "./me-logic.js";
 import { phoneLine } from "./auth-logic.js";
 import { addStrings } from "./i18n.js";
 import "./me-strings.js";
@@ -87,7 +89,7 @@ export function createMe() {
   let firstStars = true;
   let sheet = null;
   const acct = { finger: null, busy: null, note: null, error: null };
-  const tg = { busy: false, error: null, off: false, link: null, code: null, until: null, blocked: false };
+  const tgLink = createTelegramLink(); // W4A owns its logic (not linked, opening, popup blocked, linked, not configured)
   passkeyAvailable().then((ok) => { acct.finger = ok; renderShop(true); });
 
   /* ------------------------------------------------------------ header -- */
@@ -146,13 +148,7 @@ export function createMe() {
       why ? h("div", { class: "me-why" }, h("p", { class: "me-why-label" }, icon("spark", 20), h("span", { text: t("me.why") })), scripted("p", why, { class: "me-why-text" })) : null,
     ];
     if (it.type === "memory") rows.push(noteLine(t("me3.memoryNote")));
-    else if (d.status === "suggested") {
-      rows.push(noteLine(t("me.voiceSays"), "shield"));
-      rows.push(yesNo({
-        onYes: () => decide(it, "keep"), onNo: () => decide(it, "forget"), busy: ui.busy || null,
-        yesWord: t("me.keep"), noWord: t("me.forget"), yesLabel: t("me3.keepLong"), noLabel: t("me3.forgetLong"), size: "md",
-      }));
-    } else if (d.status === "active") {
+    else if (d.status === "active") {
       rows.push(noteLine(t("me3.activeNote"), "check"));
       rows.push(h("div", { class: "me-sheet-actions" },
         h("button", { class: "keycap keycap-ghost keycap-md", type: "button", "aria-label": t("me3.forgetLong"), "aria-busy": ui.busy ? "true" : undefined, disabled: ui.busy ? true : undefined, on: { click: () => decide(it, "forget") } },
@@ -165,12 +161,18 @@ export function createMe() {
   function setSheetBody(it) {
     if (!sheet) return;
     sheet.it = it;
+    // A suggested rule is a decision: its sheet holds the Yes card itself (waiting.js), which
+    // follows the server from waiting to saving to done.
+    if (it.type === "rule" && it.data.status === "suggested") {
+      sheet.api.setBody([renderCard({ key: `rule:${it.data.id}` }, { place: "sheet" }), noteLine(t("me.voiceSays"), "shield")]);
+      return;
+    }
     sheet.api.setBody(ruleSheetBody(it, sheet.inlineSpeak));
   }
 
   async function decide(it, decision) {
     const id = String(it.data.id);
-    ruleUi.set(id, { busy: decision === "keep" ? "yes" : decision === "forget" && it.data.status === "suggested" ? "no" : "forget" });
+    ruleUi.set(id, { busy: "forget" });
     setSheetBody(it);
     try {
       await decideRule(id, decision);
@@ -215,8 +217,12 @@ export function createMe() {
         h("button", { class: "keycap keycap-primary keycap-lg keycap-block", type: "button", on: { click: teach } }, icon("mic", 26), h("span", { text: t("me3.teach") })));
       const gate = agentGate(A);
       if (gate) return [cta, gate];
+      const suggested = items.filter((i) => i.type === "rule" && i.data.status === "suggested");
+      const cards = suggested.length ? h("section", { class: "me-waiting-cards", "aria-label": t("me3.legend.suggested") },
+        h("h2", { class: "section-title me-list-title" }, h("span", { text: t("me3.legend.suggested") })),
+        ...suggested.map((i) => renderCard({ key: `rule:${i.data.id}` }, { place: "inline" }))) : null;
       if (!items.length) {
-        return [cta, h("article", { class: "card me-sky-card" },
+        return [cta, cards, h("article", { class: "card me-sky-card" },
           stateView({ kind: "empty", icon: "star", title: t("empty.rules.title"), text: t("empty.rules.text"), action: { label: t("me3.teach"), icon: "mic", run: teach }, compact: true }))];
       }
       return [cta, h("article", { class: "card me-sky-card" },
@@ -226,11 +232,13 @@ export function createMe() {
         h("h3", { class: "section-title me-list-title", text: t("me3.list") }),
         renderStarList(items, { langCode: code, onPick, fresh }))];
     });
-    // An open sheet follows SSE (decided in another tab or by voice).
+    // An open sheet follows SSE (decided in another tab or by voice). A suggested rule's sheet
+    // keeps its Yes card a moment so the owner sees it done, then closes.
     if (sheet && sheet.it.type === "rule") {
       const now = A.rules.get(String(sheet.it.data.id));
       if (now && now.status !== sheet.it.data.status) {
-        if (now.status === "off") closeRuleSheet();
+        if (sheet.it.data.status === "suggested") { const s0 = sheet; s0.it = { type: "rule", data: now }; setTimeout(() => { if (sheet === s0) closeRuleSheet(); }, 1800); }
+        else if (now.status === "off") closeRuleSheet();
         else setSheetBody({ type: "rule", data: now });
       }
     }
@@ -355,56 +363,13 @@ export function createMe() {
       btn);
   }
 
-  async function linkTelegram() {
-    let win = null;
-    try { win = window.open("", "_blank"); } catch { win = null; }
-    Object.assign(tg, { busy: true, error: null, off: false, link: null, code: null, until: null, blocked: false });
-    renderShop(true);
-    try {
-      const r = await api.telegramLinkCode();
-      const url = telegramLink(r);
-      if (!url) throw Object.assign(new Error("no link"), { code: "TELEGRAM_NOT_CONFIGURED" });
-      tg.link = url;
-      tg.code = r && typeof r.code === "string" ? r.code : null;
-      tg.until = r && r.expiresAt ? new Date(r.expiresAt) : null;
-      if (win && !win.closed) { try { win.opener = null; } catch { /* ignore */ } win.location.href = url; tg.blocked = false; } else tg.blocked = true;
-    } catch (err) {
-      if (win && !win.closed) win.close();
-      if (err && (err.code === "TELEGRAM_NOT_CONFIGURED" || err.status === 503)) tg.off = true;
-      else tg.error = sayOf(err, "me3.tgFail");
-    }
-    tg.busy = false;
-    renderShop(true);
-  }
-
   function telegramCard() {
     const linked = state.telegramLinked;
-    const parts = [cardHead(t("me3.tg"), "send")];
-    if (linked) {
-      parts.push(h("p", { class: "me-ok-line", role: "status" }, h("span", { class: "me-ok-mark", "aria-hidden": "true" }, icon("check", 22)),
-        h("span", {}, h("strong", { text: t("me3.tgOn") }), h("span", { class: "me-ok-sub", text: ` ${t("me3.tgOnSub")}` }))));
-      return h("article", { class: "card me-tg-card is-linked" }, ...parts);
-    }
-    parts.push(h("p", { class: "me-card-why", text: t("me3.tgWhy") }));
-    if (tg.off) {
-      parts.push(noteLine(t("me3.tgOff")));
-      return h("article", { class: "card me-tg-card" }, ...parts);
-    }
-    if (tg.link) {
-      const until = tg.until && !Number.isNaN(tg.until.getTime()) ? tg.until.toLocaleTimeString(currentLang() === "hi" ? "hi-IN" : currentLang() === "kn" ? "kn-IN" : "en-IN", { hour: "numeric", minute: "2-digit" }) : null;
-      parts.push(
-        h("p", { class: "note-line", role: "status" }, icon("info", 20), h("span", { text: tg.blocked ? t("me3.tgBlocked") : t("me3.tgPress") })),
-        h("a", { class: `keycap ${tg.blocked ? "keycap-primary" : "keycap-secondary"} keycap-md keycap-block`, href: tg.link, target: "_blank", rel: "noopener noreferrer" }, icon("external", 22), h("span", { text: t("me3.tgOpen") })),
-        tg.code ? h("div", { class: "me-code" },
-          h("p", { class: "me-code-label", text: t("me3.tgCode") }),
-          h("p", { class: "me-code-value", translate: "no" }, h("span", { text: `/start ${tg.code}` })),
-          until ? h("p", { class: "me-code-until" }, icon("clock", 18), h("span", { text: t("me3.tgUntil", { time: until }) })) : null) : null);
-      return h("article", { class: "card me-tg-card" }, ...parts);
-    }
-    parts.push(h("button", { class: "keycap keycap-primary keycap-md keycap-block", type: "button", "aria-busy": tg.busy ? "true" : undefined, disabled: tg.busy ? true : undefined, on: { click: linkTelegram } },
-      tg.busy ? busySpin() : icon("send", 22), h("span", { text: tg.busy ? t("me3.tgOpening") : t("me3.tgLink") })));
-    if (tg.error) parts.push(errLine(tg.error));
-    return h("article", { class: "card me-tg-card" }, ...parts);
+    tgLink.update();
+    return h("article", { class: `card me-tg-card${linked ? " is-linked" : ""}` },
+      cardHead(t("me3.tg"), "send"),
+      linked ? h("p", { class: "me-card-why", text: t("me3.tgOnSub") }) : h("p", { class: "me-card-why", text: t("me3.tgWhy") }),
+      tgLink.el);
   }
 
   async function onAddFinger() {
@@ -459,7 +424,7 @@ export function createMe() {
 
   function renderShop(force = false) {
     if (force) panels.shop.__key = null;
-    const key = JSON.stringify([sell.status, sell.settings, state.telegramLinked, tg, state.account, state.accounts, acct, currentLang()]);
+    const key = JSON.stringify([sell.status, sell.settings, state.telegramLinked, state.account, state.accounts, acct, currentLang()]);
     patch(panels.shop, key, () => [shopCard(), telegramCard(), accountCard()].filter(Boolean));
   }
 

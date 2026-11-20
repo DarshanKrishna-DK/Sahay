@@ -71,7 +71,7 @@ test("My Sahay has the four sections at #/me/<id>; Teach starts the call in plac
   assert.match(me, /sahay:talk[\s\S]{0,80}talk\.teachHint/);
   assert.doesNotMatch(me, /location\.hash = "#\/talk"/, "no jump to another screen to teach");
   assert.match(me, /openShopSheet/, "shop details open W4B's sheet");
-  assert.match(me, /telegramLinkCode/);
+  assert.match(me, /createTelegramLink\(\)/, "Telegram link is W4A's component (D4), not a fork");
   assert.match(me, /me3\.notVerified/, "the account says the phone is not verified");
   assert.match(me, /decideRule/);
 });
