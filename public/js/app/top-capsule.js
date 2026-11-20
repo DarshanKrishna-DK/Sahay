@@ -37,8 +37,9 @@ export function createTopCapsule({ onWaiting }) {
       shop.title = "";
     }
     shop.hidden = !name;
-    live.dataset.state = m.stream || "connecting";
-    live.querySelector(".cap-live-text").textContent = t(`live.${m.stream || "connecting"}`);
+    const st = m.offline ? "offline" : (m.stream || "connecting");
+    live.dataset.state = st;
+    live.querySelector(".cap-live-text").textContent = m.offline ? t("shell.offlineShort") : t(`live.${st}`);
     const n = Number(m.waiting) || 0;
     wait.hidden = n <= 0;
     wait.querySelector(".cap-wait-n").textContent = badgeText(n);

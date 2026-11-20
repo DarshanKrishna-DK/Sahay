@@ -271,8 +271,8 @@ function watchCall() {
 
 let offlineShown = false;
 function offline() {
+  // D15: the shell's sticky banner under the capsule says it (no toast on top of the titles).
   offlineShown = true;
-  notify({ id: "net:offline", replace: true, tone: "warning", icon: "wifi", title: t("toast.offline.title"), body: t("toast.offline.body"), duration: null });
 }
 function online() {
   if (!offlineShown) return;

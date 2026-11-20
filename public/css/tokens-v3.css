@@ -60,6 +60,11 @@
   --glass-rim: linear-gradient(150deg, rgba(255, 255, 255, .42), rgba(182, 242, 60, .30) 38%, rgba(255, 255, 255, .06) 70%, rgba(182, 242, 60, .16));
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .35);
   --glass-shadow: 0 24px 60px -22px rgba(0, 0, 0, .85), 0 2px 0 rgba(0, 0, 0, .4);
+  /* Nav glass (sidebar, dock): a light blur so the hex dots stay visible through it (owner). */
+  --glass-nav-fill: rgba(14, 17, 11, .34);
+  --glass-nav-blur: blur(2.5px) saturate(150%);
+  --glass-dock-fill: rgba(12, 15, 9, .62);
+  --glass-dock-blur: blur(7px) saturate(150%);
 
   /* ------------------------------------------------------------ piano surface -- */
   --piano-surface:
@@ -174,7 +179,7 @@
 
   /* ------------------------------------------------------------ hex-dot field -- */
   --hex-rgb: 182, 242, 60;
-  --hex-alpha: .2;       /* <= .22: text sits over it */
+  --hex-alpha: .22;      /* <= .22: text sits over it */
   --hex-pitch: 22;       /* px between dot centres (unitless: read by hex-field.js) */
   --hex-dot: 1.15;       /* dot radius px */
 
@@ -189,8 +194,9 @@
   --dock-h: 68px;
   --dock-gap: 12px;
   --dock-orb: 64px;
-  --dock-lift: 18px;
+  --dock-lift: 22px;    /* the orb rises 22px over the dock's crest, its word sits on the dock's baseline */
   --capsule-h: 56px;
+  --content-top: calc(8px + var(--safe-t) + var(--top-zone-h, 64px) + 12px); /* first y a sticky screen element may use */
   --agent-col: 380px;
   --content-max: 1120px;
   --pad-x: 16px;
@@ -216,7 +222,7 @@
   }
 }
 
-@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 92px; } }
+@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 92px; --content-top: calc(28px + var(--safe-t) + var(--capsule-h) + 12px); } }
 @media (min-width: 1024px) { :root { --pad-x: 32px; } }
 @media (min-width: 1280px) { :root { --nav-w: 112px; } }
 @media (min-width: 1600px) { :root { --agent-col: 420px; } }
@@ -229,7 +235,7 @@
     --text-hi: #12160D; --text-md: #2E3526; --text-lo: #4A5340; --text-faint: #6B7560;
     --accent-text: var(--lime-800); --ok-text: var(--lime-800);
     --coral: #E5483A; --coral-text: #B42318; --amber: #D99A12; --amber-text: #8A5A00; --cyan: #1BA9C2; --cyan-text: #0B6F82;
-    --glass-fill: rgba(250, 252, 246, .62); --glass-fill-strong: rgba(250, 252, 246, .95);
+    --glass-fill: rgba(250, 252, 246, .62); --glass-fill-strong: rgba(250, 252, 246, .95); --glass-nav-fill: rgba(250, 252, 246, .42); --glass-dock-fill: rgba(250, 252, 246, .72);
     --glass-tint: linear-gradient(180deg, rgba(255, 255, 255, .7), rgba(255, 255, 255, .25) 60%);
     --glass-rim: linear-gradient(150deg, rgba(255, 255, 255, .95), rgba(93, 140, 5, .35) 40%, rgba(18, 22, 13, .12) 72%, rgba(93, 140, 5, .2));
     --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -1px 0 rgba(18, 22, 13, .08);
@@ -259,7 +265,7 @@
   --text-hi: #12160D; --text-md: #2E3526; --text-lo: #4A5340; --text-faint: #6B7560;
   --accent-text: var(--lime-800); --ok-text: var(--lime-800);
   --coral: #E5483A; --coral-text: #B42318; --amber: #D99A12; --amber-text: #8A5A00; --cyan: #1BA9C2; --cyan-text: #0B6F82;
-  --glass-fill: rgba(250, 252, 246, .62); --glass-fill-strong: rgba(250, 252, 246, .95);
+  --glass-fill: rgba(250, 252, 246, .62); --glass-fill-strong: rgba(250, 252, 246, .95); --glass-nav-fill: rgba(250, 252, 246, .42); --glass-dock-fill: rgba(250, 252, 246, .72);
   --glass-tint: linear-gradient(180deg, rgba(255, 255, 255, .7), rgba(255, 255, 255, .25) 60%);
   --glass-rim: linear-gradient(150deg, rgba(255, 255, 255, .95), rgba(93, 140, 5, .35) 40%, rgba(18, 22, 13, .12) 72%, rgba(93, 140, 5, .2));
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -1px 0 rgba(18, 22, 13, .08);

@@ -39,6 +39,7 @@ let agentLabel = "";
 let action = null;
 let shopName = "";
 let stream = "connecting";
+let offline = typeof navigator !== "undefined" && navigator.onLine === false;
 let mounted = false;
 let langSaver = null;
 
@@ -113,7 +114,12 @@ function placeSlots() {
   if (place === "column") { if (dockSlot.parentNode !== agentColumn) agentColumn.prepend(dockSlot); }
   else if (dockSlot.parentNode !== floatHost) floatHost.append(dockSlot);
   floatHost.dataset.place = place;
-  waitingPill.dataset.place = current.columnShown ? "column" : s === "phone" || s === "phoneLand" ? "capsule" : "corner";
+  // Waiting pill: under the capsule on phones; inside the top strip's own flow on tablet and
+  // 1024-1279 (never over the notice); hidden at 1280+ where the tray lives in the agent column.
+  const pillPlace = current.columnShown ? "column" : s === "phone" || s === "phoneLand" ? "capsule" : "strip";
+  waitingPill.dataset.place = pillPlace;
+  if (pillPlace === "strip") { if (waitingPill.parentNode !== capsule.el) capsule.el.append(waitingPill); }
+  else if (waitingPill.parentNode !== topZone) topZone.append(waitingPill);
 }
 
 export function onLayout(fn) {
@@ -149,6 +155,8 @@ function watchOnline() {
       }
       offlineBanner.querySelector(".banner-text").textContent = t("shell.offline");
     } else if (offlineBanner) { offlineBanner.remove(); offlineBanner = null; }
+    offline = navigator.onLine === false;
+    render();
   };
   window.addEventListener("online", sync);
   window.addEventListener("offline", sync);
@@ -204,7 +212,7 @@ function render() {
   };
   nav.update(model);
   dock.update(model);
-  capsule.update({ shopName, stream, waiting: badges.waiting, route, action });
+  capsule.update({ shopName, stream, offline, waiting: badges.waiting, route, action });
 }
 
 /* --------------------------------------------------------------- API -- */

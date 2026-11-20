@@ -12,7 +12,7 @@
 /* ============================================================ layout -- */
 /* Phone portrait first. */
 .shell-body { position: relative; }
-.shell-content { min-width: 0; }
+.shell-content { min-width: 0; width: 100%; }
 #main {
   display: block; min-height: 60dvh;
   padding: calc(8px + var(--safe-t) + var(--top-zone-h, 64px) + 16px) calc(var(--pad-x) + var(--safe-r))
@@ -30,19 +30,27 @@
   display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
 }
 .top-zone > * { pointer-events: auto; }
+/* A soft piano fade behind the floating capsule, so scrolled text never reads through it. */
+.top-zone::before {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  left: -16px; right: -16px; top: calc(-40px - var(--safe-t)); bottom: -14px;
+  background: linear-gradient(to bottom, var(--piano-0) 0, var(--piano-0) 62%, transparent);
+  opacity: .94;
+}
 .top-capsule {
   display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px;
   min-height: var(--capsule-h); padding: 4px 4px 4px 6px; border-radius: var(--r-pill);
 }
 .cap-notice {
-  order: 0; flex: 0 1 auto; min-width: 0; max-width: 58%;
+  order: 0; flex: 0 0 auto; min-width: 0; max-width: none; /* never truncates; the shop name does */
   display: inline-flex; align-items: center; gap: 6px;
   min-height: 40px; padding: 3px 12px 3px 4px; border-radius: var(--r-pill);
   background: rgba(79, 209, 232, .10); border: 1px solid rgba(79, 209, 232, .38);
   color: var(--text-hi); font-size: var(--fs-sm); font-weight: 600; line-height: 1.2;
 }
 .cap-notice-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; flex: none; background: rgba(79, 209, 232, .16); color: var(--cyan-text); }
-.cap-notice-short { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cap-notice-short { white-space: nowrap; }
+@media (max-width: 399px) { .cap-shop { display: none; } } /* narrow phones: notice, live dot, avatar */
 .cap-notice-long { display: none; }
 .cap-main { order: 1; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 4px; }
 .cap-shop { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 650; font-size: var(--fs-sm); }
@@ -55,6 +63,8 @@
 [data-state="connecting"] > .live-dot, [data-state="reconnecting"] > .live-dot { background: var(--amber); }
 [data-state="closed"] > .live-dot { background: transparent; border: 2px solid var(--coral); }
 .cap-live[data-state="closed"] { color: var(--coral-text); }
+[data-state="offline"] > .live-dot { background: var(--text-faint); box-shadow: none; }
+.cap-live[data-state="offline"] { color: var(--text-lo); }
 .cap-action { order: 2; display: none; }
 .cap-wait {
   order: 3; flex: none; display: inline-flex; align-items: center; gap: 6px;
@@ -79,6 +89,11 @@
 .waiting-pill-slot:empty { display: none; }
 .waiting-pill-slot[data-place="corner"] { position: fixed; z-index: var(--z-pill); top: calc(16px + var(--safe-t)); right: calc(16px + var(--safe-r)); }
 .waiting-pill-slot[data-place="column"] { display: none; }
+/* Tablet and 1024-1279: the pill is part of the strip's own row (never over the notice). */
+.waiting-pill-slot[data-place="strip"] { order: 5; flex: none; display: flex; align-items: center; }
+@media (max-width: 1023px) {
+  .waiting-pill-slot[data-place="strip"] .wt-pill-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
 
 /* =========================================================== nav dock -- */
 .nav-dock {
@@ -92,8 +107,8 @@
 :root[data-theme="light"] .dock-shadow path { fill: rgba(30, 40, 15, .25); }
 .dock-glass {
   position: absolute; inset: 0;
-  background: var(--glass-tint), var(--glass-fill);
-  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  background: var(--glass-tint), var(--glass-dock-fill);
+  -webkit-backdrop-filter: var(--glass-dock-blur); backdrop-filter: var(--glass-dock-blur);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .dock-glass { background: var(--glass-fill-strong); } }
 .dock-rim path { fill: none; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
@@ -124,23 +139,24 @@
 .dk-item:focus-visible, .dk-orb:focus-visible { box-shadow: var(--focus-ring); }
 .dk-badge, .nj-badge { position: absolute; top: -6px; right: -4px; }
 .dk-orb {
-  position: absolute; left: 50%; top: calc(-1 * var(--dock-lift)); width: calc(var(--dock-orb) + 16px); margin-left: calc((var(--dock-orb) + 16px) / -2);
-  display: flex; flex-direction: column; align-items: center; gap: 2px; text-decoration: none; color: var(--text-lo);
-  border-radius: var(--r-lg); -webkit-tap-highlight-color: transparent;
+  position: absolute; left: 50%; top: calc(-1 * var(--dock-lift)); height: calc(var(--dock-h) + var(--dock-lift));
+  width: calc(var(--dock-orb) + 16px); margin-left: calc((var(--dock-orb) + 16px) / -2);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding-bottom: 8px;
+  text-decoration: none; color: var(--text-lo); border-radius: var(--r-lg); -webkit-tap-highlight-color: transparent;
 }
 .dk-orb-ball {
-  position: relative; display: grid; place-items: center; width: var(--dock-orb); height: var(--dock-orb); border-radius: 50%;
+  position: relative; display: grid; place-items: center; width: var(--dock-orb); height: var(--dock-orb); border-radius: 50%; flex: none;
   border: 1.5px solid transparent;
   background: var(--piano-surface) padding-box, linear-gradient(160deg, var(--lime-200), var(--lime-700) 70%) border-box;
-  box-shadow: var(--depth), 0 10px 26px -8px rgba(182, 242, 60, .45);
+  box-shadow: var(--depth), 0 0 18px -6px rgba(182, 242, 60, .5);
   transition: transform var(--t-micro) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
 }
 .dk-orb:active .dk-orb-ball { transform: translateY(2px) scale(.96); box-shadow: var(--press); }
 .dk-orb .dk-badge { top: -2px; right: -2px; }
-.dk-orb-word { font-size: var(--fs-xs); font-weight: 650; line-height: 1.2; }
+.dk-orb-word { font-size: var(--fs-xs); font-weight: 650; line-height: 1.2; white-space: nowrap; }
 .dk-orb[aria-current="page"] { color: var(--text-hi); }
 [data-agent="listening"] .dk-orb-ball, [data-agent="speaking"] .dk-orb-ball,
-.dk-orb[data-agent="listening"] .dk-orb-ball, .dk-orb[data-agent="speaking"] .dk-orb-ball { box-shadow: var(--depth), 0 0 0 4px rgba(182, 242, 60, .28), 0 10px 30px -6px rgba(182, 242, 60, .6); }
+.dk-orb[data-agent="listening"] .dk-orb-ball, .dk-orb[data-agent="speaking"] .dk-orb-ball { box-shadow: var(--depth), 0 0 0 4px rgba(182, 242, 60, .28), 0 0 22px -4px rgba(182, 242, 60, .6); }
 .dk-orb[data-agent="connecting"] .dk-orb-ball { box-shadow: var(--depth), 0 0 0 4px rgba(242, 193, 78, .3); }
 
 /* Call dock slot: on phones it rides above the orb, attached like a speech bubble. */
@@ -174,8 +190,8 @@
 :root[data-theme="light"] .nj-shadow path { fill: rgba(30, 40, 15, .22); }
 .nj-glass {
   position: absolute; inset: 0;
-  background: var(--glass-tint), var(--glass-fill);
-  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  background: linear-gradient(90deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .015) 70%), var(--glass-nav-fill);
+  -webkit-backdrop-filter: var(--glass-nav-blur); backdrop-filter: var(--glass-nav-blur);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .nj-glass { background: var(--glass-fill-strong); } }
 .nj-rim path { fill: none; stroke-width: 1.25; }
@@ -238,7 +254,7 @@
 .nj-foot { position: relative; z-index: 1; width: var(--nj-body); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .nj-me { display: flex; flex-direction: column; align-items: center; gap: 3px; text-decoration: none; color: var(--text-lo); border-radius: var(--r-md); padding: 2px; max-width: 100%; }
 .nj-avatar {
-  position: relative; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
   border: 1px solid transparent; background: var(--piano-surface) padding-box, var(--piano-rim) border-box; color: var(--text-hi);
   box-shadow: var(--depth-soft);
 }
@@ -311,7 +327,6 @@
   .nj-ico { height: 32px; width: 48px; }
   .nj-marker { width: 48px; height: 32px; }
   .nj-foot { width: var(--rail-w); }
-  .nj-avatar { width: 40px; height: 40px; }
   .shell-body { padding-left: calc(8px + var(--rail-w) + 16px + var(--safe-l)); padding-right: calc(16px + var(--safe-r)); }
   .top-zone { position: sticky; top: 8px; left: auto; right: auto; padding-top: 8px; align-items: stretch; }
   .top-capsule { max-width: none; min-height: 52px; }

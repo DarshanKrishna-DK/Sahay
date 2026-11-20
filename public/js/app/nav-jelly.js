@@ -37,7 +37,8 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
   const rimGlow = svgEl("path", { class: "nj-rim-glow", stroke: `url(#${gid})` });
   rim.append(defs, rimGlow, rimPath);
 
-  const orb = createThinkingOrb({ size: 56, state: "idle" });
+  // The socket is a dark well in both themes, so the orb always paints its dark-theme lime.
+  const orb = createThinkingOrb({ size: 56, state: "idle", theme: "dark" });
   const orbBadge = h("span", { class: "badge nj-badge", hidden: true, "aria-hidden": "true" });
   const orbLink = h("a", { class: "nj-orb", href: "#/sahay", dataset: { route: "sahay" } },
     h("span", { class: "nj-socket", "aria-hidden": "true" }, orb.el, orbBadge),

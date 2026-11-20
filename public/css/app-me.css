@@ -50,7 +50,7 @@
 
 @media (min-width: 1024px) {
   .me-layout { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: var(--s-6); align-items: start; }
-  .me-tabs { position: sticky; top: calc(var(--s-5) + var(--safe-t)); }
+  .me-tabs { position: sticky; top: var(--content-top, 96px); }
   .me-tablist { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--r-card); }
   .me-tab { flex-direction: row; justify-content: flex-start; gap: var(--s-3); min-height: 72px; padding: 10px 14px; text-align: left; border-radius: var(--r-md); }
   .me-tab .me-tab-ico { width: 44px; height: 44px; border-radius: 50%; background: var(--piano-3); border: 1px solid var(--hairline); color: var(--accent-text); flex: none; }

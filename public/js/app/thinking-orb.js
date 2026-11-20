@@ -42,7 +42,7 @@ function isDark() {
  * dark and light themes (lime / deep olive by default, tokens --lime and --lime-800).
  * The canvas is decorative unless `label` is given (then role="img" with that name).
  */
-export function createThinkingOrb({ size = 64, state = "idle", color = "#B6F23C", lightColor = "#415F04", label } = {}) {
+export function createThinkingOrb({ size = 64, state = "idle", color = "#B6F23C", lightColor = "#415F04", label, theme = "auto" } = {}) {
   const el = document.createElement("canvas");
   el.className = "torb";
   if (label) { el.setAttribute("role", "img"); el.setAttribute("aria-label", label); } else el.setAttribute("aria-hidden", "true");
@@ -53,7 +53,8 @@ export function createThinkingOrb({ size = 64, state = "idle", color = "#B6F23C"
   let css = size;
   let agentState = state;
   let mode = null, speed = 1, opts = null, speedMul = 1;
-  let raf = 0, running = false, visible = true, dark = isDark();
+  const darkNow = () => (theme === "dark" ? true : theme === "light" ? false : isDark());
+  let raf = 0, running = false, visible = true, dark = darkNow();
 
   function configure() {
     const r = resolvePreset(orbStateFor(agentState), BASE);
@@ -90,7 +91,7 @@ export function createThinkingOrb({ size = 64, state = "idle", color = "#B6F23C"
   if (io) io.observe(el);
   const onVis = () => { if (document.visibilityState === "hidden") stop(); else start(); };
   document.addEventListener("visibilitychange", onVis);
-  const onTheme = () => { dark = isDark(); redraw(); };
+  const onTheme = () => { dark = darkNow(); redraw(); };
   const mo = new MutationObserver(onTheme);
   mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   const mq = matchMedia("(prefers-color-scheme: light)");
