@@ -45,6 +45,11 @@ addStrings({
   "me3.style.tough.sub": ["Pushes hard for the lowest price", "सबसे कम दाम के लिए ज़ोर", "ಅತಿ ಕಡಿಮೆ ಬೆಲೆಗೆ ಒತ್ತಾಯ"],
   "me3.speed.slow.sub": ["Clear and slow", "साफ़ और धीरे", "ಸ್ಪಷ್ಟ ಮತ್ತು ನಿಧಾನ"],
   "me3.speed.normal.sub": ["Everyday pace", "रोज़ की रफ़्तार", "ದಿನನಿತ್ಯದ ವೇಗ"],
+  "me3.themeTitle": ["Screen colour", "स्क्रीन का रंग", "ಪರದೆಯ ಬಣ್ಣ"],
+  "me3.theme.dark": ["Dark", "गहरा", "ಗಾಢ"],
+  "me3.theme.light": ["Light", "हल्का", "ತಿಳಿ"],
+  "me3.theme.dark.sub": ["Easy on the eyes at night", "रात में आँखों को आराम", "ರಾತ್ರಿ ಕಣ್ಣಿಗೆ ಹಿತ"],
+  "me3.theme.light.sub": ["Clear in bright sunlight", "तेज़ धूप में साफ़", "ಬಿಸಿಲಿನಲ್ಲಿ ಸ್ಪಷ್ಟ"],
   "me3.voiceNote": ["Changes apply from your next call.", "बदलाव अगली कॉल से लागू होंगे।", "ಬದಲಾವಣೆಗಳು ಮುಂದಿನ ಕರೆಯಿಂದ ಜಾರಿಗೆ ಬರುತ್ತವೆ."],
 
   "me3.shopCard": ["Shop details and GST", "दुकान की जानकारी और GST", "ಅಂಗಡಿ ವಿವರ ಮತ್ತು GST"],

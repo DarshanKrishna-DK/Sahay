@@ -301,13 +301,42 @@ export function createMe() {
         h("span", { class: "me-dial-sub", text: t(`me3.style.${s}.sub`) })))));
   }
 
+  /* Screen colour (dark / light), saved on this device. The shell's toggleTheme when it has one. */
+  const themeNow = () => {
+    const d = document.documentElement.dataset.theme;
+    if (d === "dark" || d === "light") return d;
+    return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  };
+  function setTheme(next) {
+    if (themeNow() === next) return;
+    import("./shell.js").then((m) => {
+      if (m && typeof m.toggleTheme === "function") m.toggleTheme();
+      else throw new Error("no toggle");
+    }).catch(() => {
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("sahay-theme", next); } catch { /* storage blocked */ }
+    }).finally(() => { panels.voice.__key = null; renderVoice(); });
+  }
+  function themeCard() {
+    const cur = themeNow();
+    return h("article", { class: "card me-voice-card" },
+      cardHead(t("me3.themeTitle"), cur === "dark" ? "moon" : "sun"),
+      h("div", { class: "choices me-choices", role: "radiogroup", "aria-label": t("me3.themeTitle") },
+        ...["dark", "light"].map((id) => h("button", {
+          class: "choice", type: "button", role: "radio", "aria-checked": String(cur === id),
+          on: { click: () => setTheme(id) },
+        }, h("span", { class: "choice-ico", "aria-hidden": "true" }, icon(id === "dark" ? "moon" : "sun", 26)),
+        h("span", { class: "me-choice-word", text: t(`me3.theme.${id}`) }),
+        h("span", { class: "me-choice-sub", text: t(`me3.theme.${id}.sub`) })))));
+  }
+
   function renderVoice() {
     const A = state.agent;
     const p = A.profile || {};
-    const key = JSON.stringify([A.status, p, saving, currentLang()]);
+    const key = JSON.stringify([A.status, p, saving, currentLang(), themeNow()]);
     patch(panels.voice, key, () => {
       const gate = agentGate(A);
-      if (gate) return gate;
+      if (gate) return [gate, themeCard()];
       const lang = p.language || ownerLanguage();
       const speed = p.voice_speed || "normal";
       return [
@@ -324,6 +353,7 @@ export function createMe() {
           dial(p.bargain_style),
           fieldNote("bargain_style")),
         noteLine(t("me3.voiceNote"), "clock"),
+        themeCard(),
       ];
     });
   }

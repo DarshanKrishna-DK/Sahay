@@ -248,6 +248,7 @@ export function createAuth({ mode: firstMode } = {}) {
 
   function back() {
     if (busy) return;
+    locked = null; fingerState = null;
     if (mode === "login" && step === 0 && loginWithPin && finger) { loginWithPin = false; error = null; fieldError = null; render(true); return; }
     if (step === 0) { if (mode === "signup" || mode === "login") { mode = "choose"; error = null; fieldError = null; history.replaceState(null, "", "#/signup"); render(true); } return; }
     step -= 1; fieldError = null; error = null;
