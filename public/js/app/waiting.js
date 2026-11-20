@@ -16,7 +16,7 @@
 // routes as before: /api/approvals/:id/decision, /api/invoices/:id/decision,
 // /api/stock/reorders/:id/decision, /api/agent/rules/:id/decision.
 
-import { h, icon, rupees, scripted, safeUrl, fill } from "./dom.js";
+import { h, icon, rupees, scripted, safeUrl, fill, reducedMotion } from "./dom.js";
 import { t, unitWord, addStrings, lang } from "./i18n.js";
 import * as api from "../api.js";
 import { state, subscribe, onEvent, pendingApprovals, approvalView, decideRule } from "./store.js";
@@ -485,7 +485,7 @@ function createTrayView({ place, withHead }) {
     requestAnimationFrame(() => {
       const n = nodes.get(key);
       const title = n && n.li.querySelector(".yc-title");
-      if (title) { title.focus({ preventScroll: true }); n.li.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+      if (title) { title.focus({ preventScroll: true }); n.li.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" }); }
     });
   }
 
