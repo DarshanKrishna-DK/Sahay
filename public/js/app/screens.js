@@ -3,13 +3,15 @@
 // sections via enter({ sub })). Until a screen lands its line points at a title-only placeholder.
 
 import { placeholder } from "./placeholder.js";
+import { createSell } from "./sell.js";
+import { createMoney } from "./money.js";
 
 export const SCREENS = {
   home: placeholder("nav.home"),
   buy: placeholder("nav.buy"),
-  sell: placeholder("nav.sell"),
+  sell: createSell,
   stock: placeholder("nav.stock"),
-  money: placeholder("nav.money"),
+  money: createMoney,
   me: placeholder("nav.me"),
 };
 
