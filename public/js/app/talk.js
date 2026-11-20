@@ -99,7 +99,8 @@ export function createSahayHome() {
   const trackers = createTrackers();
   const orb = createOrb({ onPress: orbPress });
   const pill = h("p", { class: "sh-pill", "aria-live": "polite" });
-  const figure = h("div", { class: "sh-figure" }, h("div", { class: "sh-orb-wrap" }, orb.el), pill);
+  const caption = h("p", { class: "sh-orb-caption", hidden: true });
+  const figure = h("div", { class: "sh-figure" }, pill, h("div", { class: "sh-orb-wrap" }, orb.el), caption);
   const actions = h("div", { class: "sh-actions", role: "group" });
   const notes = h("div", { class: "sh-notes", hidden: true });
   const hint = h("p", { class: "sh-hint", hidden: true });
@@ -204,6 +205,10 @@ export function createSahayHome() {
     patch(pill, `${word}|${v.tone}|${words}`, () => [h("span", { class: "sh-pill-dot", "aria-hidden": "true" }), scripted("span", word, { class: "sh-pill-word" }), h("span", { class: "sr-only", text: `. ${words}` })]);
     pill.dataset.tone = v.tone;
     pill.dataset.state = v.state;
+    // Under the orb (phone card): how to start, only while a tap on the orb starts a call.
+    const startable = call.status === "idle" || call.status === "error";
+    caption.hidden = !startable;
+    caption.textContent = startable ? t("home.orbCaption") : "";
   }
 
   function act(action) {
@@ -372,7 +377,8 @@ export function createSahayHome() {
     const value = x.value === null ? null : x.kind === "money" ? inr(x.value) : grouped(x.value);
     if (value === null) return h("li", { "aria-hidden": "true" }, h("span", { class: "skel skel-card sh-stat-skel" }));
     return h("li", null, h("a", { class: "card card-interactive sh-stat", href: x.route, dataset: { id: x.id, tone: x.tone } },
-      h("span", { class: "sh-stat-word" }, icon(x.icon, 18), h("span", { text: t(x.key) })),
+      h("span", { class: "sh-stat-ico", "aria-hidden": "true" }, icon(x.icon, 20)),
+      h("span", { class: "sh-stat-word", text: t(x.key) }),
       h("span", { class: "sh-stat-num", text: value })));
   }
 

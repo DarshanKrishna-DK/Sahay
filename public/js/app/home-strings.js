@@ -138,4 +138,5 @@ addStrings({
   "home.key.yes": ["yes", "हाँ", "ಒಪ್ಪಿಗೆ"],
   "home.key.order": ["Order", "ऑर्डर", "ಆರ್ಡರ್"],
   "home.key.stopped": ["stopped", "रुक गया", "ನಿಂತಿದೆ"],
+  "home.orbCaption": ["Tap the circle to speak", "बोलने के लिए गोला छुएँ", "ಮಾತಾಡಲು ವೃತ್ತ ಒತ್ತಿ"],
 });

@@ -93,17 +93,18 @@
 .sh-act span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-act-primary { padding-inline: 28px 32px; box-shadow: var(--depth), var(--glow-lime); }
 .sh-act-mute.is-off { color: var(--amber-text); }
-@media (max-width: 599px) {
-  /* Phone: one full-width row, Talk the widest; during a call Mute / End / Type share it. */
-  .sh-actions { flex-wrap: nowrap; gap: var(--s-2); }
-  .sh-act { flex: 1 1 0; min-width: 0; padding-inline: 12px; }
-  .sh-act-primary { flex-grow: 1.7; }
-  .sh-actions[data-count="3"] .sh-act { padding-inline: 8px; gap: 6px; }
-}
+
 
 /* ======================================================= orb figure + pill -- */
 
-.sh-figure { display: grid; justify-items: center; gap: var(--s-2); }
+.sh-figure { position: relative; display: grid; justify-items: center; gap: var(--s-2); }
+.sh-figure .sh-orb-wrap { order: 1; }
+.sh-figure .sh-pill { order: 2; }
+.sh-orb-caption { order: 3; margin: 0; font-size: .8125rem; font-weight: 600; color: var(--text-md); text-align: center; }
+:root[lang="en"] .sh-orb-caption { text-transform: uppercase; letter-spacing: var(--track-label); }
+:root[lang="hi"] .sh-orb-caption, :root[lang="kn"] .sh-orb-caption { font-size: .9375rem; }
+.sh-orb-caption[hidden] { display: none; }
+@media (min-width: 600px) { .sh-orb-caption { display: none; } }
 .sh-pill {
   display: inline-flex;
   align-items: center;
@@ -383,9 +384,23 @@
 .sh-today-date { font-size: .875rem; color: var(--text-lo); }
 .sh-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
 @media (min-width: 900px) { .sh-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.sh-stat { display: grid; align-content: space-between; gap: var(--s-2); min-height: 112px; padding: var(--s-4); color: var(--text-hi); text-decoration: none; }
-.sh-stat-word { display: inline-flex; align-items: center; gap: 8px; font-size: .9375rem; color: var(--text-md); }
-.sh-stat-word svg { flex: none; color: var(--text-lo); }
+.sh-stat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "ico word" "num num";
+  align-items: center;
+  align-content: space-between;
+  gap: var(--s-2) 10px;
+  min-height: 112px;
+  padding: var(--s-4);
+  color: var(--text-hi);
+  text-decoration: none;
+}
+.sh-stat-ico { grid-area: ico; display: grid; place-items: center; color: var(--text-lo); }
+.sh-stat-word { grid-area: word; min-width: 0; font-size: .9375rem; color: var(--text-md); }
+.sh-stat-num { grid-area: num; }
+.sh-stat[data-tone="lime"] .sh-stat-ico { color: var(--accent-text); }
+.sh-stat[data-tone="amber"] .sh-stat-ico { color: var(--amber-text); }
 .sh-stat-num { font-family: var(--font-num); font-weight: 700; font-variant-numeric: tabular-nums; font-size: clamp(30px, 1.6vw + 18px, 44px); line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .sh-stat[data-tone="lime"] { background: var(--piano-surface) padding-box, linear-gradient(160deg, rgba(var(--hex-rgb), .8), rgba(var(--hex-rgb), .18)) border-box; }
 .sh-stat[data-tone="lime"] .sh-stat-num { color: var(--accent-text); }
@@ -506,15 +521,49 @@
 .sh-mini-orb[data-visual="error"] { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 0 0 2px var(--coral); }
 .sh-mini-orb[data-visual="error"] .torb { opacity: .4; }
 
-/* Short phones (360x640): smaller greeting and orb, pill beside the orb, so Talk / Type stay
-   above the dock without scrolling. */
+/* Phone (Stitch 04-home-phone): greeting, status, the orb in its own card (state pill top-right,
+   caption under the orb), Talk / Type as two equal pills, the conversation card, Today 2x2 with
+   icon, number, word. Greeting, orb and Talk / Type fit above the dock at 390x844. */
+@media (max-width: 599px) {
+  .sh-home { --orb: clamp(132px, 20dvh, 172px); gap: var(--s-5); }
+  .sh-hero { gap: var(--s-3); }
+  .sh-greet { font-size: clamp(34px, 9.6vw, 42px); line-height: 1.05; }
+  .sh-status-line { font-size: 1rem; line-height: 1.5; }
+  .sh-figure {
+    margin-top: var(--s-2);
+    padding: var(--s-6) var(--s-4) var(--s-4);
+    border: 1px solid transparent;
+    border-radius: var(--r-xl);
+    background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
+    box-shadow: var(--shadow-2);
+  }
+  .sh-figure .sh-pill { position: absolute; top: 12px; right: 12px; min-height: 32px; padding: 4px 12px; border: 0; background: transparent; }
+  .sh-figure .sh-orb-wrap { padding: 10px; }
+  .sh-actions { flex-wrap: nowrap; gap: var(--s-3); }
+  .sh-act { flex: 1 1 0; min-width: 0; min-height: 60px; padding-inline: 12px; }
+  .sh-actions[data-count="3"] { gap: var(--s-2); }
+  .sh-actions[data-count="3"] .sh-act { padding-inline: 8px; gap: 6px; }
+  .sh-today-label { font-size: 1.25rem; font-weight: 700; color: var(--text-hi); letter-spacing: -0.01em; }
+  :root[lang="en"] .sh-today-label { text-transform: none; letter-spacing: -0.01em; }
+  .sh-stat { grid-template-columns: minmax(0, 1fr); grid-template-areas: "ico" "num" "word"; justify-items: start; min-height: 132px; padding: var(--s-4); }
+  .sh-stat-ico { width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--piano-3); box-shadow: 0 0 0 1px var(--hairline); }
+  .sh-stat-num { font-size: 1.75rem; }
+  .sh-stat-word { font-size: .8125rem; font-weight: 600; }
+  :root[lang="en"] .sh-stat-word { text-transform: uppercase; letter-spacing: var(--track-label); }
+  .sh-stat-skel { height: 132px; min-height: 132px; }
+}
+
+/* Short phones (360x640): smaller greeting and orb, the orb card compact (pill top-right, no
+   caption), Talk / Type still above the dock without scrolling. */
 @media (max-width: 599px) and (max-height: 700px) {
   .sh-home { --orb: 92px; gap: var(--s-4); }
   .sh-hero { gap: var(--s-2); }
-  .sh-greet { font-size: 32px; }
-  .sh-status-line { font-size: 1rem; line-height: 1.5; }
-  .sh-figure { display: flex; align-items: center; justify-content: center; gap: var(--s-3); }
-  .sh-orb-wrap { padding: 8px; }
+  .sh-greet { font-size: 30px; }
+  .sh-status-line { font-size: .9375rem; }
+  .sh-figure { margin-top: 0; padding: var(--s-3) var(--s-3) var(--s-2); }
+  .sh-figure .sh-orb-wrap { padding: 6px; }
+  .sh-orb-caption { display: none; }
+  .sh-act { min-height: 56px; }
 }
 
 /* ================================================================ motion -- */
