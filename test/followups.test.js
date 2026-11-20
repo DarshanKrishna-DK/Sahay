@@ -78,7 +78,9 @@ test("tick fires what is due: followup.fired event + Telegram to the linked chat
   const fired = [];
   const stop = events.subscribe(businessId, (e) => e.type === "followup.fired" && fired.push(e.data));
 
-  assert.equal(await followups.tick({ now: now + HOUR }), 0, "nothing due yet");
+  // tick() counts every business's rows (other tests schedule at fixed dates), so check this order only.
+  await followups.tick({ now: now + HOUR });
+  assert.equal(fired.filter((d) => d.orderId === order.id).length, 0, "nothing due yet");
   await followups.tick({ now: now + 25 * HOUR });
   stop();
   const mine = fired.filter((d) => d.orderId === order.id);
