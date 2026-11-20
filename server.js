@@ -195,6 +195,7 @@ function boot() {
   const events = require("./src/events");
 
   const stopNarrator = narrator.start();
+  require("./src/agora/answer-watch").start(); // an owner turn left unanswered gets a spoken line from the server
   const stopFollowups = followups.start();
   const stopLearning = require("./src/agent").start(); // learned rule suggestions and memories
   require("./src/stock/reorder").start(); // STK: low-stock watcher (asks the owner; never buys)

@@ -761,6 +761,11 @@ function liveCall(businessId) {
   return state && !state.closed ? { agentId: state.agentId, sessionId: state.sessionId, language: state.language } : null;
 }
 
+/** Every live owner call: businessId -> {agentId, sessionId, language} (the unanswered-turn watchdog). */
+function liveCalls() {
+  return new Map([...live.keys()].map((businessId) => [businessId, liveCall(businessId)]).filter(([, call]) => call?.agentId));
+}
+
 function isLive(businessId) {
   return live.has(businessId);
 }
@@ -791,4 +796,4 @@ function configure({ speak, status, rules, owner, minGapMs, vendorDebounceMs, qu
   );
 }
 
-module.exports = { SPEAK_OPTIONS, defaultSpeak, noteSpoken, VARIANTS, start, stop, attach, detach, isLive, liveCall, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };
+module.exports = { SPEAK_OPTIONS, defaultSpeak, noteSpoken, VARIANTS, start, stop, attach, detach, isLive, liveCall, liveCalls, isHeld, holdForApproval, holdForRule, onRelease, suppress, useLanguage, configure, onEvent, LINES, VERBATIM_VARS, STATUS };

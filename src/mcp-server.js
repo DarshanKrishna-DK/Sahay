@@ -61,6 +61,14 @@ function resolveContext(header) {
   };
 }
 
+/**
+ * Every failed tool call still gives the owner an answer: the model is told to speak the error's
+ * `say` at once (a failed tool with no spoken line was one way a turn ended in silence).
+ */
+const ERROR_HINT = "Nothing was done. Say `say` to the owner now, as it is, in one short sentence, and stop: never stay silent and never guess why.";
+const FIX_HINT = "The call was refused before anything ran: correct it as `fix` says and call the tool once more in this turn; if you cannot, say `say` to the owner now. Never stay silent.";
+const FALLBACK_SAY = "Sorry, I could not do that just now.";
+
 function textResult(value, isError = false) {
   return { content: [{ type: "text", text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) };
 }
@@ -83,7 +91,7 @@ function buildServer(ctx, log) {
       // diagnosable and the model can correct it (E2E regress bug 1: five blind INVALID_ARGUMENTS).
       const problem = err.code === "INVALID_ARGUMENTS" ? err.details?.problem ?? null : null;
       log({ event: "tool_result", tool: name, ok: false, code: err.code ?? "INTERNAL", ...(problem ? { problem } : {}), ms: Date.now() - started });
-      return textResult({ error: err.code ?? "INTERNAL", say: err.say ?? null, ...(problem ? { fix: problem } : {}) }, true);
+      return textResult({ error: err.code ?? "INTERNAL", say: err.say || FALLBACK_SAY, hint: problem ? FIX_HINT : ERROR_HINT, ...(problem ? { fix: problem } : {}) }, true);
     }
   });
   return server;
@@ -126,4 +134,4 @@ function createMcpRouter({ log = defaultLog } = {}) {
   return router;
 }
 
-module.exports = { createMcpRouter, resolveContext, describe };
+module.exports = { createMcpRouter, resolveContext, describe, ERROR_HINT };
