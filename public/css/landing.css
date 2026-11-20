@@ -25,9 +25,9 @@
   --r-pill: 999px;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .25);
   --tap: 48px;
-  --btn: 56px;
-  --btn-lg: 64px;
-  --btn-sm: 48px;
+  --btn: 52px;
+  --btn-lg: 60px;
+  --btn-sm: 44px;
   --focus-color: var(--pink-hover);
   --t-fast: 120ms;
   --t: 200ms;
