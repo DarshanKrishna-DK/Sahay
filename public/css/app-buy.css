@@ -158,7 +158,7 @@
 }
 .b3-st-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .b3-st-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-3); min-width: 0; }
-.b3-st-word { font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-hi); }
+.b3-st-word { font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-hi); overflow-wrap: anywhere; }
 .b3-st-state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--text-lo); }
 .b3-st[data-status="upcoming"] .b3-st-word { color: var(--text-lo); font-weight: var(--fw-body); }
 .b3-st[data-status="done"] .b3-st-state { color: var(--ok-text); }
