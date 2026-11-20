@@ -88,31 +88,50 @@
   --edge-accent: rgba(182, 242, 60, .7);
 
   /* -------------------------------------------------------------------- type -- */
-  --font-display: "Space Grotesk", "Instrument Sans", system-ui, sans-serif;
-  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-num: "Space Grotesk", "Instrument Sans", system-ui, sans-serif;
-  --font-deva: "Noto Sans Devanagari", "Instrument Sans", sans-serif;
-  --font-kn: "Noto Sans Kannada", "Instrument Sans", sans-serif;
-  --fs-xs: .875rem;      /* nav words under icons only */
-  --fs-sm: 1rem;         /* secondary lines; floor for owner text */
-  --fs-small: 1rem;
-  --fs-body: 1.125rem;   /* 18px body */
-  --fs-body-indic: 1.1875rem; /* 19px for Devanagari / Kannada body */
-  --fs-lead: 1.375rem;
-  --fs-h3: 1.375rem;
-  --fs-h2: clamp(1.5rem, 1.2rem + 1vw, 1.875rem);
-  --fs-title: clamp(1.75rem, 1.2rem + 2.2vw, 2.625rem);
-  --fs-amount: 1.875rem;                        /* line amounts 28-32px */
-  --fs-onhand: 2.5rem;                          /* on-hand stock 40px */
-  --fs-total: clamp(3rem, 2.6rem + 1.4vw, 3.5rem); /* totals 48-56px */
+  /* v4 (KrowdKraft-derived, brief 2026-11-20): Jaini Purva for display (Latin + Devanagari), Baloo Tamma 2
+     for Kannada display; Manrope for body/UI (tabular money); Hind for Hindi body; Noto Sans Kannada for
+     Kannada body. :lang(hi) / :lang(kn) below swap the families; Indic never gets negative tracking. */
+  --font-display: "Jaini Purva", "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: "Manrope", system-ui, sans-serif;            /* money and counts: 700, tabular-nums */
+  --font-figure: "Jaini Purva", "Manrope", sans-serif;      /* hero totals 48-72px */
+  --font-deva: "Hind", "Manrope", sans-serif;
+  --font-kn: "Noto Sans Kannada", "Manrope", sans-serif;
+  --font-kn-display: "Baloo Tamma 2", "Noto Sans Kannada", sans-serif;
+  /* Type scale (laptop -> phone). */
+  --t-hero: clamp(44px, 6vw, 92px);          /* landing / hero h1, line-height 1.02 */
+  --t-page: clamp(36px, 4vw, 56px);          /* page title h1 (.page-title) */
+  --t-h2: clamp(28px, 3vw, 44px);            /* section titles, line-height 1.05, tracking -0.03em (Latin) */
+  --t-h3: clamp(20px, 14px + .8vw, 26px);    /* Manrope 600, tracking -0.02em */
+  --t-body: 1rem;                            /* 16px / 1.6 (hi, kn: 17px / 1.7) */
+  --t-body-indic: 1.0625rem;
+  --t-label: .8125rem;                       /* 13px Manrope 600, .06em, uppercase (Latin only) */
+  --t-figure: clamp(48px, 4vw + 24px, 72px); /* hero totals, Jaini Purva */
+  --t-money: clamp(22px, 1vw + 16px, 30px);  /* line amounts, Manrope 700 tabular */
+  --track-display: -0.03em;
+  --track-h3: -0.02em;
+  --track-label: .06em;
+  /* v3 names, now on the v4 scale (kept so every screen follows). */
+  --fs-xs: .8125rem;     /* nav words under icons */
+  --fs-sm: .9375rem;
+  --fs-small: .9375rem;
+  --fs-body: var(--t-body);
+  --fs-body-indic: var(--t-body-indic);
+  --fs-lead: 1.25rem;
+  --fs-h3: var(--t-h3);
+  --fs-h2: var(--t-h2);
+  --fs-title: var(--t-page);
+  --fs-amount: var(--t-money);
+  --fs-onhand: 2.5rem;
+  --fs-total: var(--t-figure);
   --fs-number: clamp(2rem, 1.4rem + 3vw, 3.5rem);
-  --fs-eyebrow: 1rem;
-  --lh-tight: 1.15;
-  --lh-body: 1.5;
-  --lh-indic: 1.65;
+  --fs-eyebrow: var(--t-label);
+  --lh-tight: 1.05;
+  --lh-body: 1.6;
+  --lh-indic: 1.7;
   --fw-body: 450;
-  --fw-strong: 650;
-  --fw-display: 700;
+  --fw-strong: 600;
+  --fw-display: 400;     /* Jaini Purva ships one weight */
 
   /* ------------------------------------------------------------------- shape -- */
   --r-xs: 10px;
@@ -190,7 +209,7 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
-  --nav-w: 112px;    /* the sidebar at its belly: body 60/72 + bulge 32/40 */
+  --nav-w: 120px;    /* the concave sidebar's full width (narrowest 76 at its waist) */
   --nav-inset: 16px;
   --rail-w: 72px;
   --dock-h: 68px;
@@ -224,9 +243,9 @@
   }
 }
 
-@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 92px; --content-top: calc(28px + var(--safe-t) + var(--capsule-h) + 12px); } }
+@media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 100px; --content-top: calc(28px + var(--safe-t) + var(--capsule-h) + 12px); } }
 @media (min-width: 1024px) { :root { --pad-x: 32px; } }
-@media (min-width: 1280px) { :root { --nav-w: 112px; } }
+@media (min-width: 1280px) { :root { --nav-w: 120px; } }
 @media (min-width: 1280px) { :root { --agent-col: 320px; } }  /* 1280-1439: the screen keeps two columns */
 @media (min-width: 1440px) { :root { --agent-col: 380px; } }
 @media (min-width: 1600px) { :root { --agent-col: 420px; } }
@@ -294,5 +313,10 @@
 }
 
 /* Indic text always uses its own face, a taller line and no tracking. */
-:lang(hi) { font-family: var(--font-deva); letter-spacing: 0; }
-:lang(kn) { font-family: var(--font-kn); letter-spacing: 0; }
+:lang(hi) { --font-body: "Hind", "Manrope", sans-serif; --font-display: "Jaini Purva", "Hind", sans-serif; --font-num: "Manrope", "Hind", sans-serif; --t-body: var(--t-body-indic); --track-display: 0; --track-h3: 0; --track-label: 0; --lh-body: 1.7; font-family: var(--font-body); letter-spacing: 0; }
+:lang(kn) { --font-body: "Noto Sans Kannada", "Manrope", sans-serif; --font-display: "Baloo Tamma 2", "Noto Sans Kannada", sans-serif; --font-num: "Manrope", "Noto Sans Kannada", sans-serif; --t-body: var(--t-body-indic); --track-display: 0; --track-h3: 0; --track-label: 0; --lh-body: 1.7; font-family: var(--font-body); letter-spacing: 0; }
+/* Indic words inside a display title keep the display face of their script. */
+:where(h1, h2, .page-title, .screen-title, .section-title, .sheet-title, .state-title, .t-hero, .t-page, .t-h2, .bignum-figure) :lang(hi),
+:where(h1, h2, .page-title, .screen-title, .section-title, .sheet-title, .state-title, .t-hero, .t-page, .t-h2, .bignum-figure) :lang(kn) { font-family: var(--font-display); }
+/* Labels are uppercase in Latin only. */
+:lang(hi) .t-label, :lang(kn) .t-label, .t-label:lang(hi), .t-label:lang(kn) { text-transform: none; }

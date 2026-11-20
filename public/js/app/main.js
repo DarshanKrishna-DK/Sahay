@@ -11,7 +11,8 @@ import { t, setLang, onLang } from "./i18n.js";
 import * as store from "./store.js";
 import { state, pendingApprovals } from "./store.js";
 import * as shellApi from "./shell.js";
-import { mountShell, slots, setRoute, setNavAgentState, setBadge, setTitle, setShop, setLanguageSaver, refresh as refreshShell } from "./shell.js";
+import { mountShell, slots, setRoute, setNavAgentState, setBadge, setTitle, setShop, refresh as refreshShell } from "./shell.js";
+import { uiLang } from "./lang-switch.js";
 import { parseRoute } from "./shell-geometry.js";
 import { bootSplash, bootError } from "./boot-screens.js";
 import { startCall, serverEnded, preload } from "./call.js";
@@ -194,22 +195,12 @@ document.addEventListener("sahay:talk", (e) => {
   if (mode === "voice") startCall("voice");
 });
 
-// The language chip in the sidebar saves the owner's choice to their profile when the agent is
-// ready (the same route My Sahay uses), else only on this device.
-setLanguageSaver(async (code) => {
-  if (state.agent && state.agent.status === "ready") await store.updateProfile({ language: code });
-  setLang(code);
-});
-
 store.onEvent((evt) => {
   if (evt.type === "session.ended" && evt.data && evt.data.kind === "owner") serverEnded(evt.data.channel, evt.data.reason);
 });
 
 store.subscribe((s, parts) => {
-  if (parts.has("lang") || parts.has("business") || parts.has("agent")) {
-    const L = store.ownerLanguage();
-    if (L) setLang(L);
-  }
+  // The words on screen follow the device's UI language only (v4); the shop's language is Sahay's voice.
   if (parts.has("boot")) renderBoot();
   if (parts.has("lang")) {
     // Language changed: rebuild every mounted screen in the new language.
@@ -235,11 +226,10 @@ window.addEventListener("hashchange", () => {
   if (s) s.update(state, new Set(["all"]));
 });
 
-// The last language this device used (so Log in speaks it), else the browser's.
-let savedLang = null;
-try { savedLang = localStorage.getItem("sahay-lang"); } catch { /* storage blocked */ }
-setLang(savedLang || navigator.language || "en-IN");
-onLang((l) => { try { localStorage.setItem("sahay-lang", l); } catch { /* storage blocked */ } refreshShell(); });
+// UI language: this device's choice (lang-switch.js), English by default. A change re-renders every
+// mounted screen through the store's "lang" part (screens already rebuild on it).
+setLang(uiLang());
+onLang(() => { refreshShell(); store.touch("lang"); });
 setRoute(parseRoute(location.hash).id);
 syncShell();
 renderBoot();

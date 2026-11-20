@@ -38,12 +38,18 @@
   background: linear-gradient(to bottom, var(--piano-0) 0, var(--piano-0) calc(100% - 18px), transparent);
   opacity: .96;
 }
+/* Phone: two rows. [logo][shop + live][waiting][My Sahay] / [automated-assistant notice][language] */
 .top-capsule {
-  display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px;
-  min-height: var(--capsule-h); padding: 4px 4px 4px 6px; border-radius: var(--r-pill);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "brand main wait me" "notice notice lang lang";
+  align-items: center; gap: 6px 8px; width: 100%; max-width: 560px;
+  min-height: var(--capsule-h); padding: 6px 6px 8px 10px; border-radius: var(--r-lg);
 }
+.cap-brand { grid-area: brand; display: grid; place-items: center; min-width: var(--touch-min); min-height: var(--touch-min); border-radius: var(--r-md); text-decoration: none; }
+.cap-brand:focus-visible { box-shadow: var(--focus-ring); }
+.cap-lang { grid-area: lang; justify-self: end; }
 .cap-notice {
-  order: 0; flex: 0 0 auto; min-width: 0; max-width: none; /* never truncates; the shop name does */
+  grid-area: notice; justify-self: start; order: 0; flex: 0 0 auto; min-width: 0; max-width: none; /* never truncates; the shop name does */
   display: inline-flex; align-items: center; gap: 6px;
   min-height: 40px; padding: 3px 12px 3px 4px; border-radius: var(--r-pill);
   background: rgba(79, 209, 232, .10); border: 1px solid rgba(79, 209, 232, .38);
@@ -51,12 +57,9 @@
 }
 .cap-notice-ico { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; flex: none; background: rgba(79, 209, 232, .16); color: var(--cyan-text); }
 .cap-notice-short { white-space: nowrap; }
-@media (max-width: 399px) { .cap-shop { display: none; } } /* narrow phones: notice, live dot, avatar */
 .cap-notice-long { display: none; }
-.cap-main { order: 1; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 4px; }
-.cap-shop { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 650; font-size: var(--fs-sm); }
-.cap-shop :lang(hi) { font-family: var(--font-deva); }
-.cap-shop :lang(kn) { font-family: var(--font-kn); }
+.cap-main { grid-area: main; order: 1; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 4px; }
+.cap-shop { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-body); font-weight: 700; font-size: .9375rem; }
 .cap-live { flex: none; display: inline-flex; align-items: center; gap: 8px; color: var(--text-lo); font-size: var(--fs-sm); white-space: nowrap; }
 .cap-live-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .live-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--text-lo); }
@@ -66,16 +69,16 @@
 .cap-live[data-state="closed"] { color: var(--coral-text); }
 [data-state="offline"] > .live-dot { background: var(--text-faint); box-shadow: none; }
 .cap-live[data-state="offline"] { color: var(--text-lo); }
-.cap-action { order: 2; display: none; }
+.cap-action { order: 3; display: none; }
 .cap-wait {
-  order: 3; flex: none; display: inline-flex; align-items: center; gap: 6px;
+  grid-area: wait; order: 4; flex: none; display: inline-flex; align-items: center; gap: 6px;
   min-height: var(--touch-min); min-width: var(--touch-min); padding: 0 12px; border-radius: var(--r-pill);
   border: 1px solid rgba(90, 10, 5, .45); background: var(--danger-surface); color: var(--on-coral);
   font: 700 var(--fs-sm)/1 var(--font-num); box-shadow: var(--depth-soft);
 }
 .cap-wait:active { transform: translateY(1px) scale(.97); box-shadow: var(--press); }
 .shell:has(.waiting-pill-slot:not(:empty)) .cap-wait { display: none; }
-.cap-me { order: 4; flex: none; display: grid; place-items: center; width: var(--touch-min); height: var(--touch-min); border-radius: 50%; text-decoration: none; color: var(--text-hi); }
+.cap-me { grid-area: me; order: 6; flex: none; display: grid; place-items: center; width: var(--touch-min); height: var(--touch-min); border-radius: 50%; text-decoration: none; color: var(--text-hi); }
 .cap-avatar {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
   border: 1px solid transparent; background: var(--piano-surface) padding-box, var(--piano-rim) border-box;
@@ -174,17 +177,22 @@
 :root[data-keyboard="open"] .nav-dock, :root[data-keyboard="open"] .dock-float { display: none; }
 
 /* ========================================================= nav jelly -- */
-/* A column of glass whose right edge swells into a convex belly where the items ride (nav-jelly.js
-   draws the clip-path, rim and shadow for the real height). The container has no glass, filter or
-   transform; the socket sits above the glass layer and breaks its top and right edges. */
+/* v4: CONCAVE. Full width at the top and bottom; the right edge curves inward to its narrowest at the
+   vertical centre (nav-jelly.js draws the clip-path, rim and masked shadow for the real size). The
+   container has no glass, filter or transform. Top: logo, then the agent orb socket. */
 .nav-jelly { display: none; }
 .nav-jelly {
-  --nj-body: 60px; --nj-bulge: 32px; --nj-follow: .7; --nj-socket: 72px;
+  --nj-w: 100px; --nj-depth: 30px; --nj-socket: 68px;
   position: fixed; z-index: var(--z-nav);
   left: calc(var(--nav-inset) + var(--safe-l)); top: calc(var(--nav-inset) + var(--safe-t)); bottom: calc(var(--nav-inset) + var(--safe-b));
-  width: calc(var(--nj-body) + var(--nj-bulge));
-  flex-direction: column; align-items: flex-start; padding: 0 0 12px;
+  width: var(--nj-w);
+  flex-direction: column; align-items: center; padding: 14px 0 12px;
 }
+.nj-brand {
+  position: relative; z-index: 2; display: grid; place-items: center; flex: none;
+  width: 56px; height: 52px; margin-bottom: 8px; border-radius: var(--r-md); text-decoration: none;
+}
+.nj-brand:focus-visible { box-shadow: var(--focus-ring); }
 .nj-shadow, .nj-rim { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .nj-shadow { opacity: .9; }
 .nj-shadow path { fill: rgba(0, 0, 0, .6); filter: blur(16px); }
@@ -205,7 +213,7 @@
 :root[data-theme="light"] .nj-rim .rim-c { stop-color: rgba(18, 22, 13, .2); }
 .nj-orb {
   position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  margin-top: -14px; margin-left: calc(var(--nj-body) / 2 + 12px - var(--nj-socket) / 2); width: var(--nj-socket);
+  flex: none; width: calc(var(--nj-socket) + 8px);
   text-decoration: none; color: var(--text-lo); border-radius: var(--r-lg); -webkit-tap-highlight-color: transparent;
 }
 .nj-socket {
@@ -228,12 +236,12 @@
 .nj-orb[aria-current="page"] { color: var(--text-hi); }
 
 .nj-items {
-  position: static; flex: 1 1 auto; min-height: 0; width: var(--nj-body);
-  display: flex; flex-direction: column; justify-content: space-evenly; gap: 4px; padding: 12px 0;
+  position: static; flex: 1 1 auto; min-height: 0; width: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; gap: 4px; padding: 12px 0;
 }
 .nj-item {
   position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  width: 100%; min-height: 68px; padding: 6px 0; border-radius: var(--r-md);
+  width: 72px; min-height: 68px; padding: 6px 0; border-radius: var(--r-md);
   color: var(--text-lo); text-decoration: none; -webkit-tap-highlight-color: transparent;
   transform: translateX(var(--dx, 0px));
   transition: color var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-out);
@@ -252,7 +260,7 @@
   opacity: 0; pointer-events: none; transition: opacity var(--t-med) var(--ease-out);
 }
 .nj-marker.is-on { opacity: 1; }
-.nj-foot { position: relative; z-index: 1; width: var(--nj-body); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nj-foot { position: relative; z-index: 1; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .nj-me { display: flex; flex-direction: column; align-items: center; gap: 3px; text-decoration: none; color: var(--text-lo); border-radius: var(--r-md); padding: 2px; max-width: 100%; }
 .nj-avatar {
   position: relative; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
@@ -271,7 +279,6 @@
 .nj-tool:hover { background: rgba(238, 242, 230, .1); }
 .nj-tool:active { transform: scale(.94); }
 .nj-tool[aria-expanded="true"] { border-color: var(--edge-accent); color: var(--accent-text); }
-.nj-lang-txt:lang(hi) { font-family: var(--font-deva); }
 
 /* =================================================== tablet and up -- */
 @media (min-width: 600px) {
@@ -283,9 +290,11 @@
     position: sticky; top: calc(12px + var(--safe-t)); left: auto; right: auto;
     padding-top: 16px; align-items: stretch;
   }
-  .top-capsule { max-width: none; padding: 4px 8px 4px 20px; }
+  .top-capsule { display: flex; max-width: none; padding: 4px 8px 4px 20px; border-radius: var(--r-pill); }
+  .cap-brand { display: none; }
+  .cap-lang { order: 2; }
   .cap-main { order: 0; gap: 12px; padding-left: 0; }
-  .cap-shop { font-size: 1.15rem; }
+  .cap-shop { font-size: 1.0625rem; }
   .cap-live-text { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
   .cap-notice { order: 1; max-width: 46%; }
   .cap-action { display: inline-flex; }
@@ -294,7 +303,7 @@
   #main { padding: 24px 0 64px; }
 }
 @media (min-width: 1280px) {
-  .nav-jelly { --nj-body: 72px; --nj-bulge: 40px; --nj-socket: 80px; }
+  .nav-jelly { --nj-w: 120px; --nj-depth: 44px; --nj-socket: 76px; }
 }
 @media (min-width: 1280px) and (min-height: 501px) {
   .shell-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: start; }
@@ -316,18 +325,17 @@
 @media (max-height: 500px) and (min-width: 568px) and (orientation: landscape) {
   .nav-dock { display: none; }
   .nav-jelly {
-    display: flex; --nj-body: var(--rail-w); --nj-bulge: 0px; --nj-socket: 56px;
+    display: flex; --nj-w: var(--rail-w); --nj-depth: 0px; --nj-socket: 56px;
     left: calc(8px + var(--safe-l)); top: 8px; bottom: 8px;
     padding: 8px 0;
   }
-  .nj-orb { margin-top: 0; margin-left: calc(var(--rail-w) / 2 - var(--nj-socket) / 2); }
+  .nj-brand { display: none; }
   .nj-socket .torb { width: 44px; height: 44px; }
   .nj-orb-word, .nj-me .nj-word, .nj-tools { display: none; }
-  .nj-items { width: var(--rail-w); gap: 0; padding: 4px 0; }
+  .nj-items { gap: 0; padding: 4px 0; }
   .nj-item { min-height: 54px; padding: 3px 0; gap: 1px; }
   .nj-ico { height: 32px; width: 48px; }
   .nj-marker { width: 48px; height: 32px; }
-  .nj-foot { width: var(--rail-w); }
   .shell-body { padding-left: calc(8px + var(--rail-w) + 16px + var(--safe-l)); padding-right: calc(16px + var(--safe-r)); }
   .top-zone { position: sticky; top: 8px; left: auto; right: auto; padding-top: 8px; align-items: stretch; }
   .top-capsule { max-width: none; min-height: 52px; }

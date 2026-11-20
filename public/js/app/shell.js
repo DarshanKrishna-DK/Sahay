@@ -11,14 +11,18 @@
 //   setTitle(text) ("Sell · Sahay"), setAction(spec | null), navigate(hash), toggleTheme(), setRoute(id)
 
 import { h, icon } from "./dom.js";
-import { t, lang, LANGS, setLang } from "./i18n.js";
+import { t } from "./i18n.js";
 import "./shell-strings.js";
 import { sizeClass } from "./shell-geometry.js";
 import { createHexField } from "./hex-field.js";
 import { createNavJelly } from "./nav-jelly.js";
 import { createNavDock } from "./nav-dock.js";
 import { createTopCapsule } from "./top-capsule.js";
-import { openPopover } from "./menu.js";
+// v4 shared pieces, re-exported so screens import one module: the brand mark, the UI language
+// switcher (English by default, per device) and the page head.
+export { brandMark, BRAND } from "./brand.js";
+export { createLangSwitch, uiLang, setUiLang } from "./lang-switch.js";
+export { pageHead } from "./ui.js";
 
 export const NAV_ITEMS = [
   { id: "buy", icon: "cart", key: "nav.buy" },
@@ -41,11 +45,10 @@ let shopName = "";
 let stream = "connecting";
 let offline = typeof navigator !== "undefined" && navigator.onLine === false;
 let mounted = false;
-let langSaver = null;
 
 /* ------------------------------------------------------------- the DOM -- */
 const hex = createHexField();
-const nav = createNavJelly({ items: NAV_ITEMS, onOrb, onLang: openLang, onTheme: toggleTheme });
+const nav = createNavJelly({ items: NAV_ITEMS, onOrb, onTheme: toggleTheme });
 const dock = createNavDock({ items: NAV_ITEMS, onOrb });
 const capsule = createTopCapsule({ onWaiting: () => openTray() });
 
@@ -187,27 +190,12 @@ export function toggleTheme() {
 }
 try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => render()); } catch { /* old browser */ }
 
-/** Who saves a language choice (main.js wires the owner's profile); default: this device only. */
-export function setLanguageSaver(fn) { langSaver = fn; }
 
-function openLang(anchor) {
-  const cur = lang();
-  openPopover({
-    anchor,
-    label: t("shell.lang"),
-    items: LANGS.map((L) => ({ id: L.code, label: L.native, lang: L.short, current: L.short === cur })),
-    onPick: async (id) => {
-      if (langSaver) await langSaver(id); else setLang(id);
-    },
-    errorText: () => t("shell.langFail"),
-  });
-}
 
 function render() {
   const dark = themeNow() === "dark";
   const model = {
     route, badges: { ...badges, sahay: badges.sahay }, agentState: agent, orbLabel: agentLabel,
-    langShort: { hi: "हि", kn: "ಕ", en: "En" }[lang()] || "En",
     themeLabel: dark ? t("theme.light") : t("theme.dark"), themeIcon: dark ? "sun" : "moon",
   };
   nav.update(model);

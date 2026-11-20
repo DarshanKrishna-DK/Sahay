@@ -94,7 +94,22 @@ export function bigNumber(text, { kind = "amount", unit = null, tag = "p" } = {}
   return h(tag, { class: `bignum bignum-${kind}` }, h("span", { text }), unit ? scripted("span", unit, { class: "bignum-unit" }) : null);
 }
 
-/** screenHeader({ title, speakKey, talkHint, talkWord, actions: [node] }) */
+/**
+ * pageHead({ title, sub, actions: [node], speakKey }) - v4: every screen starts with it. A big display
+ * title (left), one plain line under it, the screen's primary action(s) on the right on laptops and
+ * under the title on phones. No chips or pills in the head.
+ */
+export function pageHead({ title, sub, actions = [], speakKey } = {}) {
+  return h("header", { class: "page-head" },
+    h("div", { class: "page-head-text" },
+      scripted("h1", title || "", { class: "page-title" }),
+      sub ? scripted("p", sub, { class: "page-sub" }) : null),
+    actions.length || speakKey ? h("div", { class: "page-actions" },
+      ...actions.slice(0, 3),
+      speakKey ? h("span", { class: "card-speak" }, speakButton(speakKey, { size: "md" })) : null) : null);
+}
+
+/** screenHeader({ title, speakKey, talkHint, talkWord, actions: [node] }) - v3; prefer pageHead. */
 export function screenHeader({ title, speakKey, talkHint, talkWord, actions = [] } = {}) {
   return h("header", { class: "screen-head" },
     scripted("h1", title || "", { class: "screen-title" }),

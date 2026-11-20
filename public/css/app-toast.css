@@ -53,8 +53,7 @@
   text-transform: none; letter-spacing: 0;
   color: var(--text-hi);
 }
-:lang(hi) .toast-host [data-sileo-title] { font-family: var(--font-deva); }
-:lang(kn) .toast-host [data-sileo-title] { font-family: var(--font-kn); }
+:lang(hi) .toast-host [data-sileo-title], :lang(kn) .toast-host [data-sileo-title] { font-family: var(--font-body); }
 .toast-host [data-sileo-badge] { width: 26px; height: 26px; }
 
 .toast-host [data-sileo-description] {
@@ -62,8 +61,6 @@
   color: var(--text-md);
   font: 400 1rem/1.45 var(--font-body);
 }
-.toast-host [data-sileo-description] :lang(hi) { font-family: var(--font-deva); }
-.toast-host [data-sileo-description] :lang(kn) { font-family: var(--font-kn); }
 
 .toast-slot { display: contents; }
 .toast-body { display: flex; flex-direction: column; gap: 12px; }

@@ -6,8 +6,8 @@
 //   arcSamples(w, h, bulge, y0, y1) -> points along the bow between two heights (the marker's path)
 //   dockOutline(w, h, opts)         -> polygon points of the phone dock: upward-arcing top edge,
 //                                      a round notch that cradles the raised orb, rounded corners
-//   jellyOutline(body, h, opts)     -> polygon of the curved sidebar: a column with a convex belly
-//   bellyAt / bellyX                -> the belly's swell at a height, and an item's centre on it
+//   concaveOutline(w, h, opts)      -> polygon of the concave sidebar (narrowest at the vertical centre)
+//   concaveInset / concaveX         -> how far the edge moved in at a height, and an item's centre there
 //   hexLattice(w, h, pitch)         -> dot centres of a true hex (triangular) lattice + edge fade
 
 export const SIZES = ["phone", "phoneLand", "tablet", "laptop", "wide"];
@@ -68,34 +68,31 @@ export function arcSamples(w, h, bulge, y0, y1, step = 8) {
 }
 
 /**
- * The jelly sidebar's belly: 0 above and below the item band, rising smoothly (a raised cosine) to 1
- * at `centre` (px from the top). `span` is the half-height of the belly in px.
+ * The concave sidebar (v4): full width at the top and bottom, the right edge curving INWARD to its
+ * narrowest at the vertical centre, smooth and symmetric (a raised cosine over the whole height).
+ *   concaveInset(y, h, depth)     how far the edge has moved in at height y (0 at the ends, depth at h/2)
+ *   concaveX(y, w, h, depth)      an item's centre: the middle of the width left at that height
+ *   concaveOutline(w, h, opts)    polygon [[x, y], ...] (clockwise) with rounded corners
  */
-export function bellyAt(y, centre, span) {
-  if (!(span > 0)) return 0;
-  const u = (y - centre) / span;
+export function concaveInset(y, h, depth) {
+  if (!(h > 0) || !depth) return 0;
+  const u = (y - h / 2) / (h / 2);
   if (u <= -1 || u >= 1) return 0;
-  return (1 + Math.cos(Math.PI * u)) / 2;
+  return depth * (1 + Math.cos(Math.PI * u)) / 2;
 }
 
-/** Item centre x on the belly: the middle of the body, pushed right by `follow` x the bulge there. */
-export function bellyX(y, body, bulge, centre, span, follow = 0.6) {
-  return body / 2 + follow * bulge * bellyAt(y, centre, span);
+export function concaveX(y, w, h, depth) {
+  return (w - concaveInset(y, h, depth)) / 2;
 }
 
-/**
- * Outline of the jelly sidebar (px, origin top-left, clockwise): a rounded column `body` wide whose
- * right edge swells out by `bulge` around `centre` (a clear convex belly where the items sit), with
- * rounded corners `radius`. Returns [[x, y], ...].
- */
-export function jellyOutline(body, h, { bulge = 36, radius = 30, centre = h / 2, span = h * 0.42, step = 4 } = {}) {
-  const r = Math.min(radius, body / 2, h / 4);
+export function concaveOutline(w, h, { depth = 36, radius = 30, step = 4 } = {}) {
+  const r = Math.min(radius, w / 2, h / 4);
   const pts = [];
   const arc = (cx, cy, a0, a1) => { for (let a = a0; a <= a1; a += 10) { const t = (a * Math.PI) / 180; pts.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]); } };
   arc(r, r, 180, 270);                         // top-left
-  arc(body - r, r, 270, 360);                  // top-right
-  for (let y = r + step; y < h - r; y += step) pts.push([body + bulge * bellyAt(y, centre, span), y]);
-  arc(body - r, h - r, 0, 90);                 // bottom-right
+  arc(w - r, r, 270, 360);                     // top-right (full width)
+  for (let y = r + step; y < h - r; y += step) pts.push([w - concaveInset(y, h, depth), y]);
+  arc(w - r, h - r, 0, 90);                    // bottom-right (full width)
   arc(r, h - r, 90, 180);                      // bottom-left
   return pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
 }

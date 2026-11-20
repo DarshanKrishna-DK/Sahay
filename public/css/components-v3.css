@@ -92,7 +92,7 @@ svg { flex: none; }
 .card-alert { background: var(--piano-surface) padding-box, linear-gradient(160deg, var(--coral), rgba(255, 107, 94, .25)) border-box; }
 .card-head { display: flex; align-items: flex-start; gap: var(--s-3); min-height: var(--touch-min); }
 .card-head > :first-child { flex: 1 1 auto; min-width: 0; }
-.card-title { font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h3); line-height: var(--lh-tight); overflow-wrap: anywhere; }
+.card-title { font-family: var(--font-body); font-weight: 600; font-size: var(--t-h3); letter-spacing: var(--track-h3); line-height: 1.2; overflow-wrap: anywhere; }
 .card-title:lang(hi), .card-title:lang(kn), :lang(hi) > .card-title, :lang(kn) > .card-title { line-height: 1.35; }
 .card-sub { color: var(--text-lo); font-size: var(--fs-sm); }
 /* The read-aloud slot: same corner on every card, sheet title and screen header. */
@@ -262,8 +262,6 @@ svg { flex: none; }
 .bignum-amount { font-size: var(--fs-amount); }
 .bignum-onhand { font-size: var(--fs-onhand); }
 .bignum-unit { margin-left: .3em; font-family: var(--font-body); font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-lo); letter-spacing: 0; }
-.bignum-unit:lang(hi) { font-family: var(--font-deva); }
-.bignum-unit:lang(kn) { font-family: var(--font-kn); }
 
 /* ========================================================= read aloud -- */
 .speak-wrap { position: relative; display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
@@ -325,8 +323,7 @@ svg { flex: none; }
 .state-error .state-mark { color: var(--coral-text); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--shadow-2), 0 0 0 10px rgba(255, 107, 94, .07); }
 .state-missing .state-mark { color: var(--text-lo); }
 .state-title { font-family: var(--font-display); font-size: var(--fs-h2); font-weight: var(--fw-display); line-height: 1.2; }
-.state-title:lang(hi), :lang(hi) .state-title { font-family: var(--font-deva); line-height: 1.4; }
-.state-title:lang(kn), :lang(kn) .state-title { font-family: var(--font-kn); line-height: 1.4; }
+.state-title:lang(hi), :lang(hi) .state-title, .state-title:lang(kn), :lang(kn) .state-title { line-height: 1.4; }
 .state-text { color: var(--text-md); font-size: var(--fs-body); max-width: 40ch; }
 .state .keycap, .state .btn { margin-top: 8px; }
 .state-loading .state-mark { color: var(--accent-text); }
@@ -382,22 +379,21 @@ svg { flex: none; }
 .screen-head > .screen-title { flex: 1 1 auto; min-width: 0; margin: 0; }
 .screen-head-tools { flex: none; display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; justify-content: flex-end; }
 .screen-title {
-  font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-title);
-  letter-spacing: -.015em; line-height: 1.1; margin: 8px 0 24px; overflow-wrap: anywhere;
+  font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--t-page);
+  letter-spacing: var(--track-display); line-height: 1.02; margin: 8px 0 24px; overflow-wrap: anywhere;
 }
-.screen-title:lang(hi), :lang(hi) .screen-title { font-family: var(--font-deva); letter-spacing: 0; line-height: 1.3; }
-.screen-title:lang(kn), :lang(kn) .screen-title { font-family: var(--font-kn); letter-spacing: 0; line-height: 1.3; }
+.screen-title:lang(hi), :lang(hi) .screen-title, .screen-title:lang(kn), :lang(kn) .screen-title { letter-spacing: 0; line-height: 1.25; }
 .section-title {
   display: flex; align-items: center; gap: var(--s-2);
-  font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h2);
-  line-height: 1.2; margin: 8px 0 16px;
+  font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--t-h2);
+  letter-spacing: var(--track-display); line-height: 1.05; margin: 8px 0 16px;
 }
 :lang(hi) .section-title, :lang(kn) .section-title { letter-spacing: 0; line-height: 1.4; }
 .fold { border-radius: var(--r-card); }
 .fold-head {
   display: flex; align-items: center; gap: var(--s-3); min-height: var(--touch); padding: 4px 8px;
   list-style: none; cursor: pointer; border-radius: var(--r-md);
-  font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h3);
+  font-family: var(--font-body); font-weight: 600; font-size: var(--t-h3); letter-spacing: var(--track-h3);
 }
 .fold-head::-webkit-details-marker { display: none; }
 .fold-head::after { content: ""; margin-left: auto; width: 12px; height: 12px; border-right: 2.5px solid var(--text-lo); border-bottom: 2.5px solid var(--text-lo); transform: rotate(45deg) translateY(-3px); transition: transform var(--t-fast) var(--ease-out); }
@@ -524,8 +520,7 @@ svg { flex: none; }
 .sheet-grip { display: block; width: 48px; height: 5px; border-radius: 3px; background: var(--edge); margin: 10px auto 2px; flex: none; }
 .sheet-head { display: flex; align-items: center; gap: var(--s-2); padding: 8px 16px 8px 24px; flex: none; }
 .sheet-title { flex: 1 1 auto; min-width: 0; font-family: var(--font-display); font-size: var(--fs-h2); font-weight: var(--fw-display); line-height: 1.2; overflow-wrap: anywhere; }
-.sheet-title:lang(hi), :lang(hi) .sheet-title { font-family: var(--font-deva); line-height: 1.4; }
-.sheet-title:lang(kn), :lang(kn) .sheet-title { font-family: var(--font-kn); line-height: 1.4; }
+.sheet-title:lang(hi), :lang(hi) .sheet-title, .sheet-title:lang(kn), :lang(kn) .sheet-title { line-height: 1.35; }
 .sheet-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 24px 24px; overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; min-height: 0; }
 .sheet-foot { flex: none; display: flex; gap: var(--s-3); justify-content: flex-end; flex-wrap: wrap; padding: 12px 24px calc(16px + var(--safe-b)); border-top: 1px solid var(--hairline); }
 .sheet-foot:empty { display: none; }
@@ -559,8 +554,6 @@ svg { flex: none; }
 
 /* Facts inside sheets (kept from v2 markup). */
 .sheet-big { font-family: var(--font-display); font-weight: var(--fw-display); font-size: clamp(1.8rem, 1.4rem + 1.6vw, 2.6rem); line-height: 1.15; overflow-wrap: anywhere; }
-.sheet-big:lang(hi), .sheet-big :lang(hi) { font-family: var(--font-deva); }
-.sheet-big :lang(kn) { font-family: var(--font-kn); }
 .fact { display: flex; align-items: center; gap: 10px; font-size: var(--fs-body); overflow-wrap: anywhere; }
 .fact svg { color: var(--accent-text); }
 .fact.muted, .fact-text { color: var(--text-lo); }
@@ -649,3 +642,70 @@ svg { flex: none; }
   .keycap, .btn, .chip, .yes-btn, .pad-key, .card-interactive { transition: none; }
   .keycap:active, .btn:active, .yes-btn:active, .pad-key:active, .chip:active { transform: none !important; }
 }
+
+/* ============================================================ v4 type -- */
+/* Type roles (README-v3 section 1b). Display = Jaini Purva (Baloo Tamma 2 in Kannada). */
+.t-hero { font-family: var(--font-display); font-weight: 400; font-size: var(--t-hero); line-height: 1.02; letter-spacing: var(--track-display); }
+.t-page { font-family: var(--font-display); font-weight: 400; font-size: var(--t-page); line-height: 1.02; letter-spacing: var(--track-display); }
+.t-h2 { font-family: var(--font-display); font-weight: 400; font-size: var(--t-h2); line-height: 1.05; letter-spacing: var(--track-display); }
+.t-h3 { font-family: var(--font-body); font-weight: 600; font-size: var(--t-h3); line-height: 1.25; letter-spacing: var(--track-h3); }
+.t-body { font-family: var(--font-body); font-size: var(--t-body); line-height: var(--lh-body); }
+.t-label { font-family: var(--font-body); font-weight: 600; font-size: var(--t-label); letter-spacing: var(--track-label); text-transform: uppercase; color: var(--text-lo); line-height: 1.3; }
+.t-money, .bignum { font-family: var(--font-num); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bignum-figure, .t-figure { font-family: var(--font-figure); font-weight: 400; font-size: var(--t-figure); line-height: 1; letter-spacing: -0.01em; font-variant-numeric: normal; }
+:lang(kn) .t-hero, :lang(kn) .t-page, :lang(kn) .t-h2, .t-hero:lang(kn), .t-page:lang(kn), .t-h2:lang(kn) { font-weight: 700; line-height: 1.2; }
+:lang(hi) .t-hero, :lang(hi) .t-page, :lang(hi) .t-h2 { line-height: 1.2; }
+
+/* ========================================================= page head -- */
+/* Every screen starts with it: big display title (left), one plain line under it, the screen's
+   primary action(s) on the right (laptop) or under the title (phone). No chips in the head.
+   <header class="page-head"><div class="page-head-text"><h1 class="page-title">..</h1>
+   <p class="page-sub">..</p></div><div class="page-actions">..</div></header>  [pageHead() in ui.js] */
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-5);
+  margin: 8px 0 var(--s-6); min-width: 0;
+}
+.page-head-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.page-title {
+  font-family: var(--font-display); font-weight: 400; font-size: var(--t-page); line-height: 1.02;
+  letter-spacing: var(--track-display); color: var(--text-hi); overflow-wrap: anywhere; margin: 0;
+}
+.page-title:lang(hi), :lang(hi) .page-title { line-height: 1.2; }
+.page-title:lang(kn), :lang(kn) .page-title { font-weight: 700; line-height: 1.2; }
+.page-sub { color: var(--text-md); font-size: var(--t-body); line-height: var(--lh-body); max-width: 60ch; }
+.page-actions { flex: none; display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; justify-content: flex-end; }
+.page-head .card-speak { margin: 0; }
+@media (max-width: 599px) {
+  .page-head { flex-direction: column; align-items: stretch; gap: var(--s-4); margin-bottom: var(--s-5); }
+  .page-actions { justify-content: flex-start; }
+  .page-actions > .keycap { flex: 1 1 auto; }
+}
+
+/* ======================================================== brand mark -- */
+/* The real Sahay logo (brand.js brandMark(); static pages use the same markup). Never recoloured. */
+.brand-mark { display: inline-flex; align-items: center; gap: 10px; flex: none; color: var(--text-hi); text-decoration: none; }
+.brand-mark .brand-img { display: block; height: auto; max-height: 100%; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.brand-word { font-family: var(--font-display); font-size: 1.75rem; line-height: 1; letter-spacing: var(--track-display); }
+.brand-word:lang(kn), :lang(kn) .brand-word { font-weight: 700; font-size: 1.5rem; }
+
+/* ================================================== language switcher -- */
+/* lang-switch.js createLangSwitch(); landing / auth use the same classes. Globe + the current
+   language's name (in its own script) + caret; the menu lists English / हिन्दी / ಕನ್ನಡ. */
+.lang-switch {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  min-height: var(--touch-min); padding: 0 12px 0 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--edge); background: rgba(238, 242, 230, .05); color: var(--text-hi);
+  font-family: var(--font-body); font-size: .9375rem; font-weight: 600; white-space: nowrap;
+  transition: background-color var(--t-micro) var(--ease-out), border-color var(--t-micro) var(--ease-out);
+}
+.lang-switch:hover { background: rgba(238, 242, 230, .10); border-color: var(--edge-strong); }
+.lang-switch:active { transform: scale(.97); }
+.lang-switch[aria-expanded="true"] { border-color: var(--edge-accent); }
+.lang-switch > svg:first-child { color: var(--accent-text); }
+.lang-switch-caret { color: var(--text-lo); transition: transform var(--t-fast) var(--ease-out); }
+.lang-switch[aria-expanded="true"] .lang-switch-caret { transform: rotate(180deg); }
+.lang-switch-name:lang(hi) { font-family: "Hind", "Manrope", sans-serif; }
+.lang-switch-name:lang(kn) { font-family: "Noto Sans Kannada", "Manrope", sans-serif; }
+.popover-item:lang(hi) { font-family: "Hind", "Manrope", sans-serif; }
+.popover-item:lang(kn) { font-family: "Noto Sans Kannada", "Manrope", sans-serif; }
+@media (prefers-reduced-motion: reduce) { .lang-switch, .lang-switch-caret { transition: none; } .lang-switch:active { transform: none; } }

@@ -1,27 +1,27 @@
-// NavJelly (laptop, tablet) and NavRail (phone landscape): one floating curved glass sidebar.
-// The glass is a column whose right edge swells into a clear convex belly where the items sit
-// (shell-geometry jellyOutline, applied as a clip-path on the glass layer itself, so the backdrop
-// blur follows the curve and the hex field shows through). An SVG draws the rim (lime at the
-// belly) and the soft shadow from the same outline. The Sahay orb sits in a polished socket that
-// breaks the top edge and the right edge; Buy, Sell, Stock and Money ride the belly (the middle
-// items furthest right); a lime droplet slides ALONG the belly to the active item with a short jelly
-// stretch (a plain fade under reduced motion). Bottom: My Sahay, language, theme. In the rail
-// (phoneLand) the bulge is 0, so the same shape is a plain rounded column.
+// NavJelly (laptop, tablet) and NavRail (phone landscape): one floating glass sidebar, CONCAVE (v4):
+// full width at the top and the bottom, its right edge curving INWARD to its narrowest at the vertical
+// centre, smooth and symmetric (shell-geometry concaveOutline, applied as a clip-path on the glass
+// layer itself, so the light blur follows the curve and the hex dots show through). An SVG draws the
+// rim (lime at the waist) and a shadow masked out from under the glass. Top: the Sahay logo (brand),
+// then the agent orb in its socket (the voice element, not the brand). Buy, Sell, Stock and Money
+// follow the curve (the centre items sit further left); a lime droplet slides ALONG the curve to the
+// active item with a short jelly stretch (a fade under reduced motion). Bottom: My Sahay and theme.
+// The UI language switcher lives in the top bar (lang-switch.js), not here. In the rail the depth is 0.
 //
-// The container (nav.nav-jelly) carries no filter, mask, opacity or transform: the glass layer is a
-// child, the socket sits outside its clip.
+// The container (nav.nav-jelly) carries no filter, mask, opacity or transform.
 //
-// createNavJelly({ items, onOrb, onLang, onTheme }) -> { el, update(model), relayout() }
-//   model = { route, badges: {key: n}, agentState, orbLabel, langShort, themeLabel, themeIcon }
+// createNavJelly({ items, onOrb, onTheme }) -> { el, update(model), relayout() }
+//   model = { route, badges: {key: n}, agentState, orbLabel, themeLabel, themeIcon }
 
 import { h, icon, svgEl } from "./dom.js";
 import { t } from "./i18n.js";
 import { createThinkingOrb } from "./thinking-orb.js";
-import { jellyOutline, bellyX, polygonCss, svgPath, badgeText } from "./shell-geometry.js";
+import { concaveOutline, concaveX, polygonCss, svgPath, badgeText } from "./shell-geometry.js";
+import { brandMark } from "./brand.js";
 
 const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function createNavJelly({ items, onOrb, onLang, onTheme }) {
+export function createNavJelly({ items, onOrb, onTheme }) {
   const gid = `nj-rim-${Math.random().toString(36).slice(2, 7)}`;
   // The shadow is cut out where the glass is (an SVG mask), so the glass never blurs its own
   // shadow: behind the glass there is only the hex field.
@@ -64,52 +64,39 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
   const me = h("a", { class: "nj-me", href: "#/me", dataset: { route: "me" } },
     h("span", { class: "nj-avatar", "aria-hidden": "true" }, icon("user", 24), h("span", { class: "badge nj-badge", hidden: true })),
     h("span", { class: "nj-word" }));
-  const langBtn = h("button", { class: "nj-tool nj-lang tip-right", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, h("span", { class: "nj-lang-txt" }));
   const themeBtn = h("button", { class: "nj-tool nj-theme tip-right", type: "button" });
-  langBtn.addEventListener("click", () => onLang(langBtn));
   themeBtn.addEventListener("click", () => onTheme());
+  const brand = h("a", { class: "nj-brand", href: "#/sahay" }, brandMark({ size: 40 }));
 
   const el = h("nav", { class: "nav-jelly" },
     shadow, glass, rim,
+    brand,
     orbLink,
     h("div", { class: "nj-items" }, marker, ...links),
-    h("div", { class: "nj-foot" }, me, h("div", { class: "nj-tools" }, langBtn, themeBtn)));
+    h("div", { class: "nj-foot" }, me, h("div", { class: "nj-tools" }, themeBtn)));
 
   let model = { route: null };
   let markerAt = null; // { x, y, route }
-  let geo = { body: 0, h: 0, bulge: 0, centre: 0, span: 1, follow: 0.7 };
+  let geo = { w: 0, h: 0, depth: 0 };
 
-  function vars() {
-    const cs = getComputedStyle(el);
-    return {
-      body: parseFloat(cs.getPropertyValue("--nj-body")) || el.clientWidth,
-      bulge: parseFloat(cs.getPropertyValue("--nj-bulge")) || 0,
-      follow: parseFloat(cs.getPropertyValue("--nj-follow")) || 0.7,
-    };
-  }
-
-  /** Centre of an item's icon in nav coordinates, after its belly offset. */
+  /** Centre of an item's icon in nav coordinates, after its curve offset. */
   function iconCentre(link) {
     const ico = link.querySelector(".nj-ico");
     const dx = Number(link.dataset.dx || 0);
     return { x: link.offsetLeft + dx + ico.offsetLeft + ico.offsetWidth / 2, y: link.offsetTop + ico.offsetTop + ico.offsetHeight / 2 };
   }
 
-  /** Draw the glass for the real height and seat every item on the belly. */
+  /** Draw the glass for the real size and seat every item on the inward curve. */
   function relayout() {
     // (A fixed element has no offsetParent; an undisplayed one has no client rects.)
     if (!el.isConnected || el.getClientRects().length === 0) return;
-    const v = vars();
+    const w = el.clientWidth;
     const hgt = el.clientHeight;
-    const ys = links.map((l) => l.offsetTop + l.offsetHeight / 2);
-    const first = ys[0], last = ys[ys.length - 1];
-    const centre = (first + last) / 2;
-    const span = Math.max(80, (last - first) / 2 + 90);
-    geo = { body: v.body, h: hgt, bulge: v.bulge, centre, span, follow: v.follow };
-    const pts = jellyOutline(v.body, hgt, { bulge: v.bulge, centre, span, radius: 30 });
+    const depth = parseFloat(getComputedStyle(el).getPropertyValue("--nj-depth")) || 0;
+    geo = { w, h: hgt, depth };
+    const pts = concaveOutline(w, hgt, { depth, radius: 30 });
     glass.style.clipPath = polygonCss(pts);
     const d = svgPath(pts);
-    const w = v.body + v.bulge;
     for (const svg of [rim, shadow]) { svg.setAttribute("viewBox", `0 0 ${w} ${hgt}`); svg.style.width = `${w}px`; svg.style.height = `${hgt}px`; }
     rimPath.setAttribute("d", d);
     rimGlow.setAttribute("d", d);
@@ -118,7 +105,7 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
     for (const [k, v] of Object.entries({ x: -80, y: -80, width: w + 160, height: hgt + 160 })) { cut.setAttribute(k, v); cutRect.setAttribute(k, v); }
     for (const link of links) {
       const yc = link.offsetTop + link.offsetHeight / 2;
-      const dx = Math.round(bellyX(yc, v.body, v.bulge, centre, span, v.follow) - v.body / 2);
+      const dx = Math.round(concaveX(yc, w, hgt, depth) - w / 2);
       link.dataset.dx = String(dx);
       link.style.setProperty("--dx", `${dx}px`);
     }
@@ -142,7 +129,7 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
         marker.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "linear" });
       } else {
         const g = geo;
-        const xAt = (y) => bellyX(y, g.body, g.bulge, g.centre, g.span, g.follow);
+        const xAt = (y) => concaveX(y, g.w, g.h, g.depth);
         const shift = to.x - xAt(to.y);
         const n = Math.max(2, Math.ceil(Math.abs(to.y - from.y) / 10));
         const frames = [];
@@ -192,9 +179,7 @@ export function createNavJelly({ items, onOrb, onLang, onTheme }) {
     me.querySelector(".nj-word").textContent = t("nav.me");
     setBadge(me, badges.me || 0, t("nav.me"));
     if (model.route === "me") me.setAttribute("aria-current", "page"); else me.removeAttribute("aria-current");
-    langBtn.querySelector(".nj-lang-txt").textContent = model.langShort || "";
-    langBtn.setAttribute("aria-label", t("shell.lang"));
-    langBtn.dataset.tip = t("shell.lang");
+    brand.setAttribute("aria-label", t("app.name"));
     themeBtn.replaceChildren(icon(model.themeIcon || "sun", 22));
     themeBtn.setAttribute("aria-label", model.themeLabel || "");
     themeBtn.dataset.tip = model.themeLabel || "";

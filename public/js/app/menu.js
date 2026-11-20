@@ -42,14 +42,18 @@ export function openPopover({ anchor, label, items, onPick, errorText }) {
     label ? h("p", { class: "popover-title", "aria-hidden": "true", text: label }) : null, ...buttons, err);
   host().append(el);
 
-  // Position: prefer to the right of the anchor (sidebar), else above it, clamped to the viewport.
+  // Position: under the anchor (top bar), right-aligned to it; above it when there is no room below;
+  // beside it for a control low in a left rail. Clamped to the viewport.
   const r = anchor.getBoundingClientRect();
   const pw = el.offsetWidth, ph = el.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
-  let left = r.right + 12, top = r.bottom - ph;
-  let origin = "left bottom";
-  if (left + pw > vw - 12) { left = Math.min(vw - pw - 12, Math.max(12, r.left + r.width / 2 - pw / 2)); top = r.top - ph - 12; origin = "center bottom"; }
-  if (top < 12) { top = Math.min(vh - ph - 12, r.bottom + 12); origin = "center top"; }
+  let left = Math.min(vw - pw - 12, Math.max(12, r.right - pw)), top = r.bottom + 8;
+  let origin = "right top";
+  if (top + ph > vh - 12) {
+    if (r.left < 160 && r.right + 12 + pw < vw - 12) { left = r.right + 12; top = Math.max(12, r.bottom - ph); origin = "left bottom"; }
+    else { top = r.top - ph - 8; origin = "right bottom"; }
+  }
+  if (top < 12) top = 12;
   el.style.left = `${Math.max(12, left)}px`;
   el.style.top = `${Math.max(12, top)}px`;
   el.style.setProperty("--origin", origin);

@@ -155,6 +155,49 @@ Nav: Sahay = live thinking orb (canvas), Buy = cart, Sell = receipt, Stock = jar
   coral error (stays), amber warning; placement per spec 6.3 (phone top under the capsule, max 2;
   laptop top-right of content, left of the agent column, max 3).
 
+
+## v4 additions (brief 2026-11-20-ui-v4-brief.md) **ready**
+### 1b. Type (tokens-v3.css; fonts loaded by app.html from Google Fonts, display=swap)
+- Families: `--font-display` Jaini Purva (Latin + Devanagari; Kannada pages get Baloo Tamma 2 700),
+  `--font-body` Manrope 400-800 (Hindi pages: Hind; Kannada: Noto Sans Kannada), `--font-num` Manrope
+  (use weight 700 + `tabular-nums` for money), `--font-figure` Jaini Purva (hero totals). `:lang(hi)` and
+  `:lang(kn)` swap these variables and zero the tracking, so write `font-family: var(--font-display)` /
+  `var(--font-body)` and never a family name. Bricolage, Hanken, JetBrains, Space Grotesk, Instrument Sans are gone.
+- Scale: `--t-hero` clamp(44px, 6vw, 92px) lh 1.02; `--t-page` clamp(36px, 4vw, 56px); `--t-h2` clamp(28px, 3vw, 44px)
+  lh 1.05; `--t-h3` 20-26px Manrope 600; `--t-body` 16px / 1.6 (hi, kn 17px / 1.7); `--t-label` 13px Manrope 600
+  .06em uppercase (Latin only); `--t-figure` 48-72px Jaini Purva; `--t-money` 22-30px Manrope 700.
+  Tracking `--track-display` -0.03em, `--track-h3` -0.02em, `--track-label` .06em (all 0 in hi / kn).
+  The v3 names (`--fs-body`, `--fs-title`, `--fs-h2`, `--fs-h3`, `--fs-total`, `--fs-amount`) now point at this scale.
+- Classes: `.t-hero`, `.t-page`, `.t-h2`, `.t-h3`, `.t-body`, `.t-label`, `.t-money`, `.t-figure` / `.bignum-figure`.
+
+### Page head (every screen starts with it)
+`pageHead({ title, sub, actions: [node], speakKey })` (ui.js; also re-exported from shell.js) ->
+`header.page-head > .page-head-text > h1.page-title + p.page-sub` and `.page-actions` (right on laptop,
+under the title on phones; up to 3 actions, primary first). No chips or pills in the head.
+
+### Brand mark (the real logo; the thinking orb is the agent, not the brand)
+- `brandMark({ size = 40, word = false })` (brand.js; re-exported from shell.js) -> `span.brand-mark > img.brand-img`
+  (+ `span.brand-word` "Sahay" in the display face). `BRAND` has the paths.
+- Files: `/assets/brand/sahay-mark-128.png` (102x128) and `-256.png` (2x), `favicon-32.png`, `favicon-48.png`,
+  `apple-touch-180.png`, `icon-192.png`, `icon-512.png`. Static markup for landing / pay / auth:
+  `<span class="brand-mark"><img class="brand-img" src="/assets/brand/sahay-mark-128.png" srcset="/assets/brand/sahay-mark-256.png 2x" width="32" height="40" alt="Sahay"></span>`
+- Placed by the shell: sidebar top, phone capsule (first row), favicons in app.html.
+
+### UI language switcher (English by default, per device, independent of the shop's voice language)
+- `createLangSwitch()` (lang-switch.js; re-exported from shell.js) -> `{ el, update() }`: `button.lang-switch`
+  (globe + current language name in its own script + caret) opening the popover English / हिन्दी / ಕನ್ನಡ.
+- `uiLang()` -> "en" | "hi" | "kn" (localStorage `sahay-ui-lang`, default "en"); `setUiLang(code)` saves, switches
+  the words (i18n `setLang`) and fires `sahay:ui-lang` { lang }. main.js turns any change into `store.touch("lang")`,
+  so every screen that rebuilds on the "lang" part follows. The shop's language no longer changes the UI words.
+- In the shell: top capsule row 2 on phones, in the top strip from 600px. The sidebar "हि" button is gone.
+- Landing (own i18n): same look with the same classes (`.lang-switch`, `.lang-switch-name`, `.popover.glass`, `.popover-item`).
+- Auth (W5): use `createLangSwitch()` and call `setUiLang()` instead of `setLang()` when a language is picked;
+  do not switch the UI to `business.language` after log in.
+
+### Sidebar (concave)
+Full width at both ends (100px tablet, 120px from 1280), the right edge curving in to its narrowest at
+the vertical centre (64 / 76px). Items follow the curve; the marker slides along it. `--nav-w` is the full width.
+
 ## 6. Removed (do not reference)
 - Files gone: the v2 edge module, `js/app/nav.js`, the v2 token file, the temporary bridge sheet.
 - Classes gone: the edge orb (`.edge*`, `.eb-*`), `.pillnav`, `.nav-link(s)`, `.nav-ico`, `.nav-word`,
