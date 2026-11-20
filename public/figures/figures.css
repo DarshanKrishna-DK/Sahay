@@ -1,29 +1,29 @@
 /* Landing figures: the anatomy kit's styles (ISO_CSS, MIT, scripts/figures/kit/LICENSE) tinted for
-   the v3 landing: green-tinted piano blacks, one lime accent. Dark only, like the landing page.
+   the v5 landing: warm blacks, cream lines, one creamy pink accent. Dark only, like the landing page.
    Every colour in a figure comes from these variables, never from the SVG or the live code. */
 
 .iso {
-  --anatomy-card: #0B0D0A;
-  --anatomy-text: var(--text-lo, #A9B39A);
-  --anatomy-strong: var(--text-hi, #F2F6EA);
-  --anatomy-muted: var(--text-lo, #A9B39A);
-  --anatomy-paper: #0B0D0A; --anatomy-face: #171B12; --anatomy-top: #1A1F14;
-  --anatomy-shade-0: #070806; --anatomy-shade-1: #0C0E09; --anatomy-shade-2: #11140D; --anatomy-shade-3: #161A11;
-  --anatomy-lit-top: #2C3A12; --anatomy-lit-shade: #1F2A0C;
-  --anatomy-hi: #E4EDD4; --anatomy-mid: #7C8A6A; --anatomy-lo: #485240; --anatomy-faint: #262D20; --anatomy-lit: #B6F23C;
-  --anatomy-halo: #020302; --anatomy-halo-opacity: .9; --anatomy-dot: #E2EBD2;
+  --anatomy-card: #181416;
+  --anatomy-text: var(--text-lo, #BBA8A4);
+  --anatomy-strong: var(--text-hi, #F8ECE8);
+  --anatomy-muted: var(--text-lo, #BBA8A4);
+  --anatomy-paper: #181416; --anatomy-face: #241E21; --anatomy-top: #2A2326;
+  --anatomy-shade-0: #0F0C0D; --anatomy-shade-1: #141012; --anatomy-shade-2: #1A1517; --anatomy-shade-3: #201A1C;
+  --anatomy-lit-top: #4A3638; --anatomy-lit-shade: #3A2A2C;
+  --anatomy-hi: #F1E2DE; --anatomy-mid: #9C8884; --anatomy-lo: #5E504E; --anatomy-faint: #352C2E; --anatomy-lit: #F2CFC6;
+  --anatomy-halo: #070506; --anatomy-halo-opacity: .85; --anatomy-dot: #EFE0DC;
   --anatomy-weight: .6px; --anatomy-ease: cubic-bezier(.32, .72, 0, 1);
   --anatomy-mono: "Manrope", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 /* The preview page may still ask for light; the landing never does. */
 :root[data-theme="light"] .iso {
-  --anatomy-card: #F4F7EE;
-  --anatomy-paper: #F4F7EE; --anatomy-face: #FFFFFF; --anatomy-top: #FFFFFF;
-  --anatomy-shade-0: #D3DAC8; --anatomy-shade-1: #DDE3D3; --anatomy-shade-2: #E7ECDF; --anatomy-shade-3: #F0F3EA;
-  --anatomy-lit-top: #EEF8D2; --anatomy-lit-shade: #DDEDB4;
-  --anatomy-hi: #172012; --anatomy-mid: #6E7A60; --anatomy-lo: #A6B096; --anatomy-faint: #CCD4C0; --anatomy-lit: #4F7A00;
-  --anatomy-halo: #7A8670; --anatomy-halo-opacity: .32; --anatomy-dot: #2E3826;
-  --anatomy-text: #3C4632; --anatomy-strong: #121A0C; --anatomy-muted: #4D5842;
+  --anatomy-card: #FBF5F3;
+  --anatomy-paper: #FBF5F3; --anatomy-face: #FFFFFF; --anatomy-top: #FFFFFF;
+  --anatomy-shade-0: #DDD0CC; --anatomy-shade-1: #E6DAD6; --anatomy-shade-2: #EEE4E1; --anatomy-shade-3: #F5EEEC;
+  --anatomy-lit-top: #FBE6E0; --anatomy-lit-shade: #F2D3CB;
+  --anatomy-hi: #241A1C; --anatomy-mid: #7E6E6B; --anatomy-lo: #B3A4A0; --anatomy-faint: #D8CCC8; --anatomy-lit: #A4594C;
+  --anatomy-halo: #8A7A77; --anatomy-halo-opacity: .3; --anatomy-dot: #3A2D2F;
+  --anatomy-text: #4A3D3B; --anatomy-strong: #1E1517; --anatomy-muted: #5C4E4B;
 }
 
 /* ---- kit drawing rules (ISO_CSS) ---- */
@@ -76,16 +76,13 @@
 .iso-figure { margin: 0; color: var(--anatomy-text); }
 .iso-plate {
   position: relative; padding: 56px 20px 60px;
-  border: 1px solid transparent;
-  border-radius: 26px;
-  background:
-    radial-gradient(120% 60% at 22% 0%, rgba(255, 255, 255, .07), transparent 55%) padding-box,
-    linear-gradient(180deg, #13160F 0%, var(--anatomy-card) 45%, #070806 100%) padding-box,
-    linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .06) 42%, rgba(182, 242, 60, .24)) border-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .7), 0 3px 0 #020302, 0 24px 44px -24px #000;
+  border: 1px solid rgba(242, 207, 198, .14);
+  border-radius: 20px;
+  background: var(--anatomy-card);
+  box-shadow: 0 12px 28px -18px rgba(0, 0, 0, .8);
   --anatomy-paper: var(--anatomy-card);
 }
-:root[data-theme="light"] .iso-plate { background: var(--anatomy-card); box-shadow: 0 0 0 1px #C9D1BC; }
+:root[data-theme="light"] .iso-plate { background: var(--anatomy-card); box-shadow: 0 0 0 1px #D8CBC7; }
 .iso-plate-corners { position: absolute; inset: 18px 22px; pointer-events: none; }
 .iso-plate-corner {
   position: absolute; color: var(--anatomy-muted);

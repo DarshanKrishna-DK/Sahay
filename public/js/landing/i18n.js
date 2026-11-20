@@ -50,7 +50,7 @@ const S = {
     kn: "ಸಹಾಯ್ ಮೂರು ಹಂತಗಳಲ್ಲಿ ನಿಮ್ಮ ಅಂಗಡಿಗೆ ಹೇಗೆ ಖರೀದಿಸುತ್ತದೆ",
   },
   howSub: {
-    en: "Keep serving customers at the counter. Sahay makes the calls, bargains, and waits for your yes.",
+    en: "Keep serving customers at the counter. Sahay talks to sellers, bargains, and waits for your yes.",
     hi: "आप काउंटर पर ग्राहक सँभालिए। फ़ोन, मोलभाव सहाय करता है, और आपकी हाँ का इंतज़ार करता है।",
     kn: "ನೀವು ಕೌಂಟರ್‌ನಲ್ಲಿ ಗ್ರಾಹಕರನ್ನು ನೋಡಿಕೊಳ್ಳಿ. ಕರೆ, ಚೌಕಾಸಿ ಸಹಾಯ್ ಮಾಡುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
   },
@@ -62,9 +62,9 @@ const S = {
   },
   step2Title: { en: "Sahay bargains with sellers", hi: "सहाय विक्रेताओं से मोलभाव करता है", kn: "ಸಹಾಯ್ ಮಾರಾಟಗಾರರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ" },
   step2Copy: {
-    en: "It calls real sellers near you, says it is an automated assistant, and brings the price down.",
-    hi: "यह आपके पास के असली विक्रेताओं से बात करता है, बताता है कि यह स्वचालित सहायक है, और दाम कम कराता है।",
-    kn: "ಇದು ನಿಮ್ಮ ಹತ್ತಿರದ ನಿಜ ಮಾರಾಟಗಾರರಿಗೆ ಕರೆ ಮಾಡಿ, ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳಿ, ಬೆಲೆ ಇಳಿಸುತ್ತದೆ.",
+    en: "It contacts sellers near you, says first that it is an automated assistant, and asks for a better price.",
+    hi: "यह आपके पास के विक्रेताओं से संपर्क करता है, पहले बताता है कि यह स्वचालित सहायक है, और बेहतर दाम माँगता है।",
+    kn: "ಇದು ನಿಮ್ಮ ಹತ್ತಿರದ ಮಾರಾಟಗಾರರನ್ನು ಸಂಪರ್ಕಿಸಿ, ಮೊದಲು ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳಿ, ಉತ್ತಮ ಬೆಲೆ ಕೇಳುತ್ತದೆ.",
   },
   step3Title: { en: "You say yes", hi: "आप हाँ कहते हैं", kn: "ನೀವು ಒಪ್ಪಿಗೆ ಕೊಡುತ್ತೀರಿ" },
   step3Copy: {

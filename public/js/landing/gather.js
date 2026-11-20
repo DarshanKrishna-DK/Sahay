@@ -1,5 +1,5 @@
 // Hero point cloud (concept from the owner's reference, gather.be-of-dao.com; no code or assets
-// copied): lime points drift, gather into Sahay's orb, then into a rupee sign, and back. HUD
+// copied): cream and pink points drift, gather into Sahay's orb, then into a rupee sign, and back. HUD
 // trackers (DOM, mono labels) follow single points and name real story beats; hairlines join them.
 // Canvas 2D only. Paused when off screen or the tab is hidden; one still orb under reduced motion.
 // The top half of this file is pure (no DOM) so node:test can check it.
@@ -171,10 +171,11 @@ const RING_SHARE = 0.2;       // share of points on the orb's dotted ring
 // The page opens at the start of the orb phase with the points already near the orb, so the very
 // first frame (and any screenshot) shows the gathered cloud; the drift comes later in the loop.
 const START_AT = CYCLE[0].dur;
-const BUCKET_ALPHA = [0.2, 0.38, 0.62, 0.92];
+// Calm v5 palette: pink points with cream nearest ones, drawn normally (no additive glow).
+const BUCKET_ALPHA = [0.16, 0.3, 0.5, 0.78];
 const BUCKET_SIZE = [1.0, 1.25, 1.5, 1.8];
-const LIME = "182, 242, 60";
-const LIME_HI = "212, 255, 106";
+const PINK = "242, 207, 198";
+const CREAM = "248, 236, 232";
 const TRACK_DIRS = { seller: [0.55, -0.6, 0.58], stock: [0.85, 0.1, 0.5], yes: [0.3, 0.75, 0.58], lang: [-0.6, -0.55, 0.58] };
 
 export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-motion: reduce)") } = {}) {
@@ -331,7 +332,7 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     const { cx, cy, R } = lay;
     ctx.globalCompositeOperation = "source-over";
     ctx.lineWidth = 1;
-    ctx.strokeStyle = `rgba(${LIME}, 0.10)`;
+    ctx.strokeStyle = `rgba(${PINK}, 0.07)`;
     ctx.beginPath();
     ctx.moveTo(cx - R * 1.55, cy); ctx.lineTo(cx + R * 1.55, cy);
     ctx.moveTo(cx, cy - R * 1.45); ctx.lineTo(cx, cy + R * 1.45);
@@ -351,11 +352,11 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     ctx.globalCompositeOperation = "source-over";
     ctx.lineWidth = 1;
     // Hairlines between trackers, then each tracker to its label.
-    ctx.strokeStyle = `rgba(${LIME_HI}, 0.16)`;
+    ctx.strokeStyle = `rgba(${CREAM}, 0.12)`;
     ctx.beginPath();
     on.forEach((tr, k) => { const x = px[tr.idx], y = py[tr.idx]; if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
     ctx.stroke();
-    ctx.strokeStyle = `rgba(${LIME_HI}, 0.5)`;
+    ctx.strokeStyle = `rgba(${CREAM}, 0.4)`;
     ctx.beginPath();
     for (const tr of on) {
       const x = px[tr.idx], y = py[tr.idx];
@@ -371,10 +372,10 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     ctx.clearRect(0, 0, W, H);
     drawHud();
     const swarm = phaseName === "swarm";
-    ctx.globalCompositeOperation = "lighter";
+    ctx.globalCompositeOperation = "source-over";
     for (let b = 0; b < 4; b++) {
       const a = BUCKET_ALPHA[b] * (swarm ? 0.6 : 1);
-      ctx.fillStyle = b === 3 ? `rgba(${LIME_HI}, ${a})` : `rgba(${LIME}, ${a})`;
+      ctx.fillStyle = b === 3 ? `rgba(${CREAM}, ${a})` : `rgba(${PINK}, ${a})`;
       const s = BUCKET_SIZE[b];
       ctx.beginPath();
       for (let i = 0; i < n; i++) if (bucket[i] === b) ctx.rect(px[i] - s / 2, py[i] - s / 2, s, s);
