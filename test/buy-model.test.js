@@ -219,6 +219,7 @@ test("Buy and Stock are v3 only: no old markup classes, no marigold or saffron i
     assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i, `${f}: tokens only, no raw hex`);
     assert.match(css, /prefers-reduced-motion: reduce/, `${f}: reduced motion branch`);
   }
-  const app = read("public/css/app.css");
+  // app.css is gone in v3 (every screen has its own stylesheet); if it ever comes back it stays clean.
+  const app = fs.existsSync(path.join(ROOT, "public/css/app.css")) ? read("public/css/app.css") : "";
   for (const old of [".river {", ".ladder {", ".receipt {", ".work {", ".earlier {"]) assert.ok(!app.includes(old), `old Buy rule ${old} removed from app.css`);
 });

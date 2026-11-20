@@ -13,10 +13,9 @@ against the name now).
 | `css/tokens-v3.css` | W1 | every token (section 1), light theme, Indic font rules. **ready** |
 | `css/components-v3.css` | W1 | base reset, focus, every component class (section 2). **ready** |
 | `css/app-shell.css` | W1 | hex field, NavJelly, NavDock, NavRail, TopCapsule/TopStrip, slots, layout per size, view transitions. **ready** |
-| `css/app.css` | W1 (legacy screen rules shrink as W2-W5 move them out) | old per-screen rules, recoloured to v3. |
 | `css/app-sell.css` | W4B | Sell/Stock/Money screen rules. |
 | `vendor/sileo-0.1.6/sileo.css`, `css/app-toast.css` | W1 | toasts, lime/piano theme. |
-| your own screen file (`css/app-agent.css` W2, `css/app-waiting.css` W3, `css/app-buy.css` W4A, `css/app-money.css` W4B, `css/app-me.css` W5) | each owner | ask W1 to add the `<link>` (app.html is W1's), after `app-shell.css`. |
+| `css/app-agent.css` W2, `css/app-waiting.css` W3, `css/app-buy.css` + `css/app-stock.css` W4A, `css/app-sell.css` W4B, `css/app-me.css` + `css/app-auth.css` W5 | each owner | linked directly from app.html after `app-shell.css` (no `@import`). The v2 `app.css` is deleted. |
 
 Rules: tokens only (no raw hex in screen CSS except inside `rgba(var(--hex-rgb), a)`-style token use);
 `letter-spacing: 0` on hi/kn; owner text >= 16px (body 18px, Indic 19px); every animation has a

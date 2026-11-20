@@ -102,8 +102,6 @@ const T = {
   "talk.audioBlocked": ["Tap to hear Sahay", "सहाय को सुनने के लिए छुएँ", "ಸಹಾಯ್ ಕೇಳಲು ಒತ್ತಿ"],
   "talk.ended": ["The call ended. Tap the circle to talk again.", "कॉल खत्म हुई। फिर बात के लिए गोला छुएँ।", "ಕರೆ ಮುಗಿಯಿತು. ಮತ್ತೆ ಮಾತನಾಡಲು ವೃತ್ತ ಒತ್ತಿ."],
   "talk.otherTab": ["A call is still open, maybe in another tab.", "एक कॉल अभी खुली है, शायद दूसरी टैब में।", "ಒಂದು ಕರೆ ಇನ್ನೂ ತೆರೆದಿದೆ, ಬಹುಶಃ ಇನ್ನೊಂದು ಟ್ಯಾಬ್‌ನಲ್ಲಿ."],
-  "yes.placing": ["Order is being made", "ऑर्डर बन रहा है…", "ಆರ್ಡರ್ ಆಗುತ್ತಿದೆ…"],
-  "yes.placingSlow": ["The order is taking longer. Sahay will tell you, or check Buy.", "ऑर्डर में देर हो रही है। सहाय बताएगी, या खरीदें में देखें।", "ಆರ್ಡರ್ ತಡವಾಗುತ್ತಿದೆ. ಸಹಾಯ್ ತಿಳಿಸುತ್ತದೆ, ಅಥವಾ ಖರೀದಿಯಲ್ಲಿ ನೋಡಿ."],
   "talk.oldCall": ["Sahay is still holding your last call.", "सहाय आपकी पिछली कॉल अभी पकड़े हुए है।", "ಸಹಾಯ್ ನಿಮ್ಮ ಹಿಂದಿನ ಕರೆಯನ್ನು ಇನ್ನೂ ಹಿಡಿದಿದೆ."],
   "talk.otherScreen": ["A call is open on another screen.", "किसी दूसरी स्क्रीन पर एक कॉल खुली है।", "ಇನ್ನೊಂದು ಪರದೆಯಲ್ಲಿ ಒಂದು ಕರೆ ತೆರೆದಿದೆ."],
   "talk.endThat": ["End that call", "वह कॉल बंद करें", "ಆ ಕರೆ ಮುಗಿಸಿ"],
@@ -152,7 +150,6 @@ const T = {
   "yes.saving": ["Saving your answer", "आपका जवाब सहेज रहे हैं", "ನಿಮ್ಮ ಉತ್ತರ ಉಳಿಸುತ್ತಿದೆ"],
   "yes.error": ["Your answer was not saved.", "आपका जवाब सहेजा नहीं गया।", "ನಿಮ್ಮ ಉತ್ತರ ಉಳಿಸಲಾಗಲಿಲ್ಲ."],
   "yes.gone": ["This was already answered.", "इसका जवाब पहले ही हो चुका है।", "ಇದಕ್ಕೆ ಈಗಾಗಲೇ ಉತ್ತರಿಸಲಾಗಿದೆ."],
-  "yes.later": ["Later", "बाद में", "ನಂತರ"],
   "yes.pending": ["{n} waiting for your yes", "{n} आपकी हाँ के इंतज़ार में", "{n} ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗಾಗಿ ಕಾಯುತ್ತಿವೆ"],
   "simulated": ["simulated vendor", "सिम्युलेटेड विक्रेता (simulated vendor)", "ಸಿಮ್ಯುಲೇಟೆಡ್ ಮಾರಾಟಗಾರ (simulated vendor)"],
 

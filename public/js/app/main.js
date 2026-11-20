@@ -13,7 +13,7 @@ import { state, pendingApprovals } from "./store.js";
 import * as shellApi from "./shell.js";
 import { mountShell, slots, setRoute, setNavAgentState, setBadge, setTitle, setShop, setLanguageSaver, refresh as refreshShell } from "./shell.js";
 import { parseRoute } from "./shell-geometry.js";
-import { stateView, loadingView } from "./empty.js";
+import { bootSplash, bootError } from "./boot-screens.js";
 import { startCall, serverEnded, preload } from "./call.js";
 import { SCREENS } from "./screens.js";
 import "./store-sell.js";
@@ -35,6 +35,7 @@ let route = null;      // screen key ("buy", "me", "me/history")
 let routeId = null;    // destination id for the nav ("me" for "me/history")
 let welcome = null;
 let authView = null;
+let bootScreen = null; // { el, destroy() } from boot-screens.js
 
 function authMode() {
   if (/^#\/login/.test(location.hash)) return "login";
@@ -124,12 +125,14 @@ function renderBoot() {
     if (authView) { authView.el.remove(); authView.destroy(); authView = null; }
     if (/^#\/(signup|login)/.test(location.hash)) history.replaceState(null, "", "#/sahay");
     for (const el of main.querySelectorAll(":scope > .boot-view")) el.remove();
+    if (bootScreen) { bootScreen.destroy(); bootScreen = null; }
     route = null;
     go();
     return;
   }
   for (const s of screens.values()) s.el.hidden = true;
   for (const el of main.querySelectorAll(":scope > .boot-view")) el.remove();
+  if (bootScreen) { bootScreen.destroy(); bootScreen = null; }
   if (state.boot === "auth") {
     if (welcome) { welcome.el.remove(); welcome = null; }
     if (!authView) { authView = createAuth({ mode: authMode() }); app.append(authView.el); history.replaceState(null, "", `#/${authMode()}`); }
@@ -143,10 +146,11 @@ function renderBoot() {
     return;
   }
   if (welcome) { welcome.el.remove(); welcome = null; }
-  const view = state.boot === "loading"
-    ? loadingView(t("boot.loading"))
-    : stateView({ kind: "error", title: t("boot.error"), text: describe(state.bootError), action: { label: t("retry"), run: () => store.boot() } });
-  main.append(h("div", { class: "boot-view" }, view));
+  // W5's boot screens (spec 3.1 row 55): the connecting orb, or the error with Try again / Log in.
+  bootScreen = state.boot === "loading"
+    ? bootSplash()
+    : bootError({ err: state.bootError, onRetry: () => store.boot(), onLogin: () => { state.boot = "auth"; store.touch("boot"); } });
+  main.append(h("div", { class: "boot-view" }, bootScreen.el));
 }
 
 export function describe(err) {
