@@ -117,8 +117,9 @@ export function phaseAt(t) {
 /** Where the cloud sits in a canvas of w x h CSS px. `mode` comes from CSS (--gather-mode). */
 export function layoutFor(w, h, mode, safeTop = 0) {
   if (mode === "wide") {
-    const R = Math.max(60, Math.min(w * 0.2, h * 0.3, 330));
-    return { mode, cx: w * 0.64, cy: safeTop + (h - safeTop) * 0.5, R };
+    // The copy takes the left ~53%; the cloud is centred in the rest.
+    const R = Math.max(60, Math.min(w * 0.17, h * 0.3, 300));
+    return { mode, cx: w * 0.74, cy: safeTop + (h - safeTop) * 0.5, R };
   }
   const usable = Math.max(120, h - safeTop);
   const R = Math.max(50, Math.min(w * 0.34, (usable - 128) / 2, 260));

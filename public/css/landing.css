@@ -282,21 +282,23 @@ main, .site-foot { position: relative; z-index: 1; }
 .hero-copy h1 {
   color: var(--text-hi);
   font-family: var(--font-display); font-weight: var(--fw-display);
-  font-size: clamp(44px, 6vw, 92px); line-height: 1.02;
+  /* Sized by height too, so three lines and both buttons stay above the fold on short laptops. */
+  font-size: min(clamp(44px, 6vw, 92px), 10.5svh); line-height: 1.02;
   letter-spacing: -0.01em; text-wrap: balance;
 }
 .h1-line { display: block; }
 .h1-lime { color: var(--lime); }
-:lang(hi) .hero-copy h1, :lang(kn) .hero-copy h1 { max-width: 16ch; font-size: clamp(40px, 5.2vw, 80px); line-height: 1.5; }
+:lang(hi) .hero-copy h1, :lang(kn) .hero-copy h1 { font-size: min(clamp(36px, 5vw, 76px), 8svh); line-height: 1.5; }
 .hero-sub { max-width: 32em; margin-top: 22px; font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem); line-height: 1.6; color: var(--text); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
 
 @media (min-width: 1000px) {
   .hero-visual { position: absolute; inset: 0; height: auto; --gather-mode: wide; --safe-top: 88px; }
   .hero-copy {
+    /* Copy takes ~53% (Stitch 1.15fr : 1fr); the cloud sits in the right part (gather.js cx 0.74). */
     align-self: center;
-    width: min(560px, calc(40vw - 8px) + var(--gutter));
-    padding: 120px 0 96px var(--gutter);
+    width: min(calc(640px + var(--gutter)), 53vw);
+    padding: 100px 0 56px var(--gutter);
     margin-left: max(0px, calc((100vw - 1440px) / 2));
   }
 }
@@ -346,7 +348,7 @@ main, .site-foot { position: relative; z-index: 1; }
   mask-image: radial-gradient(circle, #000 55%, transparent 71%);
 }
 @media (min-width: 1000px) {
-  .hero-visual:not([data-state="ready"])::before { left: 64%; top: 50%; width: min(36vw, 520px); }
+  .hero-visual:not([data-state="ready"])::before { left: 74%; top: 54%; width: min(30vw, 560px); }
 }
 
 /* ---- Story ------------------------------------------------------------------------------------ */

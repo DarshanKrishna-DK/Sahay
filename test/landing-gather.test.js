@@ -166,3 +166,14 @@ test("gather: relayout before the first resize is a no-op, after it the cloud dr
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; }
   }
 });
+
+test("gather: on laptops the cloud stays right of the hero copy (copy ~53% wide)", async () => {
+  const G = await load("gather.js");
+  for (const [w, h] of [[1000, 640], [1280, 720], [1440, 900], [1568, 701], [1920, 1080]]) {
+    const gutter = Math.min(56, Math.max(16, w * 0.04));
+    const copyRight = Math.min(640 + gutter, w * 0.53) + Math.max(0, (w - 1440) / 2);
+    const lay = G.layoutFor(w, h, "wide", 88);
+    assert.ok(lay.cx - lay.R >= copyRight, `${w}x${h}: cloud left ${lay.cx - lay.R} clears copy ${copyRight}`);
+    assert.ok(lay.cx + lay.R <= w, `${w}x${h}: cloud inside`);
+  }
+});
