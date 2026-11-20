@@ -28,7 +28,7 @@ export function createWork() {
   const knownVendors = new Set();
   let firstRiver = true;
   let sheet = null; // { station id, api }
-  const listen = { negotiationId: null, status: "idle", error: null, speakers: 0 };
+  const listen = { negotiationId: null, status: "idle", error: null, speakers: 0, route: null };
   const listener = new NegotiationListener((s) => {
     Object.assign(listen, s);
     renderListen();
@@ -52,7 +52,7 @@ export function createWork() {
         class: `btn ${on ? "btn-ghost" : "btn-primary"}`, type: "button", "aria-pressed": String(on), disabled: busy ? true : undefined,
         on: { click: () => { if (on) listener.stop(); else if (n) listener.start(n.id); } },
       }, busy ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("headphones", 24), h("span", { text: on ? t("work.stopListen") : t("work.listen") })),
-      on && !busy ? h("span", { class: "listen-live", role: "status" }, h("span", { class: "now-dot", "aria-hidden": "true" }), h("span", { text: t("work.listening") })) : null,
+      on && !busy ? h("span", { class: "listen-live", role: "status" }, h("span", { class: "now-dot", "aria-hidden": "true" }), h("span", { text: t(listen.status === "joining" && listen.route === "proxy" ? "talk.saferRoute" : "work.listening") })) : null,
       listen.error ? h("p", { class: "listen-err", role: "alert" }, icon("alert", 20), h("span", { text: `${t("work.listenFail")} ${listen.error.message || ""}`.trim() })) : null);
   }
 

@@ -132,8 +132,13 @@ async function loadVoiceWithFakes() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** The fake clients hang off the returned log: log.rtc.published (tracks), log.rtc.rtmMessages, log.rtc.emit(event). */
-function fakeEnvironment({ micError = null, publishError = null, publishMs = 60, rtmPublishError = null } = {}) {
+/**
+ * The fake clients hang off the returned log: log.rtc (the latest RTC client: published tracks,
+ * rtmMessages, emit(event)), log.clients (every RTC client, one per connect attempt), log.rtms
+ * (every RTM instance with its config). attempts[i] = { rtc, rtm }: 'ok' (default), 'hang' (never
+ * answers until the client is released, as RTM login did on the blocked network) or an Error.
+ */
+function fakeEnvironment({ micError = null, publishError = null, publishMs = 60, rtmPublishError = null, attempts = [], search = '', remembered = false } = {}) {
   const log = [];
   globalThis.__voiceLog = log;
   const api = {
@@ -142,52 +147,108 @@ function fakeEnvironment({ micError = null, publishError = null, publishMs = 60,
     async renewVoiceToken(channel) { log.push('renew'); return { channel, uid: 1001, token: 't2' }; },
     async startVoice() { log.push('startVoice'); return { agentId: 'AG' }; },
     async stopVoice() { log.push('stopVoice'); return { stopped: true }; },
+    async negotiationListenToken() { log.push('listenToken'); return { appId: 'a'.repeat(32), channel: 'neg-1', uid: 3003, token: 'lt' }; },
     stopVoiceOnUnload() {},
   };
   globalThis.__fakeApi = Object.assign(globalThis.__fakeApi ?? {}, api);
-  const rtcHandlers = {};
+  const outcome = (i, side) => (attempts[i] && attempts[i][side]) || 'ok';
   const rtmMessages = [];
-  const rtc = {
-    remoteUsers: [],
-    published: [],
-    rtmMessages,
-    on(ev, fn) { rtcHandlers[ev] = fn; },
-    emit(ev, ...args) { return rtcHandlers[ev] && rtcHandlers[ev](...args); },
-    async join() { await wait(10); log.push('rtc.join'); },
-    publish(tracks) {
-      return wait(publishMs).then(() => { if (publishError) throw publishError; rtc.published.push(...tracks); log.push('publish.done'); });
-    },
-    async unpublish() {},
-    async leave() { log.push('rtc.leave'); },
-  };
+  function makeRtc(index) {
+    const handlers = {};
+    const pending = [];
+    const rtc = {
+      index,
+      remoteUsers: [],
+      published: [],
+      rtmMessages,
+      proxyMode: null,
+      joins: [],
+      on(ev, fn) { handlers[ev] = fn; },
+      emit(ev, ...args) { return handlers[ev] && handlers[ev](...args); },
+      startProxyServer(mode) { log.push(`rtc${index}.startProxy:${mode}`); rtc.proxyMode = mode; },
+      stopProxyServer() { log.push(`rtc${index}.stopProxy`); },
+      async join(...args) {
+        rtc.joins.push(args);
+        log.push(`rtc${index}.join:${rtc.proxyMode ?? 'direct'}`);
+        const o = outcome(index, 'rtc');
+        if (o === 'hang') return new Promise((_, reject) => pending.push(reject));
+        await wait(10);
+        if (o instanceof Error) throw o;
+        log.push('rtc.join');
+      },
+      publish(tracks) {
+        return wait(publishMs).then(() => { if (publishError) throw publishError; rtc.published.push(...tracks); log.push('publish.done'); });
+      },
+      async unpublish() {},
+      async leave() {
+        log.push('rtc.leave');
+        for (const r of pending.splice(0)) r(Object.assign(new Error('join aborted by leave'), { code: 'OPERATION_ABORTED' }));
+      },
+    };
+    return rtc;
+  }
+  const clients = [makeRtc(0)];
+  log.rtc = clients[0];
+  log.clients = [];
+  log.rtms = [];
   class RTM {
+    constructor(appId, userId, config) {
+      this.index = log.rtms.length;
+      this.args = [appId, userId];
+      this.config = config;
+      this.pending = [];
+      log.rtms.push(this);
+    }
     addEventListener() {}
-    async login() { await wait(5); log.push('rtm.login'); }
-    async subscribe() { await wait(5); log.push('rtm.subscribe'); }
+    async login(opts) {
+      this.loginToken = opts && opts.token;
+      const o = outcome(this.index, 'rtm');
+      if (o === 'hang') return new Promise((_, reject) => this.pending.push(reject));
+      await wait(5);
+      if (o instanceof Error) throw o;
+      log.push('rtm.login');
+    }
+    async subscribe(channel) { this.channel = channel; await wait(5); log.push('rtm.subscribe'); }
     async publish(target, message, options) { if (rtmPublishError) throw rtmPublishError; rtmMessages.push([target, message, options]); }
     async renewToken() {}
     async unsubscribe() {}
-    async logout() {}
+    async logout() {
+      log.push(`rtm${this.index}.logout`);
+      // RTM 2.2.3 rejects a pending login with RTM_ERROR_LOGIN_CANCELED when logout runs.
+      for (const r of this.pending.splice(0)) r(Object.assign(new Error('Login RTM service was canceled by user.'), { code: -10023 }));
+    }
   }
+  const store = new Map(remembered ? [['sahay.voice.cloudProxy', '1']] : []);
   const makeTrack = () => ({ stop() {}, close() {}, getVolumeLevel: () => 0, async setEnabled() {} });
   globalThis.window = {
     isSecureContext: true,
     addEventListener() {},
+    location: { search },
+    sessionStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    },
     AgoraRTC: {
       async createMicrophoneAudioTrack() { await wait(5); if (micError) throw micError; log.push('mic'); return makeTrack(); },
-      createClient: () => rtc,
+      createClient: () => {
+        const c = log.clients.length < clients.length ? clients[log.clients.length] : makeRtc(log.clients.length);
+        log.clients.push(c);
+        log.rtc = c;
+        return c;
+      },
     },
     AgoraRTM: { RTM },
   };
-  log.rtc = rtc;
+  log.store = store;
   return log;
 }
 
 function handlers() {
-  const seen = { statuses: [], errors: [], timings: null, transcript: [], issues: [], replies: [] };
+  const seen = { statuses: [], details: [], errors: [], timings: null, transcript: [], issues: [], replies: [] };
   return {
     seen,
-    onStatus(status, detail) { seen.statuses.push(status); if (detail && detail.error) seen.errors.push(detail.error); },
+    onStatus(status, detail) { seen.statuses.push(status); seen.details.push(detail || {}); if (detail && detail.error) seen.errors.push(detail.error); },
     onAgentState() {}, onLanguage() {}, onLevels() {}, onAutoplay() {}, onMetric() {}, onTranscriptLink() {},
     onTranscript(turns) { seen.transcript = turns; },
     onIssue(i) { seen.issues.push(i); },
@@ -411,4 +472,224 @@ test('text mode: rejoining after token expiry publishes no microphone', async (t
   await log.rtc.emit('token-privilege-did-expire');
   assert.deepEqual(log.rtc.published, []);
   assert.notEqual(call.status, 'error');
+});
+
+/* --------------------------------------- restrictive networks: Agora Cloud Proxy --- */
+
+// Short connect timeouts for the fakes; the module instance is shared, so every test sets them.
+async function loadWithShortTimeouts() {
+  const mod = await loadVoiceWithFakes();
+  mod.CONNECT_TIMEOUT_MS.direct = 60;
+  mod.CONNECT_TIMEOUT_MS.proxy = 60;
+  return mod;
+}
+
+const blockedRtm = { rtm: 'hang' }; // the laptop network on 2026-11-20: RTM 9591/9593 time out, login never answers
+
+test('routePlan: direct first with one proxy retry; remembered proxy first with one direct retry; ?proxy=1 forces proxy only', async () => {
+  const { routePlan } = await loadVoice();
+  assert.deepEqual(routePlan('', false), { first: 'direct', fallback: true, forced: false });
+  assert.deepEqual(routePlan('', true), { first: 'proxy', fallback: true, forced: false });
+  assert.deepEqual(routePlan('?proxy=1', false), { first: 'proxy', fallback: false, forced: true });
+  assert.deepEqual(routePlan('?x=2&proxy=1', true), { first: 'proxy', fallback: false, forced: true });
+  assert.deepEqual(routePlan('?proxy=0', false), { first: 'direct', fallback: true, forced: false });
+  assert.deepEqual(routePlan(undefined, false), { first: 'direct', fallback: true, forced: false });
+});
+
+test('isNetworkFailure: timeouts and RTC/RTM connection codes are network-class; token and parameter errors are not', async () => {
+  const { isNetworkFailure } = await loadVoice();
+  const e = (code, message = '') => Object.assign(new Error(message), { code });
+  const network = [
+    e('connect_timeout'), e(-10023), e(-10011), e(-10010), e(-10013), e(-10025), e(-11019),
+    e('NETWORK_ERROR'), e('NETWORK_TIMEOUT'), e('WS_ERR'), e('WS_ABORT'), e('WS_DISCONNECT'), e('TIMEOUT'), e('CAN_NOT_GET_PROXY_SERVER'),
+    e('CAN_NOT_GET_GATEWAY_SERVER', 'flag: 4096, message: AgoraRTCError CAN_NOT_GET_GATEWAY_SERVER: no active status'),
+  ];
+  for (const err of network) assert.equal(isNetworkFailure(err), true, String(err.code));
+  const other = [
+    null, new Error('x'), e(-10005), e(-10003), e('INVALID_PARAMS'), e('UID_CONFLICT'),
+    e('CAN_NOT_GET_GATEWAY_SERVER', 'invalid token, authorized failed'),
+    e('CAN_NOT_GET_GATEWAY_SERVER', 'invalid vendor key, can not find appid'),
+  ];
+  for (const err of other) assert.equal(isNetworkFailure(err), false, String(err && err.code));
+});
+
+test('start on an open network: one direct attempt, no proxy, nothing remembered', async (t) => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment();
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
+  await call.start();
+  assert.equal(log.clients.length, 1);
+  assert.equal(log.rtms.length, 1);
+  assert.equal(log.rtms[0].config, undefined, 'RTM is created without a cloud proxy config');
+  assert.ok(!log.some((l) => /startProxy/.test(l)), log.join(', '));
+  assert.ok(!h.seen.details.some((d) => d.route === 'proxy'));
+  assert.equal(call.route, 'direct');
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined);
+  assert.equal(call.status, 'waiting');
+});
+
+test('start: a blocked RTM login times out, then RTC and RTM retry once through Cloud Proxy (TLS 443) with the same channel and token', async (t) => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ attempts: [blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
+  await call.start();
+  assert.equal(call.status, 'waiting', JSON.stringify(h.seen.errors.map((x) => [x.code, x.message])));
+  assert.equal(log.clients.length, 2, 'a fresh RTC client for the retry');
+  const [first, second] = log.clients;
+  assert.equal(first.proxyMode, null);
+  assert.equal(second.proxyMode, 5, 'startProxyServer(5): forced TCP over TLS 443');
+  assert.ok(log.indexOf('rtc1.startProxy:5') < log.indexOf('rtc1.join:5'), `proxy set before join: ${log.join(', ')}`);
+  assert.deepEqual(log.rtms.map((r) => r.config), [undefined, { cloudProxy: true }]);
+  assert.deepEqual(second.joins[0], first.joins[0], 'same app id, channel, token and uid');
+  assert.equal(log.rtms[1].loginToken, log.rtms[0].loginToken);
+  assert.ok(log.includes('rtm0.logout') && log.indexOf('rtm0.logout') < log.indexOf('rtc1.join:5'), `the failed attempt is released first: ${log.join(', ')}`);
+  assert.equal(log.filter((l) => l === 'startVoice').length, 1, 'the agent is started once, after the proxy connect');
+  assert.ok(!log.includes('stopVoice'), 'the server call entry is kept across the retry');
+  assert.ok(h.seen.details.some((d) => d.route === 'proxy'), 'the console is told about the safer route');
+  assert.equal(call.route, 'proxy');
+  assert.ok(Number.isFinite(call.marks.proxy));
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), '1', 'remembered for this browser session');
+  // An event from the abandoned first client must not end the live call.
+  first.emit('connection-state-change', 'DISCONNECTED', 'CONNECTED', 'NETWORK_ERROR');
+  await wait(5);
+  assert.equal(call.status, 'waiting');
+  await call.end();
+  assert.ok(log.includes('rtc1.stopProxy'), `stopProxyServer after leave: ${log.join(', ')}`);
+});
+
+test('start: when the Cloud Proxy retry also fails the owner gets an honest network error and the server entry is released', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ attempts: [blockedRtm, blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  await call.start();
+  assert.equal(call.status, 'error');
+  assert.equal(h.seen.errors[0].code, 'network_blocked');
+  assert.match(h.seen.errors[0].message, /network/i);
+  assert.equal(log.clients.length, 2, 'exactly one retry');
+  assert.ok(!log.includes('startVoice'), 'no agent is started, so no voice minutes are spent');
+  assert.ok(log.includes('stopVoice'));
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'nothing remembered after a failure');
+});
+
+test('start: Cloud Proxy refused for the project (CAN_NOT_GET_PROXY_SERVER) is reported as proxy_unavailable', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const refused = Object.assign(new Error('AgoraRTCError CAN_NOT_GET_PROXY_SERVER'), { code: 'CAN_NOT_GET_PROXY_SERVER' });
+  const log = fakeEnvironment({ attempts: [blockedRtm, { rtc: refused }] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  await call.start();
+  assert.equal(h.seen.errors[0].code, 'proxy_unavailable');
+  assert.ok(!log.includes('startVoice'));
+});
+
+test('start: a non-network failure (invalid token) is not retried through the proxy', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ attempts: [{ rtm: Object.assign(new Error('invalid token'), { code: -10005 }) }] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  await call.start();
+  assert.equal(log.clients.length, 1);
+  assert.equal(h.seen.errors[0].code, 'join_failed');
+});
+
+test('start: a browser that needed the proxy before starts with it, and falls back to direct (forgetting it) if the proxy fails', async (t) => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  {
+    const log = fakeEnvironment({ remembered: true });
+    const h = handlers();
+    const call = new VoiceCall(h);
+    t.after(() => call.teardown({ stopServer: false }));
+    await call.start();
+    assert.equal(log.clients.length, 1);
+    assert.equal(log.clients[0].proxyMode, 5);
+    assert.deepEqual(log.rtms[0].config, { cloudProxy: true });
+    assert.equal(h.seen.details[h.seen.statuses.indexOf('connecting')].route, 'proxy', 'the safer-route line shows from the first connecting status');
+    await call.end();
+  }
+  {
+    const log = fakeEnvironment({ remembered: true, attempts: [blockedRtm] });
+    const call = new VoiceCall(handlers());
+    t.after(() => call.teardown({ stopServer: false }));
+    await call.start();
+    assert.equal(call.status, 'waiting');
+    assert.deepEqual(log.clients.map((c) => c.proxyMode), [5, null]);
+    assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'direct worked, so the memory is cleared');
+  }
+});
+
+test('start with ?proxy=1: proxy from the first attempt and no fallback to direct', async () => {
+  const { VoiceCall } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ search: '?proxy=1', attempts: [blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  await call.start();
+  assert.equal(log.clients.length, 1);
+  assert.equal(log.clients[0].proxyMode, 5);
+  assert.equal(h.seen.errors[0].code, 'network_blocked');
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), undefined, 'a forced test run is not remembered');
+});
+
+test('start: pressing End while the first attempt hangs ends cleanly, with no proxy retry', async () => {
+  const { VoiceCall, CONNECT_TIMEOUT_MS } = await loadWithShortTimeouts();
+  CONNECT_TIMEOUT_MS.direct = 500;
+  const log = fakeEnvironment({ attempts: [blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  const started = call.start();
+  await wait(40);
+  await call.end();
+  await started;
+  assert.equal(call.status, 'idle');
+  assert.equal(log.clients.length, 1);
+  assert.equal(h.seen.errors.length, 0);
+});
+
+/* --------------------------------------- NegotiationListener on restrictive networks --- */
+
+test('NegotiationListener: a join that times out retries once through Cloud Proxy and listens', async (t) => {
+  const { NegotiationListener } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ attempts: [{ rtc: 'hang' }] });
+  const changes = [];
+  const listener = new NegotiationListener((s) => changes.push({ ...s }));
+  t.after(() => listener.stop());
+  await listener.start('n1');
+  assert.equal(listener.status, 'listening', JSON.stringify(changes.at(-1)));
+  assert.deepEqual(log.clients.map((c) => c.proxyMode), [null, 5]);
+  assert.deepEqual(log.clients[1].joins[0], log.clients[0].joins[0]);
+  assert.ok(changes.some((c) => c.status === 'joining' && c.route === 'proxy'));
+  assert.equal(log.store.get('sahay.voice.cloudProxy'), '1');
+  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'CONNECTING', 'NETWORK_ERROR');
+  assert.equal(listener.status, 'listening', 'the abandoned client cannot fail the listener');
+});
+
+test('NegotiationListener: proxy also failing ends in an honest error after one retry', async () => {
+  const { NegotiationListener } = await loadWithShortTimeouts();
+  const log = fakeEnvironment({ attempts: [{ rtc: 'hang' }, { rtc: 'hang' }] });
+  const listener = new NegotiationListener(() => {});
+  await listener.start('n1');
+  assert.equal(listener.status, 'error');
+  assert.match(listener.error, /network/i);
+  assert.equal(log.clients.length, 2);
+});
+
+test('start: RTC connection-state events during a connect attempt do not pre-empt the proxy retry', async (t) => {
+  const { VoiceCall, CONNECT_TIMEOUT_MS } = await loadWithShortTimeouts();
+  CONNECT_TIMEOUT_MS.direct = 120;
+  const log = fakeEnvironment({ attempts: [blockedRtm] });
+  const h = handlers();
+  const call = new VoiceCall(h);
+  t.after(() => call.teardown({ stopServer: false }));
+  const started = call.start();
+  await wait(40);
+  log.clients[0].emit('connection-state-change', 'RECONNECTING', 'CONNECTED', 'NETWORK_ERROR');
+  log.clients[0].emit('connection-state-change', 'DISCONNECTED', 'RECONNECTING', 'NETWORK_ERROR');
+  await started;
+  assert.equal(call.status, 'waiting', JSON.stringify(h.seen.errors.map((x) => [x.code, x.message])));
+  assert.equal(call.route, 'proxy');
+  assert.ok(!h.seen.statuses.includes('reconnecting'), h.seen.statuses.join(', '));
 });

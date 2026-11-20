@@ -85,6 +85,95 @@ export class CallError extends Error {
   }
 }
 
+/*
+ * Restrictive networks (docs/build/agora-findings.md, "Cloud Proxy for restrictive networks").
+ * Some networks block Agora's usual ports (RTM message channel 9591/9593 timed out on 2026-11-20
+ * and RTM login then hung until the call was dropped). Each connect is bounded; a network-class
+ * failure gets exactly one retry through Agora Cloud Proxy over TLS 443 for both RTC
+ * (client.startProxyServer(5), before join, Web SDK >= 4.9.0) and RTM (new RTM(appId, uid,
+ * { cloudProxy: true }), agora-rtm 2.2.3), with the same channel and token. A browser tab that
+ * needed the proxy starts with it next time (sessionStorage); ?proxy=1 forces it, with no
+ * fallback, for testing. RTC Cloud Proxy must be switched on in Agora Console for the project.
+ */
+const RTC_PROXY_MODE_TLS = 5;
+export const CONNECT_TIMEOUT_MS = { direct: 10000, proxy: 15000 };
+const RELEASE_TIMEOUT_MS = 3000;
+const PROXY_STORAGE_KEY = "sahay.voice.cloudProxy";
+
+/** Route for this browser: { first: "direct"|"proxy", fallback (one retry the other way), forced }. */
+export function routePlan(search, remembered) {
+  let forced = false;
+  try { forced = new URLSearchParams(search || "").get("proxy") === "1"; } catch { /* not a query string */ }
+  if (forced) return { first: "proxy", fallback: false, forced: true };
+  return { first: remembered ? "proxy" : "direct", fallback: true, forced: false };
+}
+
+function readRoutePlan() {
+  let search = "";
+  let remembered = false;
+  try { search = window.location.search; } catch { /* no location */ }
+  try { remembered = window.sessionStorage.getItem(PROXY_STORAGE_KEY) === "1"; } catch { /* storage blocked */ }
+  return routePlan(search, remembered);
+}
+
+/** Remember the route that connected, for this tab; a forced (?proxy=1) run is not remembered. */
+function rememberRoute(plan, route) {
+  if (plan.forced) return;
+  try {
+    if (route === "proxy") window.sessionStorage.setItem(PROXY_STORAGE_KEY, "1");
+    else window.sessionStorage.removeItem(PROXY_STORAGE_KEY);
+  } catch { /* storage blocked: the next call simply tries direct first again */ }
+}
+
+// RTC (AgoraRTCError.code, string) and RTM (RtmError.code, number) codes that mean "could not
+// reach Agora from here", checked against the pinned bundles. RTM: -10010 LOGIN_NO_SERVER_RESOURCES,
+// -10011 LOGIN_TIMEOUT, -10013 LOGIN_ABORTED, -10023 LOGIN_CANCELED, -10025 NOT_CONNECTED,
+// -11019 CHANNEL_SUBSCRIBE_TIMEOUT.
+const RTC_NETWORK_CODES = new Set(["NETWORK_ERROR", "NETWORK_TIMEOUT", "TIMEOUT", "WS_ABORT", "WS_DISCONNECT", "WS_ERR", "CAN_NOT_GET_GATEWAY_SERVER", "CAN_NOT_GET_PROXY_SERVER"]);
+const RTM_NETWORK_CODES = new Set([-10010, -10011, -10013, -10023, -10025, -11019]);
+
+/** True for a connect failure the network caused (worth one retry by another route). */
+export function isNetworkFailure(err) {
+  if (!err) return false;
+  const { code } = err;
+  if (code === "connect_timeout") return true;
+  if (typeof code === "number") return RTM_NETWORK_CODES.has(code);
+  if (typeof code !== "string" || !RTC_NETWORK_CODES.has(code)) return false;
+  // The gateway also answers CAN_NOT_GET_GATEWAY_SERVER for a bad token or App ID: not the network.
+  return !(code === "CAN_NOT_GET_GATEWAY_SERVER" && /token|key|app ?id|certificate|banned/i.test(String(err.message || "")));
+}
+
+function networkBlockedError(err, route) {
+  if (route === "proxy" && err && err.code === "CAN_NOT_GET_PROXY_SERVER") {
+    console.warn("[voice] Agora Cloud Proxy gave no server for this project. Turn on Cloud Proxy in Agora Console (RTC Services).");
+    return new CallError("proxy_unavailable", "Call could not connect",
+      "This network blocks the voice service and the safer route is not available. Try another Wi-Fi or a phone hotspot.");
+  }
+  return new CallError("network_blocked", "Network blocks the call",
+    "This network blocks the voice service, even through the safer route. Try another Wi-Fi or a phone hotspot.");
+}
+
+/** Resolve or reject with `promise`, or reject with makeError() after ms. */
+function withTimeout(promise, ms, makeError) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(makeError()), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Wait for `promise` to settle, at most ms (a leave can hang on a blocked network). */
+function settleWithin(promise, ms) {
+  let timer;
+  return Promise.race([promise.then(() => {}, () => {}), new Promise((r) => { timer = setTimeout(r, ms); })]).finally(() => clearTimeout(timer));
+}
+
+const connectTimeout = (route) => () => new CallError("connect_timeout", "Call could not connect",
+  `Agora did not answer within ${Math.round(CONNECT_TIMEOUT_MS[route] / 1000)} seconds.`);
+
+/** Call fn() and always get a promise back (an SDK method that throws synchronously included). */
+function attempt(fn) {
+  try { return Promise.resolve(fn()); } catch (err) { return Promise.reject(err); }
+}
+
 function micError(err) {
   const code = (err && (err.code || err.name)) || "";
   if (code === "PERMISSION_DENIED" || code === "NotAllowedError") {
@@ -178,7 +267,7 @@ export function withSystemLines(turns, lines) {
 }
 
 /** Stages of a call start, in order, for the timing line (E2E r3 bug 8). */
-export const START_STAGES = ["sdk", "mic", "token", "joined", "subscribed", "toolkit", "start_sent", "start_done", "published", "agent_joined", "first_words"];
+export const START_STAGES = ["sdk", "mic", "token", "proxy", "joined", "subscribed", "toolkit", "start_sent", "start_done", "published", "agent_joined", "first_words"];
 
 /** "sdk=12 mic=340 ..." from marks {stage: ms since click}; stages not reached are left out. */
 export function formatTimings(marks) {
@@ -241,13 +330,16 @@ export class VoiceCall {
     this.spokeWaiters = [];
     this.replyAfter = null;   // time of the last typed message still waiting for onTextReply
     this.openingMic = null;
+    this.route = null;        // "direct" | "proxy" (Agora Cloud Proxy over TLS 443)
+    this.connecting = false;  // inside a connect attempt: its own promise reports failures
+    this.proxyInUse = null;   // RTC "is-using-cloud-proxy" after publishing, for diagnostics
   }
 
   /** Milliseconds since Start call for one stage; reported once the first words arrive. */
   mark(stage) {
     if (this.startedAt === null || Number.isFinite(this.marks[stage])) return;
     this.marks[stage] = performance.now() - this.startedAt;
-    if (stage === "first_words" && this.h.onTimings) this.h.onTimings({ ...this.marks });
+    if (stage === "first_words" && this.h.onTimings) this.h.onTimings({ ...this.marks, route: this.route, proxyInUse: this.proxyInUse });
   }
 
   get active() {
@@ -312,7 +404,9 @@ export class VoiceCall {
       }
 
       // 2. The token.
-      this.setStatus("connecting");
+      const plan = readRoutePlan();
+      let route = plan.first;
+      this.setStatus("connecting", { route });
       const s = await tokenRequest;
       this.mark("token");
       if (!s || !s.appId || !s.channel || s.uid === undefined || s.uid === null || !s.token || s.agentUid === undefined || s.agentUid === null) {
@@ -322,26 +416,34 @@ export class VoiceCall {
       this.agentUid = String(s.agentUid);
       const uid = String(s.uid);
 
-      // 3. Clients and handlers before join so nothing is missed.
+      // 3. Connect RTC and RTM. A network-class failure gets one retry by the other route (Cloud
+      //    Proxy over TLS 443 after a direct failure), same channel and token. No agent has been
+      //    started yet, so a retry spends no voice minutes; the server's call entry is kept.
       AgoraRTC.onAutoplayFailed = () => this.h.onAutoplay(true);
-      const rtc = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
-      this.rtc = rtc;
-      this.bindRtc(rtc);
-      const rtm = new AgoraRTM.RTM(s.appId, uid);
-      this.rtm = rtm;
-      rtm.addEventListener("linkState", (e) => {
-        if (!this.active) return;
-        const st = e && e.currentState;
-        if (st === "CONNECTED") this.h.onTranscriptLink(true);
-        else if (st === "DISCONNECTED" || st === "SUSPENDED" || st === "FAILED") this.h.onTranscriptLink(false);
-      });
-
-      // RTC join and RTM login+subscribe run side by side; the transcript needs only RTM.
-      const joinUid = /^\d+$/.test(uid) ? Number(uid) : uid;
-      await Promise.all([
-        rtc.join(s.appId, s.channel, s.token, joinUid).then(() => this.mark("joined")),
-        rtm.login({ token: s.token }).then(() => rtm.subscribe(s.channel, { withMessage: true, withPresence: true })).then(() => this.mark("subscribed")),
-      ]);
+      for (let tries = 1; ; tries++) {
+        try {
+          this.connecting = true;
+          await this.connect(s, uid, route);
+          break;
+        } catch (err) {
+          this.connecting = false;
+          if (this.status !== "connecting") throw err; // ended or dropped meanwhile: the outer catch knows
+          await this.releaseAttempt();
+          if (this.status !== "connecting") throw err;
+          const network = isNetworkFailure(err);
+          if (network && tries === 1 && plan.fallback) {
+            route = route === "proxy" ? "direct" : "proxy";
+            if (route === "proxy") this.mark("proxy");
+            console.warn(`[voice] connect failed (${(err && err.code) || "error"}); retrying ${route === "proxy" ? "through Agora Cloud Proxy (TLS 443)" : "directly"}`);
+            this.setStatus("connecting", { route });
+            continue;
+          }
+          throw network ? networkBlockedError(err, route) : err;
+        }
+      }
+      this.connecting = false;
+      rememberRoute(plan, route);
+      const { rtc, rtm } = this;
       // Publishing the microphone overlaps the agent's start (step 5): Sahay speaks first, and it
       // subscribes to the owner's audio whenever that is published. Never rejects; checked below.
       // Text mode publishes nothing.
@@ -430,7 +532,53 @@ export class VoiceCall {
     return found;
   }
 
-  bindRtc(rtc) {
+  /**
+   * One connect attempt on `route`: fresh RTC and RTM clients, then RTC join and RTM
+   * login+subscribe side by side (the transcript needs only RTM), bounded by
+   * CONNECT_TIMEOUT_MS[route]. Handlers are bound before join so nothing is missed.
+   */
+  async connect(s, uid, route) {
+    const { AgoraRTC, AgoraRTM } = window;
+    const proxy = route === "proxy";
+    this.route = route;
+    const rtc = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    this.rtc = rtc;
+    this.bindRtc(rtc);
+    if (proxy) rtc.startProxyServer(RTC_PROXY_MODE_TLS); // before join; forced TCP over TLS 443
+    const rtm = proxy ? new AgoraRTM.RTM(s.appId, uid, { cloudProxy: true }) : new AgoraRTM.RTM(s.appId, uid);
+    this.rtm = rtm;
+    rtm.addEventListener("linkState", (e) => {
+      if (rtm !== this.rtm || !this.active) return;
+      const st = e && e.currentState;
+      if (st === "CONNECTED") this.h.onTranscriptLink(true);
+      else if (st === "DISCONNECTED" || st === "SUSPENDED" || st === "FAILED") this.h.onTranscriptLink(false);
+    });
+    const joinUid = /^\d+$/.test(uid) ? Number(uid) : uid;
+    await withTimeout(Promise.all([
+      rtc.join(s.appId, s.channel, s.token, joinUid).then(() => this.mark("joined")),
+      rtm.login({ token: s.token }).then(() => rtm.subscribe(s.channel, { withMessage: true, withPresence: true })).then(() => this.mark("subscribed")),
+    ]), CONNECT_TIMEOUT_MS[route], connectTimeout(route));
+  }
+
+  /** Leave and log out a failed attempt's clients; events from them are ignored from here on. */
+  async releaseAttempt() {
+    const { rtc, rtm, route } = this;
+    this.rtc = null;
+    this.rtm = null;
+    await settleWithin(Promise.allSettled([
+      rtc ? attempt(() => rtc.leave()) : null,
+      rtm ? attempt(() => rtm.logout()) : null,
+    ]), RELEASE_TIMEOUT_MS);
+    if (rtc && route === "proxy") { try { rtc.stopProxyServer(); } catch { /* not left yet */ } }
+  }
+
+  /** Handlers for one RTC client; they act only while it is this call's current client. */
+  bindRtc(client) {
+    const rtc = {
+      on: (ev, fn) => client.on(ev, (...args) => (client === this.rtc ? fn(...args) : undefined)),
+      subscribe: (...args) => client.subscribe(...args),
+    };
+    rtc.on("is-using-cloud-proxy", (using) => { this.proxyInUse = Boolean(using); });
     rtc.on("user-joined", (user) => {
       if (!this.isAgent(user.uid)) return;
       this.mark("agent_joined");
@@ -459,7 +607,7 @@ export class VoiceCall {
       if (mediaType === "audio") this.remoteTracks.delete(String(user.uid));
     });
     rtc.on("connection-state-change", (cur, _prev, reason) => {
-      if (this.status === "ending" || this.status === "idle") return;
+      if (this.status === "ending" || this.status === "idle" || this.connecting) return;
       if (cur === "RECONNECTING") {
         this.setStatus("reconnecting");
       } else if (cur === "CONNECTED" && this.status === "reconnecting") {
@@ -771,6 +919,7 @@ export class VoiceCall {
       rtm ? rtm.logout() : null,
       stopServer ? api.stopVoice() : null,
     ]);
+    if (rtc && this.route === "proxy") { try { rtc.stopProxyServer(); } catch { /* leave did not finish */ } }
     if (window.AgoraRTC) window.AgoraRTC.onAutoplayFailed = undefined;
     this.reset();
   }
@@ -791,6 +940,7 @@ export class NegotiationListener {
     this.negotiationId = null;
     this.status = "idle";
     this.error = null;
+    this.route = null; // "direct" | "proxy" (Agora Cloud Proxy over TLS 443)
     this.rtc = null;
     this.tracks = new Map();
     this.run = 0;
@@ -798,7 +948,7 @@ export class NegotiationListener {
   }
 
   emit() {
-    this.onChange({ negotiationId: this.negotiationId, status: this.status, error: this.error, speakers: this.tracks.size });
+    this.onChange({ negotiationId: this.negotiationId, status: this.status, error: this.error, speakers: this.tracks.size, route: this.route });
   }
 
   async start(negotiationId) {
@@ -807,6 +957,9 @@ export class NegotiationListener {
     this.negotiationId = String(negotiationId);
     this.error = null;
     this.status = "joining";
+    const plan = readRoutePlan();
+    let route = plan.first;
+    this.route = route;
     this.emit();
     try {
       if (!window.isSecureContext) throw new Error("Listening needs HTTPS or localhost.");
@@ -820,32 +973,36 @@ export class NegotiationListener {
         throw new Error("The server's listening details were incomplete.");
       }
 
-      const rtc = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
-      this.rtc = rtc;
-      rtc.on("user-published", async (user, mediaType) => {
-        if (mediaType !== "audio") return;
-        try {
-          await rtc.subscribe(user, mediaType);
-          if (run !== this.run || !user.audioTrack) return;
-          this.tracks.set(String(user.uid), user.audioTrack);
-          user.audioTrack.play();
-          this.emit();
-        } catch (err) {
-          if (run === this.run) { this.error = `Could not play the call audio. ${(err && err.message) || ""}`.trim(); this.emit(); }
-        }
-      });
-      const drop = (user) => { if (this.tracks.delete(String(user.uid)) && run === this.run) this.emit(); };
-      rtc.on("user-unpublished", drop);
-      rtc.on("user-left", drop);
-      rtc.on("connection-state-change", (cur, _prev, reason) => {
-        if (run !== this.run || cur !== "DISCONNECTED" || reason === "LEAVE") return;
-        this.fail(run, "The connection to the negotiation call was lost.");
-      });
-      rtc.on("token-privilege-did-expire", () => this.fail(run, "The listening pass expired. Press Listen in to join again."));
-
+      // One join per route; a network-class failure gets one retry by the other route
+      // (Cloud Proxy over TLS 443 after a direct failure), same channel and token.
       const uid = String(t.uid);
-      await rtc.join(t.appId, t.channel, t.token, /^\d+$/.test(uid) ? Number(uid) : uid);
+      let rtc;
+      for (let tries = 1; ; tries++) {
+        rtc = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+        this.rtc = rtc;
+        this.bind(rtc, run);
+        try {
+          if (route === "proxy") rtc.startProxyServer(RTC_PROXY_MODE_TLS); // before join
+          await withTimeout(rtc.join(t.appId, t.channel, t.token, /^\d+$/.test(uid) ? Number(uid) : uid),
+            CONNECT_TIMEOUT_MS[route], connectTimeout(route));
+          break;
+        } catch (err) {
+          if (run !== this.run) return;
+          await this.release();
+          if (run !== this.run) return;
+          const network = isNetworkFailure(err);
+          if (network && tries === 1 && plan.fallback) {
+            route = route === "proxy" ? "direct" : "proxy";
+            this.route = route;
+            console.warn(`[voice] listen join failed (${(err && err.code) || "error"}); retrying ${route === "proxy" ? "through Agora Cloud Proxy (TLS 443)" : "directly"}`);
+            this.emit();
+            continue;
+          }
+          throw network ? networkBlockedError(err, route) : err;
+        }
+      }
       if (run !== this.run) { try { await rtc.leave(); } catch { /* ignore */ } return; }
+      rememberRoute(plan, route);
       this.status = "listening";
       this.emit();
     } catch (err) {
@@ -857,6 +1014,31 @@ export class NegotiationListener {
         : (err && err.message) || "Could not join the negotiation call.";
       this.emit();
     }
+  }
+
+  /** Handlers for one RTC client; they act only for this run and while it is the current client. */
+  bind(rtc, run) {
+    const mine = () => run === this.run && rtc === this.rtc;
+    rtc.on("user-published", async (user, mediaType) => {
+      if (mediaType !== "audio" || !mine()) return;
+      try {
+        await rtc.subscribe(user, mediaType);
+        if (!mine() || !user.audioTrack) return;
+        this.tracks.set(String(user.uid), user.audioTrack);
+        user.audioTrack.play();
+        this.emit();
+      } catch (err) {
+        if (mine()) { this.error = `Could not play the call audio. ${(err && err.message) || ""}`.trim(); this.emit(); }
+      }
+    });
+    const drop = (user) => { if (mine() && this.tracks.delete(String(user.uid))) this.emit(); };
+    rtc.on("user-unpublished", drop);
+    rtc.on("user-left", drop);
+    rtc.on("connection-state-change", (cur, _prev, reason) => {
+      if (!mine() || this.status !== "listening" || cur !== "DISCONNECTED" || reason === "LEAVE") return;
+      this.fail(run, "The connection to the negotiation call was lost.");
+    });
+    rtc.on("token-privilege-did-expire", () => { if (mine()) this.fail(run, "The listening pass expired. Press Listen in to join again."); });
   }
 
   async fail(run, message) {
@@ -873,7 +1055,9 @@ export class NegotiationListener {
     this.rtc = null;
     for (const t of this.tracks.values()) { try { t.stop(); } catch { /* ignore */ } }
     this.tracks.clear();
-    if (rtc) { try { await rtc.leave(); } catch { /* ignore */ } }
+    if (!rtc) return;
+    await settleWithin(attempt(() => rtc.leave()), RELEASE_TIMEOUT_MS);
+    if (this.route === "proxy") { try { rtc.stopProxyServer(); } catch { /* not left yet */ } }
   }
 
   async stop() {

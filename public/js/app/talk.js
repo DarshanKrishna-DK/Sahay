@@ -61,7 +61,7 @@ export function createTalk() {
     if (s === "error") return ["idle", call.error ? errorText(call.error) : t("call.failed"), "bad"];
     if (s === "idle" && call.ended) return ["idle", t("talk.callEnded"), "bad"];
     if (s === "mic") return ["connecting", t("talk.mic")];
-    if (s === "connecting") return ["connecting", t("talk.connecting")];
+    if (s === "connecting") return ["connecting", t(call.route === "proxy" ? "talk.saferRoute" : "talk.connecting")];
     if (s === "waiting") return ["connecting", t("talk.waiting")];
     if (s === "reconnecting") return ["connecting", t("talk.reconnecting")];
     if (s === "ending") return ["connecting", t("talk.ending")];

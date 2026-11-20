@@ -8,6 +8,7 @@ import { state as store, touch } from "./store.js";
 
 export const call = {
   status: "idle", // idle | mic | connecting | waiting | live | reconnecting | ending | error
+  route: null, // "direct" | "proxy": proxy means Agora Cloud Proxy (TLS 443) on a restrictive network
   agentState: null,
   muted: false,
   mode: "voice",
@@ -45,6 +46,8 @@ function makeCall() {
     onStatus(status, detail = {}) {
       if (!mine()) return;
       call.status = status;
+      if (status === "connecting") call.route = detail.route || null;
+      else if (status === "idle" || status === "error") call.route = null;
       watch(status);
       if (status === "error") {
         call.error = detail.error || null;
