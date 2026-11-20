@@ -417,13 +417,14 @@ export function linkKey({ href, icon: icn, word, label, tone = "secondary", size
 
 /**
  * A sheet with a footer that stays at the bottom (the primary action in thumb reach). Works on
- * the shared openSheet (W1: { footer, onClose } and setFooter / close); on a sheet without a
+ * the shared openSheet (W1: { footer, onClose, speakKey } and setFooter / close; speakKey is a
+ * server read-aloud key shown in the title row); on a sheet without a
  * footer slot the footer is appended under the body. Returns { setBody, setFooter, close, isOpen }.
  */
-export function panel({ title, body, footer = null, opener = null, onClose }) {
+export function panel({ title, body, footer = null, opener = null, onClose, speakKey }) {
   const list = (b) => (Array.isArray(b) ? b : [b]);
   let foot = footer;
-  const api = openSheet({ title, body: list(body), footer: foot || undefined, opener, onClose });
+  const api = openSheet({ title, body: list(body), footer: foot || undefined, opener, onClose, speakKey });
   const hasFooter = typeof api.setFooter === "function";
   let current = list(body);
   if (!hasFooter && foot) api.setBody([...current, h("div", { class: "sv-foot" }, foot)]);

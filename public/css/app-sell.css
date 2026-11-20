@@ -270,7 +270,7 @@
 .mn-total-word { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-strong); min-width: 0; overflow-wrap: anywhere; }
 .mn-total-collect .mn-total-word svg { color: var(--accent-text); flex: none; }
 .mn-total-pay .mn-total-word svg { color: var(--cyan-text); flex: none; }
-.mn-total-num { font-size: clamp(1.375rem, 7.4cqi, var(--fs-total)); overflow-wrap: normal; white-space: nowrap; }
+.mn-total-num { font-size: clamp(1.375rem, 7.4cqi, var(--fs-total)); }
 .mn-total-num.is-zero { color: var(--text-lo); }
 .mn-total-sub { display: flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); }
 

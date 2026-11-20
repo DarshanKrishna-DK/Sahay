@@ -220,8 +220,7 @@ function detailBody(inv, ui, onDecide) {
   return [
     h("div", { class: "sl-detail-top" },
       stamp(status, { big: true }),
-      h("p", { class: "sl-detail-kind" }, h("b", { text: kindWord(inv) }), made ? h("span", { text: when(made, { day: "numeric", month: "long", year: "numeric" }) }) : null),
-      h("span", { class: "card-speak" }, readButton(`invoice:${inv.id}`))),
+      h("p", { class: "sl-detail-kind" }, h("b", { text: kindWord(inv) }), made ? h("span", { text: when(made, { day: "numeric", month: "long", year: "numeric" }) }) : null)),
     h("div", { class: "sl-detail-who" },
       scriptedText("span", initial(name), { class: "sl-avatar", "aria-hidden": "true" }),
       h("div", { class: "sl-detail-whomain" },
@@ -312,7 +311,7 @@ export function createSell() {
 
   function openBill(id, opener) {
     const inv = sell.invoices.get(String(id)) || null;
-    const api = panel({ title: detailTitle(inv), body: detailBody(inv, ui, decide), footer: detailFooter(inv), opener, onClose: () => { detail = null; } });
+    const api = panel({ title: detailTitle(inv), body: detailBody(inv, ui, decide), footer: detailFooter(inv), opener, onClose: () => { detail = null; }, speakKey: inv ? `invoice:${inv.id}` : undefined });
     detail = { id: String(id), api, key: null };
   }
 

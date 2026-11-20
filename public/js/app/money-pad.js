@@ -12,7 +12,7 @@ import { addStrings } from "./i18n.js";
 import { agentRequest } from "./store.js";
 import { recordReceipt, loadSell } from "./store-sell.js";
 import { st } from "./sell-i18n.js";
-import { buttonError, ic, panel, readButton, resultLine, scriptedText } from "./sell-kit.js";
+import { buttonError, ic, panel, resultLine, scriptedText } from "./sell-kit.js";
 import { padPress, cleanPhone, phoneProblem, formatPhone } from "./sell-facts.js";
 import { notifyPaid } from "./moments.js";
 
@@ -133,8 +133,7 @@ export function openPayPad({ customerId, name, owed, opener }) {
       h("div", { class: "mp-display" },
         h("span", { class: "mp-label", text: st("mpad.amount") }),
         shown,
-        owed ? h("span", { class: "mp-of", text: st("pp.of", { amt: rupees(owed) }) }) : null),
-      h("span", { class: "card-speak" }, readButton(`owed:${customerId}`))),
+        owed ? h("span", { class: "mp-of", text: st("pp.of", { amt: rupees(owed) }) }) : null)),
     full,
     over,
     h("p", { class: "mp-how", text: st("mpad.how") }),
@@ -147,7 +146,7 @@ export function openPayPad({ customerId, name, owed, opener }) {
     else if (e.key === "Enter" && digits && !busy && !(e.target.closest && e.target.closest("button"))) { e.preventDefault(); submit(); }
   });
   sync();
-  const api = panel({ title: st("mpad.title", { name }), body, footer, opener });
+  const api = panel({ title: st("mpad.title", { name }), body, footer, opener, speakKey: customerId ? `owed:${customerId}` : undefined });
   requestAnimationFrame(() => { const first = grid.querySelector(".mp-key"); if (first) first.focus(); });
   return api;
 }
