@@ -1,85 +1,94 @@
-// History: a plain timeline of what happened, from the audit rows (GET /api/state + SSE).
-// One icon and one short line per step, newest first; no ids, no raw data.
+// History (My Sahay > History, spec 3.1 row 54): what Sahay and the owner did, from the audit rows
+// (GET /api/state + SSE), newest first, one icon and one line per step, grouped by day. Decisions
+// say yes or no and whether they were given by voice or by button; a simulated vendor stays
+// labelled. Which rows show and what each says comes from history-lines.js (tested).
+//
+//   createHistoryPanel() -> { el, update(parts) }   the section body inside My Sahay
+//   createHistory()      -> screen { el, update(state, parts) } for an old #/history route
 
 import { h, icon, patch, scripted, rupees, toDate } from "./dom.js";
-import { t, when, unitWord } from "./i18n.js";
+import { t, when, unitWord, has } from "./i18n.js";
 import { state } from "./store.js";
 import { stateView, talkAction } from "./empty.js";
+import { historyLine, historyRows, dayGroups } from "./history-lines.js";
+import "./me-strings.js";
 
-const ICON = {
-  "requirement.saved": "ear", "job.started": "search", "job.done": "check", "job.failed": "x",
-  "vendor.found": "store", "negotiation.ended": "handshake", "quote.recorded": "tag",
-  "approval.requested": "alert", "approval.decided": "check", "order.created": "doc",
-  "payment.link": "rupee", "followup.fired": "bell", "session.started": "mic", "session.ended": "phoneOff",
-  "telegram.linked": "send", "rule.decided": "spark", "rule.suggested": "spark", "error": "alert",
-};
-// Too fine-grained for an owner's timeline.
-const SKIP = new Set(["job.progress", "negotiation.turn", "transcript", "memory.updated", "profile.updated", "rule.spoken", "order.status"]);
+const FMT = { rupees, unit: (u) => unitWord(u) };
 
-function line(r) {
-  const d = r.data || {};
-  let key = `hist.${r.type}`;
-  let detail = null;
-  let tone = "";
-  if (r.type === "approval.decided") {
-    const yes = d.status === "approved" || d.status === "consumed";
-    key = yes ? "hist.approval.yes" : "hist.approval.no";
-    tone = yes ? "ok" : "bad";
-    if (d.decided_via || d.decidedVia) detail = t((d.decided_via || d.decidedVia) === "voice" ? "hist.byVoice" : "hist.byButton");
-  } else if (r.type === "requirement.saved") {
-    const q = d.requirement || d;
-    if (q.status === "dismissed") key = "hist.requirement.dismissed";
-    detail = [q.quantity, unitWord(q.unit), q.item].filter((x) => x !== null && x !== undefined && x !== "").join(" ");
-  } else if (r.type === "vendor.found") {
-    detail = d.vendor && d.vendor.name ? d.vendor.name : null;
-  } else if (r.type === "order.created") {
-    detail = [d.po_number || d.poNumber, rupees(d.amount)].filter(Boolean).join(", ");
-    tone = "ok";
-  } else if (r.type === "approval.requested") {
-    detail = rupees(d.total_amount ?? d.totalAmount);
-    tone = "needs";
-  } else if (r.type === "quote.recorded") {
-    detail = d.unit_price !== undefined ? `${rupees(d.unit_price)}${d.unit ? `/${unitWord(d.unit)}` : ""}` : null;
-  } else if (r.type === "followup.fired") {
-    detail = d.message || null;
-  } else if (r.type === "job.failed" || r.type === "error") {
-    tone = "bad";
-  } else if (r.type === "rule.decided" && d.rule) {
-    detail = d.rule.status === "active" ? t("me.keep") : t("me.forget");
-  }
-  const label = t(key);
-  return label === key ? null : { label, detail, tone };
+function dayTitle(day) {
+  if (day === "today") return t("hx.today");
+  if (day === "yesterday") return t("hx.yesterday");
+  if (day === "unknown") return t("hx.earlier");
+  const [y, m, d] = day.split("-").map(Number);
+  return when(new Date(y, m - 1, d), { weekday: "long", day: "numeric", month: "long" });
 }
 
-export function createHistory() {
-  const el = h("section", { class: "history", "aria-labelledby": "hist-title" });
-  const head = h("div", { class: "hist-head" });
-  const body = h("div", { class: "hist-body" });
+function row(r) {
+  const L = historyLine(r, FMT);
+  const d = toDate(r.ts);
+  const label = L.minutes ? `${t(L.key)} (${L.minutes} min)` : t(L.key);
+  const tags = [];
+  if (L.via) tags.push(h("span", { class: "pill hx-via" }, icon(L.via === "voice" ? "mic" : "check", 16), h("span", { text: t(L.via === "voice" ? "hist.byVoice" : "hist.byButton") })));
+  if (L.simulated) tags.push(h("span", { class: "pill pill-sim" }, icon("robot", 16), h("span", { text: t("simulated") })));
+  return h("li", { class: `hx-row${L.tone ? ` is-${L.tone}` : ""}` },
+    h("span", { class: "hx-dot", "aria-hidden": "true" }, icon(L.icon, 20)),
+    h("div", { class: "hx-main" },
+      h("p", { class: "hx-label", text: label }),
+      L.detail ? scripted("p", String(L.detail), { class: "hx-detail" }) : null,
+      tags.length ? h("p", { class: "hx-tags" }, ...tags) : null),
+    d ? h("time", { class: "hx-time", datetime: d.toISOString(), text: when(d, { hour: "numeric", minute: "2-digit" }) }) : null);
+}
+
+function skeleton() {
+  return h("div", { class: "skel-wrap hx-skel", role: "status", "aria-busy": "true" },
+    h("span", { class: "sr-only", text: t("hx.loading") }),
+    h("span", { class: "skel skel-title" }),
+    ...[0, 1, 2, 3].map(() => h("div", { class: "skel-row" }, h("span", { class: "skel skel-circle" }), h("span", { class: "skel skel-line" }))));
+}
+
+export function createHistoryPanel() {
+  const el = h("div", { class: "hx" });
+  const head = h("div", { class: "hx-head" });
+  const body = h("div", { class: "hx-body" });
   el.append(head, body);
 
-  function render(parts) {
-    if (!parts.has("all") && !parts.has("lang") && !parts.has("history")) return;
-    patch(head, document.documentElement.lang, () => [
-      h("a", { class: "icon-btn tip-below", href: "#/me", "aria-label": t("nav.me"), dataset: { tip: t("nav.me") } }, icon("arrowLeft", 24)),
-      h("h1", { class: "screen-title", id: "hist-title", text: t("hist.title") }),
-    ]);
-    const rows = [...state.audit.values()].filter((r) => !SKIP.has(r.type) && line(r))
-      .sort((a, b) => { const x = Number(a.id), y = Number(b.id); return Number.isFinite(x) && Number.isFinite(y) ? y - x : String(b.ts || "").localeCompare(String(a.ts || "")); })
-      .slice(0, 150);
-    patch(body, JSON.stringify([document.documentElement.lang, rows.map((r) => r.id)]), () => {
-      if (!rows.length) return stateView({ kind: "empty", icon: "history", title: t("empty.history.title"), text: t("empty.history.text"), action: talkAction() });
-      return h("ol", { class: "timeline" }, ...rows.map((r) => {
-        const L = line(r);
-        const d = toDate(r.ts);
-        return h("li", { class: `tl-item${L.tone ? ` tl-${L.tone}` : ""}` },
-          h("span", { class: "tl-dot", "aria-hidden": "true" }, icon(ICON[r.type] || "spark", 20)),
-          h("div", { class: "tl-text" },
-            h("p", { class: "tl-label", text: L.label }),
-            L.detail ? scripted("p", String(L.detail), { class: "tl-detail" }) : null),
-          d ? h("time", { class: "tl-time", datetime: d.toISOString(), text: when(d) }) : null);
-      }));
+  function update(parts) {
+    if (parts && !parts.has("all") && !parts.has("lang") && !parts.has("history") && !parts.has("boot")) return;
+    const lang = document.documentElement.lang;
+    if (state.boot !== "ready") {
+      patch(head, `none|${lang}`, () => []);
+      patch(body, `loading|${lang}`, skeleton);
+      return;
+    }
+    const rows = historyRows(state.audit.values(), { has });
+    patch(head, JSON.stringify([lang, rows.length]), () => rows.length
+      ? [h("p", { class: "hx-count" }, icon("history", 20), h("span", { text: t("hx.count", { n: rows.length }) }))]
+      : []);
+    patch(body, JSON.stringify([lang, rows.map((r) => r.id), new Date().toDateString()]), () => {
+      if (!rows.length) {
+        return stateView({ kind: "empty", icon: "history", title: t("empty.history.title"), text: t("empty.history.text"), action: talkAction() });
+      }
+      return dayGroups(rows).map((g) => h("section", { class: "hx-day", "aria-label": dayTitle(g.day) },
+        h("h3", { class: "hx-day-title" }, h("span", { text: dayTitle(g.day) })),
+        h("ol", { class: "hx-list" }, ...g.rows.map(row))));
     });
   }
 
+  return { el, update };
+}
+
+/** A whole screen for an old #/history link (the shell maps it to #/me/history; kept for safety). */
+export function createHistory() {
+  const el = h("section", { class: "history-screen", "aria-labelledby": "hx-title" });
+  const head = h("header", { class: "screen-head" });
+  const panel = createHistoryPanel();
+  el.append(head, panel.el);
+  function render(parts) {
+    patch(head, document.documentElement.lang, () => [
+      h("a", { class: "icon-btn tip-below", href: "#/me/teach", "aria-label": t("nav.me"), dataset: { tip: t("nav.me") } }, icon("arrowLeft", 24)),
+      h("h1", { class: "screen-title", id: "hx-title", text: t("hist.title") }),
+    ]);
+    panel.update(parts);
+  }
   return { el, update: (_s, parts) => render(parts) };
 }

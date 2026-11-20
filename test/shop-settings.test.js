@@ -203,9 +203,10 @@ test("every shop string is in English, Devanagari and Kannada script; no emoji",
 
 test("My Sahay shows the shop details; Sell shows the needs card and opens the sheet on GSTIN_REQUIRED / STATE_REQUIRED", () => {
   const me = read("public/js/app/me.js");
-  assert.match(me, /import \{ shopSummary \} from "\.\/shop-settings\.js";/);
-  assert.match(me, /renderShop\(\)/);
-  assert.match(me, /parts\.has\("sell"\)\) renderShop\(\)/);
+  // UI v3: My Sahay > Shop draws its own summary card from sell.settings and opens this sheet.
+  assert.match(me, /import \{ openShopSheet \} from "\.\/shop-settings\.js";/);
+  assert.match(me, /openShopSheet\(\{ opener: btn \}\)/);
+  assert.match(me, /section === "shop" && \(all \|\| parts\.has\("sell"\)/);
   const sell = read("public/js/app/sell.js");
   assert.match(sell, /SHOP_CODES\.includes\(err\.code\)/, "a bill refused for shop details is not shown as 'already decided'");
   assert.match(sell, /u\.fix \? shopNeedCard\(u\.fix, u\.error\)/);

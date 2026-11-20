@@ -1,52 +1,97 @@
-// Memory constellation: the owner's agent orb in the middle, rules and memories as bubbles on
-// two orbits joined to it. Suggestions float in with a coral ring; active rules have a leaf
-// ring; memories are cyan. Each bubble is a button (icon + one word) that opens its sheet.
+// Constellation (My Sahay > Teach, spec 3.1 row 49): Sahay's own orb in a socket at the centre of
+// a sky, rules and memories as stars joined to it. The first six items are stars you can press
+// (icon + one word); the rest show as small lights on the outer orbit and are listed in full under
+// the sky. Waiting suggestions have an amber ring, rules Sahay follows a lime ring, memories cyan;
+// the word under each star says which, so colour is never the only signal. A star that arrived
+// while the screen was open says "New" once.
+//
+//   renderSky(items, { langCode, onPick, fresh, orb }) -> HTMLElement
+//   renderStarList(items, { langCode, onPick, fresh }) -> HTMLElement (ul.rows)
+//   renderLegend(), starWord(item), starIcon(item), starTone(item)
 
-import { h, icon, svgEl } from "./dom.js";
+import { h, icon, svgEl, scripted } from "./dom.js";
 import { t } from "./i18n.js";
+import { starPositions, sentenceOf } from "./me-logic.js";
+import "./me-strings.js";
 
 const RULE_ICON = { max_price: "rupee", prefer_vendor: "heart", avoid_vendor: "ban", usual_quantity: "box", reply_language: "globe", bargain_style: "gauge" };
 const MEM_ICON = { usual_item: "box", liked_vendor: "heart", last_price: "tag" };
 
-export function sentenceOf(x, langCode) {
-  const s = x && x.sentence;
-  if (!s) return "";
-  if (typeof s === "string") return s;
-  return s[langCode] || s["en-IN"] || Object.values(s)[0] || "";
+export { sentenceOf };
+
+export function starTone(it) {
+  if (it.type === "memory") return "memory";
+  return it.data.status === "suggested" ? "suggested" : "rule";
 }
 
-/** items: [{ type: "rule"|"memory", data }] */
-export function renderConstellation(items, { langCode, onPick, fresh = new Set() }) {
-  const n = items.length;
-  const wrap = h("div", { class: "constellation" });
-  const svg = svgEl("svg", { class: "const-lines", viewBox: "0 0 100 100", preserveAspectRatio: "none", "aria-hidden": "true" });
-  const list = h("ul", { class: "const-items", "aria-label": t("me.rulesTitle") });
-  // Up to 8 on the inner orbit, the rest outside.
-  items.forEach((it, i) => {
-    const inner = i < 8;
-    const count = inner ? Math.min(n, 8) : n - 8;
-    const k = inner ? i : i - 8;
-    const a = (-90 + (360 / count) * k + (inner ? 0 : 180 / count)) * (Math.PI / 180);
-    const r = inner ? 34 : 46;
-    const x = 50 + r * Math.cos(a);
-    const y = 50 + r * Math.sin(a);
-    svg.append(svgEl("line", { x1: 50, y1: 50, x2: x, y2: y, class: `const-line ${lineClass(it)}`, "vector-effect": "non-scaling-stroke" }));
-    const d = it.data;
-    const kindWord = it.type === "memory" ? t("me.memory") : d.status === "suggested" ? t("me.suggested") : d.status === "off" ? t("me.off") : t("me.rule");
-    const sentence = sentenceOf(d, langCode);
-    const ic = it.type === "memory" ? MEM_ICON[d.kind] || "spark" : RULE_ICON[d.kind] || "spark";
-    list.append(h("li", { class: "const-item", style: `--x:${x};--y:${y};--i:${i}` },
+export function starWord(it) {
+  const tone = starTone(it);
+  return tone === "memory" ? t("me.memory") : tone === "suggested" ? t("me.suggested") : t("me.rule");
+}
+
+export function starIcon(it) {
+  const k = it.data && it.data.kind;
+  return (it.type === "memory" ? MEM_ICON[k] : RULE_ICON[k]) || (it.type === "memory" ? "box" : "star");
+}
+
+const keyOf = (it) => `${it.type}:${it.data.id}`;
+
+/** The sky: orb socket, orbit rings, lines, up to six pressable stars and small lights for the rest. */
+export function renderSky(items, { langCode, onPick, fresh = new Set(), orb = null }) {
+  const pos = starPositions(items.length);
+  const svg = svgEl("svg", { class: "sky-lines", viewBox: "0 0 100 100", preserveAspectRatio: "none", "aria-hidden": "true" });
+  svg.append(
+    svgEl("circle", { class: "sky-orbit", cx: 50, cy: 50, r: 27, "vector-effect": "non-scaling-stroke" }),
+    svgEl("circle", { class: "sky-orbit sky-orbit-outer", cx: 50, cy: 50, r: 43, "vector-effect": "non-scaling-stroke" }));
+  const stars = h("ul", { class: "sky-stars", "aria-label": t("me3.sky") });
+  const lights = h("div", { class: "sky-lights", "aria-hidden": "true" });
+  pos.forEach((p, i) => {
+    const it = items[i];
+    const tone = starTone(it);
+    svg.append(svgEl("line", { x1: 50, y1: 50, x2: p.x, y2: p.y, class: `sky-line is-${tone}${p.ring ? " is-far" : ""}`, "vector-effect": "non-scaling-stroke" }));
+    if (p.ring === 1) {
+      lights.append(h("span", { class: `sky-light is-${tone}`, style: `--x:${p.x};--y:${p.y}` }));
+      return;
+    }
+    const isNew = fresh.has(keyOf(it));
+    stars.append(h("li", { class: "sky-star-slot", style: `--x:${p.x};--y:${p.y};--i:${i}` },
       h("button", {
-        class: `star ${lineClass(it)}${fresh.has(`${it.type}:${d.id}`) ? " is-new" : ""}`, type: "button",
-        "aria-label": `${kindWord}: ${sentence}`,
+        class: `sky-star is-${tone}${isNew ? " is-new" : ""}`, type: "button",
+        "aria-label": `${starWord(it)}: ${sentenceOf(it.data, langCode)}`,
         on: { click: (e) => onPick(it, e.currentTarget) },
-      }, icon(ic, 24), h("span", { class: "star-word", text: kindWord }))));
+      },
+      h("span", { class: "sky-star-dot" }, icon(starIcon(it), 22)),
+      h("span", { class: "sky-star-word", text: isNew ? t("me3.new") : starWord(it) }))));
   });
-  wrap.append(svg, h("span", { class: "const-core", "aria-hidden": "true" }), list);
-  return wrap;
+  return h("div", { class: "sky" },
+    svg,
+    lights,
+    h("span", { class: "sky-core", "aria-hidden": "true" }, orb || null),
+    stars);
 }
 
-function lineClass(it) {
-  if (it.type === "memory") return "is-memory";
-  return { suggested: "is-suggested", active: "is-active", off: "is-off" }[it.data.status] || "is-active";
+/** The full list under the sky: every rule and memory as a row with its sentence. */
+export function renderStarList(items, { langCode, onPick, fresh = new Set() }) {
+  return h("ul", { class: "rows sky-list", "aria-label": t("me3.list") }, ...items.map((it) => {
+    const tone = starTone(it);
+    const isNew = fresh.has(keyOf(it));
+    return h("li", { class: "row" },
+      h("button", { class: "row-button", type: "button", on: { click: (e) => onPick(it, e.currentTarget) } },
+        h("span", { class: `row-ico sky-row-ico is-${tone}`, "aria-hidden": "true" }, icon(starIcon(it), 22)),
+        h("span", { class: "row-main" },
+          scripted("span", sentenceOf(it.data, langCode), { class: "row-title sky-row-title" }),
+          h("span", { class: `row-sub sky-row-kind is-${tone}` },
+            icon(tone === "suggested" ? "clock" : tone === "memory" ? "box" : "check", 18), h("span", { text: starWord(it) }))),
+        h("span", { class: "row-end" },
+          isNew ? h("span", { class: "pill pill-ok" }, h("span", { text: t("me3.new") })) : null,
+          icon("chevronRight", 22))));
+  }));
+}
+
+/** Legend: what the three rings mean (a ring sample + words). */
+export function renderLegend() {
+  return h("ul", { class: "sky-legend" },
+    h("li", { class: "is-suggested" }, h("span", { class: "sky-legend-dot", "aria-hidden": "true" }), h("span", { text: t("me3.legend.suggested") })),
+    h("li", { class: "is-rule" }, h("span", { class: "sky-legend-dot", "aria-hidden": "true" }), h("span", { text: t("me3.legend.rule") })),
+    h("li", { class: "is-memory" }, h("span", { class: "sky-legend-dot", "aria-hidden": "true" }), h("span", { text: t("me3.legend.memory") })));
 }
