@@ -244,7 +244,7 @@ test("the pay page uses the v3 tokens and its own sheet: no inline style block, 
   assert.doesNotMatch(HTML, /<style/i, "styles live in /css/pay.css (self only under PAY_CSP)");
   assert.match(HTML, /href="\/css\/tokens-v3\.css"/);
   assert.match(HTML, /href="\/css\/pay\.css"/);
-  assert.doesNotMatch(HTML, /fonts\.googleapis/, "PAY_CSP has font-src 'self' only");
+  assert.match(HTML, /https:\/\/fonts\.googleapis\.com\/css2\?family=Jaini\+Purva/, "v4 fonts load from Google Fonts (allowed in PAY_CSP)");
   assert.doesNotMatch(CSS + SCRIPT, /#FFB020|#FF7A1A|marigold|saffron|#1f6f5c/i);
   assert.match(SCRIPT, /theme: \{ color: "#B6F23C" \}/);
 });

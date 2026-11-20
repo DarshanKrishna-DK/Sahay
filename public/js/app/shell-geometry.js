@@ -21,7 +21,7 @@ export function sizeClass(w, h) {
 }
 
 export const SCREEN_IDS = ["sahay", "buy", "sell", "stock", "money", "me"];
-export const ME_SECTIONS = ["teach", "voice", "shop", "history"];
+export const ME_SECTIONS = ["teach", "memory", "voice", "shop", "history"];
 const SPECIAL = ["waiting", "signup", "login"];
 export const ROUTE_ALIASES = { "": "sahay", talk: "sahay", home: "sahay", work: "buy", orders: "buy", history: "me/history" };
 
