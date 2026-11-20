@@ -105,3 +105,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dsc-live-dot { animation: none; }
 }
+
+/* Board buttons wrap onto two lines instead of cutting the words ("BARGAIN WITH THIS SELLER"). */
+.dsc .btn { white-space: normal; height: auto; min-height: var(--btn-sm, 48px); padding-block: 8px; text-align: center; }
+.dsc .btn > span { white-space: normal; overflow: visible; text-overflow: clip; }
