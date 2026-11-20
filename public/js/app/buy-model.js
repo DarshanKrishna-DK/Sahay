@@ -244,3 +244,81 @@ export function clockOptions(lang, opts) {
   if (lang === "hi" || lang === "kn") { if ("hour" in o) { o.hourCycle = "h23"; o.hour = "2-digit"; } }
   return o;
 }
+
+/* ------------------------------------------------------------- v5 Buy card -- */
+
+export const PROGRESS = [["heard", "asked"], ["search", "found"], ["bargain", "bargain"], ["yes", "yes"], ["ordered", "ordered"]];
+
+/**
+ * The plain five-step line of the "Now buying" card: Asked, Found sellers, Bargaining, Your yes,
+ * Ordered. Each { id, word, status }; `current` is the index of the first step not yet done (the
+ * one shown in pink), or -1 when all five are done.
+ */
+export function progressOf(model) {
+  const steps = PROGRESS.map(([sid, word]) => {
+    const s = model.stations.find((x) => x.id === sid);
+    return { id: sid, word, status: s ? s.status : "upcoming" };
+  });
+  const current = steps.findIndex((s) => s.status !== "done");
+  return { steps, current };
+}
+
+/**
+ * The best price so far for the need: the agreed price when the talk ended in a deal, else the
+ * lowest price the seller asked, else the lowest recorded quote. { price, unit, agreed, vendorId } or null.
+ */
+export function bestPrice(model) {
+  const n = model.negotiation;
+  const lad = ladderRows(n);
+  if (lad.agreed !== null) return { price: lad.agreed, unit: lad.unit, agreed: true, vendorId: n.vendorId ?? null };
+  const asks = lad.rows.filter((r) => r.side === "ask");
+  if (asks.length) {
+    const low = asks.reduce((m, r) => (r.offer < m.offer ? r : m), asks[0]);
+    return { price: low.offer, unit: low.unit || lad.unit, agreed: false, vendorId: n.vendorId ?? null };
+  }
+  const qs = (model.quotes || []).filter((q) => isNum(q.unitPrice));
+  if (qs.length) {
+    const q = qs.reduce((m, x) => (x.unitPrice < m.unitPrice ? x : m), qs[0]);
+    return { price: q.unitPrice, unit: q.unit || "", agreed: false, vendorId: q.vendorId ?? null };
+  }
+  return null;
+}
+
+/** The one action an order card shows: pay (to pay with a link), arrived (on the way), or paper. */
+export function orderAction(o) {
+  const shelf = orderShelf(o);
+  if (shelf === "toPay" && o.paymentUrl) return "pay";
+  if (shelf === "onTheWay") return "arrived";
+  return "paper";
+}
+
+/**
+ * The rows of Buy's "Your orders" card (UI v5 screens.md 04), in this order: the current need while
+ * it has no order yet (Asking vendors, or Waiting for you when a yes is pending), every purchase
+ * order newest first (Ordered, or Cancelled), then earlier needs (Asked before; the client cannot
+ * tell whether an earlier need was ordered, so it never claims either). Each row:
+ * { kind: "need"|"order"|"earlier", status, at, amount, need?, order?, vendorId? }.
+ */
+export function buyRows(st, req) {
+  const rows = [];
+  const m = req ? stationsFor(st, req) : null;
+  if (req && !m.order) {
+    const pending = m.approval && m.approval.status === "pending";
+    rows.push({
+      kind: "need", need: req, at: req.createdAt || null,
+      status: pending ? "waiting" : "asking",
+      amount: pending && isNum(m.approval.totalAmount) ? m.approval.totalAmount : null,
+      vendorId: m.negotiation && m.negotiation.vendorId !== undefined ? m.negotiation.vendorId : null,
+    });
+  }
+  for (const o of values(st.orders).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))) {
+    rows.push({
+      kind: "order", order: o, at: o.createdAt || null,
+      status: o.status === "cancelled" || o.status === "rejected" ? "cancelled" : "ordered",
+      amount: isNum(o.amount) ? o.amount : null,
+      need: m && m.order && same(m.order.id, o.id) ? req : null,
+    });
+  }
+  for (const { need } of earlierNeeds(st, req, 20)) rows.push({ kind: "earlier", need, at: need.createdAt || null, status: "earlier", amount: null });
+  return rows;
+}

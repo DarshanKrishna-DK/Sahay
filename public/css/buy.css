@@ -1,0 +1,84 @@
+/* Buy (UI v5, W4A; screens.md 04): only Buy's own pieces. Cards, buttons, chips, lists and sheets
+   are W1's (components.css). Tokens only, no glow, no blur; motion stops under reduced motion. */
+
+.b5-buy { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.b5-buy > div:empty { display: none; }
+
+/* Lists sit inside a card: the card is the frame, so the list loses its own border. Item names
+   wrap to two lines and never end in "..." (screens.md 2, Card). */
+.b5-buy .card > .list-wrap .list { border: 0; border-radius: 0; background: transparent; }
+.b5-buy .card > .list-wrap { margin: 0 -20px -8px; }
+.b5-buy .card > .list-wrap .row { padding: 16px 20px; }
+.b5-buy .row-title, .b5-buy .row-sub {
+  display: -webkit-box;
+  white-space: normal;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.b5-buy .card > .list-wrap .show-all { margin: 4px 20px 8px; }
+.b5-empty { margin: 0; color: var(--text-muted); }
+
+/* status word with its 8px dot */
+.b5-status { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-small); font-weight: 600; white-space: nowrap; color: var(--text-muted); }
+.b5-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.b5-status.is-info { color: var(--info); }
+.b5-status.is-needs { color: var(--needs); }
+.b5-status.is-good { color: var(--good); }
+.b5-status.is-muted { color: var(--text-muted); }
+.b5-check {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  background: var(--pink);
+  color: var(--on-pink);
+  font-weight: 700;
+  font-size: var(--fs-small);
+}
+
+/* phones: the amount and status go under the item instead of squeezing it */
+@media (max-width: 559px) {
+  .b5-orders .row { flex-wrap: wrap; }
+  .b5-orders .row-main { flex-basis: calc(100% - 40px); }
+  .b5-orders .row-end { flex-basis: 100%; justify-content: space-between; }
+}
+
+/* ------------------------------------------------------------ sheets -- */
+.b5-sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.b5-sheet-row > svg { color: var(--text-muted); }
+.b5-where { color: var(--text-muted); font-size: var(--fs-small); }
+.b5-sheet-text { margin: 0 0 12px; color: var(--text-muted); }
+.b5-fact { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.b5-fact > svg { flex: none; color: var(--text-muted); }
+.b5-order-facts { margin: 4px 0 8px; }
+.b5-order-facts > .figure { margin: 0 0 8px; }
+.b5-agreed { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--good); font-weight: 700; }
+.b5-best { display: grid; gap: 2px; margin: 12px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.b5-best-label { margin: 0; color: var(--text-muted); font-size: var(--fs-small); font-weight: 600; }
+.b5-best .figure { margin: 0; }
+.b5-said { margin-top: 16px; }
+.b5-said-title { margin: 0 0 8px; font-size: var(--fs-h3); font-weight: 700; }
+.b5-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.b5-pay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* the five plain steps (in the sheet of a need Sahay is working on) */
+.b5-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 4px 0 8px; padding: 0; list-style: none; }
+.b5-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; text-align: center; }
+.b5-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 19px;
+  left: calc(50% + 22px);
+  right: calc(-50% + 22px);
+  height: 2px;
+  background: var(--line-strong);
+}
+.b5-step.is-done:not(:last-child)::after { background: var(--good); }
+.b5-step-ico { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text-muted); }
+.b5-step.is-done .b5-step-ico { border-color: transparent; background: var(--good-soft); color: var(--good); }
+.b5-step.is-now .b5-step-ico { border-color: transparent; background: var(--pink); color: var(--on-pink); }
+.b5-step.is-failed .b5-step-ico { border-color: transparent; background: var(--needs-soft); color: var(--needs); }
+.b5-step-word { color: var(--text-muted); font-size: var(--fs-label); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.b5-step.is-now .b5-step-word, .b5-step.is-done .b5-step-word { color: var(--text); }

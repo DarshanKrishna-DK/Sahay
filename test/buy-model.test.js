@@ -211,3 +211,44 @@ test("times on Hindi and Kannada screens use the 24-hour clock (no Latin am / pm
   assert.deepEqual(clockOptions("en", { hour: "numeric" }), { hour: "numeric" });
   assert.deepEqual(clockOptions("hi", { day: "numeric" }), { day: "numeric" }, "a date with no hour is left alone");
 });
+
+test("v5 Now buying card: five plain steps with the first unfinished one current, and the best price from real records", async () => {
+  const { stationsFor, progressOf, bestPrice, orderAction } = await load();
+  const s = store({
+    vendors: mapOf([{ id: "v1", name: "Srinidhi Foods", requirementId: 7 }]),
+    negotiations: mapOf([{ id: "n1", requirementId: 7, vendorId: "v1", status: "running", endedAt: null, turns: [
+      { speaker: "vendor", round: 1, offer: 65, unit: "kg" }, { speaker: "agent", round: 1, offer: 51, unit: "kg" }, { speaker: "vendor", round: 2, offer: 58, unit: "kg" }] }]),
+  });
+  const m = stationsFor(s, REQ);
+  const p = progressOf(m);
+  assert.deepEqual(p.steps.map((x) => x.word), ["asked", "found", "bargain", "yes", "ordered"]);
+  assert.equal(p.current, 2, "bargaining is the step now");
+  assert.deepEqual(bestPrice(m), { price: 58, unit: "kg", agreed: false, vendorId: "v1" }, "the lowest ask so far, never Sahay's own offer");
+  s.negotiations.get("n1").endedAt = "x";
+  s.negotiations.get("n1").outcome = { agreed: true, unitPrice: 55 };
+  assert.equal(bestPrice(stationsFor(s, REQ)).agreed, true);
+  assert.equal(bestPrice(stationsFor(store(), REQ)), null, "no talk, no quote: no price shown");
+  assert.equal(orderAction({ status: "confirmed", paymentUrl: "/pay/x" }), "pay");
+  assert.equal(orderAction({ status: "confirmed" }), "paper");
+  assert.equal(orderAction({ status: "paid" }), "arrived");
+  assert.equal(orderAction({ status: "delivered" }), "paper");
+});
+
+test("v5 Your orders rows: the current need until it is ordered, every order newest first, then earlier needs without a claim", async () => {
+  const { buyRows } = await load();
+  const s = store({
+    requirements: [{ id: 3, item: "Dal", createdAt: "1" }, REQ],
+    quotes: mapOf([{ id: "q1", requirementId: 7 }]),
+    approvals: mapOf([{ id: "a1", quoteId: "q1", status: "pending", totalAmount: 20200 }]),
+    orders: mapOf([{ id: "o0", status: "cancelled", amount: 500, createdAt: "0" }, { id: "o9", status: "paid", amount: 900, createdAt: "5" }]),
+  });
+  let rows = buyRows(s, REQ);
+  assert.deepEqual(rows.map((r) => [r.kind, r.status, r.amount]), [["need", "waiting", 20200], ["order", "ordered", 900], ["order", "cancelled", 500], ["earlier", "earlier", null]]);
+  s.approvals.get("a1").status = "approved";
+  s.orders.set("o1", { id: "o1", approvalId: "a1", status: "confirmed", amount: 20200, createdAt: "9" });
+  rows = buyRows(s, REQ);
+  assert.equal(rows[0].kind, "order", "an ordered need shows as its order");
+  assert.equal(rows[0].need, REQ);
+  assert.equal(rows.filter((r) => r.kind === "need").length, 0);
+  assert.deepEqual(buyRows(store(), null), []);
+});
