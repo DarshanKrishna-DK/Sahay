@@ -106,7 +106,7 @@
 /* ============================================================ the cards -- */
 .hm-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s5); width: 100%; }
 /* Today gets the wider column so four tiles fit in one row with one-line labels. */
-@media (min-width: 900px) { .hm-cards { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; } }
+@media (min-width: 900px) { .hm-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 .hm-card { min-width: 0; }
 
 /* Needs you: [icon] [what + who] [amount] [Check]; the whole row opens the Yes card. */
@@ -157,7 +157,7 @@
   .hm-talk-row .hm-type { margin-top: 0; }
   .hm-assistant { margin-top: var(--s2); }
   .hm-card { padding: 20px; }
-  .hm-card-today .hm-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .hm-card-today .hm-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hm-tile { min-height: 80px; padding: 12px; }
 }
 
