@@ -114,4 +114,10 @@ addStrings({
   "home.micStaysOn": ["Your mic stays on, so you can still say yes.", "माइक चालू रहता है, आप हाँ बोल सकते हैं।", "ಮೈಕ್ ಆನ್ ಇರುತ್ತದೆ, ನೀವು ಹೌದು ಎನ್ನಬಹುದು."],
   "home.typedStarts": ["Sending starts a typed chat. The mic stays off.", "भेजते ही लिखकर बात शुरू होगी। माइक बंद रहेगा।", "ಕಳುಹಿಸಿದರೆ ಬರೆದು ಮಾತು ಶುರು. ಮೈಕ್ ಆಫ್ ಇರುತ್ತದೆ."],
   "home.typedYes": ["A typed yes does not count. Tap Check and press Yes.", "लिखी हुई हाँ नहीं गिनी जाती। देखें दबाकर हाँ दबाइए।", "ಬರೆದ ಹೌದು ಎಣಿಕೆಯಾಗುವುದಿಲ್ಲ. ನೋಡಿ ಒತ್ತಿ, ಹೌದು ಒತ್ತಿ."],
+  // Owner layout: conversation left, discovery board right.
+  "home.type": ["Type", "लिखें", "ಬರೆಯಿರಿ"],
+  "home.board": ["Discovery board", "खोज बोर्ड", "ಹುಡುಕಾಟ ಫಲಕ"],
+  "home.boardEmpty": ["When you ask Sahay to buy, the sellers and best deals appear here.", "जब आप सहाय से खरीदने को कहेंगे, विक्रेता और सबसे अच्छे सौदे यहाँ दिखेंगे।", "ಸಹಾಯ್‌ಗೆ ಖರೀದಿಸಲು ಹೇಳಿದಾಗ, ಮಾರಾಟಗಾರರು ಮತ್ತು ಉತ್ತಮ ಡೀಲ್‌ಗಳು ಇಲ್ಲಿ ಕಾಣುತ್ತವೆ."],
+  "home.jumpLatest": ["Jump to latest", "नई बात पर जाएँ", "ಹೊಸ ಮಾತಿಗೆ ಹೋಗಿ"],
+  "home.convoHint": ["Tap Talk and say what your shop needs, for example: 50 kilos of sugar.", "बोलें दबाइए और बताइए दुकान को क्या चाहिए, जैसे: 50 किलो चीनी।", "ಮಾತಾಡಿ ಒತ್ತಿ, ಅಂಗಡಿಗೆ ಏನು ಬೇಕು ಹೇಳಿ, ಉದಾಹರಣೆಗೆ: 50 ಕಿಲೋ ಸಕ್ಕರೆ."],
 });

@@ -1,11 +1,12 @@
-// Home (#/home; #/sahay, #/talk and the empty route are aliases). UI v5, screens.md section 4 (01, 02).
-// Calm and simple, one column: a time-of-day greeting, the pixel agent sprite (public/art) with its state
-// word, one big pink "Talk to Sahay" (Mute / End during a call, End red), "Type instead" (a one-line
-// input in place), the automated-assistant line; the conversation only during or just after a call
-// or after typing; then two cards: "Needs you" (up to 3 rows, "Check" opens the Yes card) and "Today"
-// (four tiles with real numbers, each opens its screen). Nothing else.
-// Behaviour kept from v3: the call contract (call.js / voice.js), drop and blocked-network recovery,
-// typing during a call never mutes the mic (D16), a typed yes never approves, read-aloud of "now".
+// Home (#/home; #/sahay, #/talk and the empty route are aliases). UI v7, owner's layout (live test):
+//   laptop (>= 1024): one compact top row (pixel agent sprite + state word + greeting | TALK / TYPE),
+//   then a two-column main area filling the viewport height: LEFT the conversation (always there,
+//   scrolls, newest at the bottom, "jump to latest", the typed input at its foot), RIGHT the
+//   Discovery board (W4A's createDiscoveryBoard() from discovery.js; an empty board until Sahay
+//   publishes sellers and deals). Below the fold: Needs you + Today.
+//   phone: sprite + Talk / Type, the board (only when it has something), the conversation, Needs you, Today.
+// Behaviour kept: the call contract (call.js / voice.js), drop and blocked-network recovery, typing
+// during a call never mutes the mic (D16), a typed yes never approves, read-aloud of "now".
 // Logic is in home-model.js (tested without a DOM).
 
 import { h, icon, fill, patch, scripted, button, card, errorLine, money } from "./ui.js";
@@ -15,12 +16,12 @@ import { state } from "./store.js";
 import { sell, stock, loadSell, loadStock } from "./store-sell.js";
 // yes.js is imported here directly so Home never depends on boot order (W3 owns the decisions).
 import { needsRows, onNeedsRows, openNeeds, onCount, typedYesHint } from "./yes.js";
-import { call, inCall, busy, startCall, endCall, setMuted, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
+import { call, inCall, startCall, endCall, setMuted, sendText, textSupported, resumeAudio, endServerCall } from "./call.js";
 import { runningJobs, nowLine } from "./activity.js";
 import { speakButton } from "./speak.js";
 import {
   orbView, callStrip, recoveryNotes, conversationView, isTypedYes, todayStats, boxState, stateWord,
-  greetingKey, showConversation, grouped,
+  greetingKey, grouped,
 } from "./home-model.js";
 
 // This screen's stylesheet (until the shell links it from app.html).
@@ -30,13 +31,14 @@ if (!document.querySelector('link[href="/css/home.css"]')) {
 
 const online = () => navigator.onLine !== false;
 const MAX_TEXT = 500;
+const ALL_TURNS = 400; // the conversation scrolls instead of folding
 
 /**
  * The agent figure: the pixel helper sprite (public/art/agent-*.png, README there), one 192px cell
- * per state in agent-sheet.png (idle, listening, thinking, speaking, waiting, trouble). Shown at
- * 168px on laptops, 144px on phones, 120px on short phones with pixelated scaling (home.css). The
- * sheet is one image, preloaded with the six single frames, so a state change never flashes; a
+ * per state in agent-sheet.png (idle, listening, thinking, speaking, waiting, trouble), pixelated.
+ * The sheet is one image, preloaded with the six single frames, so a state change never flashes; a
  * gentle two-step bob runs only when motion is allowed (CSS, still under reduced motion).
+ * Size: 96px in the compact laptop row, 144px on phones, 120px on short phones.
  */
 const AGENT_STATES = ["idle", "listening", "thinking", "speaking", "waiting", "trouble"];
 const AGENT_SHEET = "/art/agent-sheet.png";
@@ -53,7 +55,7 @@ function preloadAgent() {
 const FIG_QUERIES = ["(max-width: 767px)", "(max-height: 700px)"];
 function figureSize() {
   if (matchMedia("(max-width: 767px)").matches) return matchMedia("(max-height: 700px)").matches ? 120 : 144;
-  return 168;
+  return 96;
 }
 function createFigure() {
   preloadAgent();
@@ -74,42 +76,94 @@ function createFigure() {
   };
 }
 
+/**
+ * The Discovery board (W4A, discovery.js). Imported defensively: until the module lands, or when it
+ * reports nothing to show, the panel shows its own empty state. Accepted shapes:
+ * createDiscoveryBoard() -> { el, update?(state, parts), isEmpty?(), onChange?(fn), destroy?() }.
+ */
+function createBoardSlot(onChange) {
+  const body = h("div", { class: "hm-board-body" });
+  const empty = h("div", { class: "hm-board-empty" },
+    h("span", { class: "hm-board-art", "aria-hidden": "true" }),
+    scripted("p", "", { class: "hm-board-empty-text" }));
+  let board = null;
+  const isEmpty = () => {
+    if (!board) return true;
+    if (typeof board.isEmpty === "function") { try { return Boolean(board.isEmpty()); } catch { return false; } }
+    if (board.el && board.el.dataset && board.el.dataset.empty !== undefined) return board.el.dataset.empty === "true";
+    return !(board.el && board.el.childElementCount);
+  };
+  function paint() {
+    const e = isEmpty();
+    empty.querySelector(".hm-board-empty-text").textContent = t("home.boardEmpty");
+    empty.hidden = !e;
+    if (board && board.el) board.el.hidden = e && typeof board.isEmpty === "function";
+    onChange(e);
+  }
+  body.append(empty);
+  import("./discovery.js").then((m) => {
+    if (!m || typeof m.createDiscoveryBoard !== "function") return;
+    board = m.createDiscoveryBoard();
+    if (board && board.el) body.append(board.el);
+    if (board && typeof board.onChange === "function") board.onChange(paint);
+    paint();
+  }).catch(() => { /* no board module on this build yet: the empty state stays */ });
+  return {
+    el: body,
+    update(s, parts) {
+      if (board && typeof board.update === "function") { try { board.update(s, parts); } catch (err) { console.error(err); } }
+      paint();
+    },
+  };
+}
+
 export function createHome() {
   const el = h("div", { class: "screen hm", dataset: { state: "idle" } });
 
-  /* ---- hero ---- */
+  /* ---- top row: sprite + state word + greeting | TALK / TYPE ---- */
   const greet = h("h1", { class: "hm-greet", id: "hm-title", tabindex: "-1" });
   const figure = createFigure();
   const word = h("p", { class: "hm-state", role: "status", "aria-live": "polite" });
-  const actions = h("div", { class: "hm-actions", role: "group" });
-  const typeLink = h("button", { class: "link-btn hm-type", type: "button", "aria-controls": "hm-input" });
-  const composer = h("form", { class: "hm-composer", hidden: true, autocomplete: "off" });
   const assistant = h("p", { class: "hm-assistant" });
+  const actions = h("div", { class: "hm-actions", role: "group" });
   const notes = h("div", { class: "hm-notes", hidden: true });
   const hero = h("section", { class: "hm-hero", "aria-labelledby": "hm-title" },
-    greet, h("div", { class: "hm-figure-row" }, figure.el, word), h("div", { class: "hm-talk-row" }, actions, typeLink), composer, assistant, notes);
+    figure.el,
+    h("div", { class: "hm-hero-text" }, greet, word, assistant),
+    actions,
+    notes);
 
-  /* ---- conversation (only during / just after a call, or after typing) ---- */
-  const convoList = h("ol", { class: "hm-convo" });
-  const convoMore = h("div", { class: "hm-convo-more" });
-  const convo = h("div", { class: "hm-convo-wrap", hidden: true });
+  /* ---- conversation panel (always there) ---- */
+  const convoTitle = h("h2", { class: "hm-panel-title", id: "hm-convo-title" });
+  const liveDot = h("span", { class: "hm-live-dot", "aria-hidden": "true" });
+  const convoList = h("ol", { class: "hm-convo", tabindex: "0", "aria-labelledby": "hm-convo-title" });
+  const jump = h("button", { class: "btn btn-secondary btn-sm hm-jump", type: "button", hidden: true });
+  const composer = h("form", { class: "hm-composer", autocomplete: "off" });
+  const convoPanel = h("section", { class: "hm-panel hm-convo-panel", "aria-labelledby": "hm-convo-title" },
+    h("header", { class: "hm-panel-head" }, liveDot, convoTitle),
+    h("div", { class: "hm-convo-scroll" }, convoList, jump),
+    composer);
 
-  /* ---- Needs you + Today ---- */
+  /* ---- discovery board panel ---- */
+  const boardTitle = h("h2", { class: "hm-panel-title", id: "hm-board-title" });
+  const boardPanel = h("section", { class: "hm-panel hm-board-panel", "aria-labelledby": "hm-board-title", dataset: { empty: "true" } });
+  const boardSlot = createBoardSlot((isEmpty) => { boardPanel.dataset.empty = String(isEmpty); });
+  boardPanel.append(h("header", { class: "hm-panel-head" }, boardTitle), boardSlot.el);
+
+  const main = h("div", { class: "hm-main" }, convoPanel, boardPanel);
+
+  /* ---- Needs you + Today (below the fold) ---- */
   const needsBody = h("div", { class: "hm-needs" });
   const todayBody = h("div", { class: "hm-today" });
   const cards = h("div", { class: "hm-cards" });
 
-  el.append(hero, convo, cards);
+  el.append(hero, main, cards);
 
-  let showAll = false;
-  let typed = false;
-  let endedAt = null;
-  let wasLive = false;
-  let composerOpen = false;
   let failedText = null;
   let typedYes = false;
+  let stick = true; // keep the newest turn in view unless the owner scrolled up to read
 
-  /* ---- typing ---- */
+  /* ---- typing (always at the foot of the conversation) ---- */
   const input = h("input", { class: "input hm-input", id: "hm-input", type: "text", maxlength: String(MAX_TEXT), enterkeyhint: "send", autocomplete: "off" });
   const inputLabel = h("label", { class: "sr-only", for: "hm-input" });
   const send = h("button", { class: "btn btn-primary hm-send", type: "submit" });
@@ -122,28 +176,23 @@ export function createHome() {
     if (!text || call.sending) return;
     failedText = null;
     typedYes = isTypedYes(text) && needsRows().length > 0 ? text : false;
+    stick = true;
     const ok = await sendText(text);
-    if (ok) { input.value = ""; typed = true; } else { failedText = text; typedYes = false; }
+    if (ok) input.value = ""; else { failedText = text; typedYes = false; }
     renderComposer();
     renderConvo();
     input.focus({ preventScroll: true });
   });
   input.addEventListener("input", () => { failedText = null; renderComposer(); });
-  input.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); setComposer(false, true); } });
-  typeLink.addEventListener("click", () => setComposer(!composerOpen, true));
 
-  function setComposer(open, focus) {
-    composerOpen = open;
-    composer.hidden = !open;
-    if (!open) { typedYes = false; failedText = null; }
-    renderComposer();
-    if (focus) requestAnimationFrame(() => (open ? input : typeLink).focus({ preventScroll: true }));
+  function focusInput() {
+    if (!textSupported()) return;
+    composer.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    requestAnimationFrame(() => input.focus({ preventScroll: true }));
   }
 
   function renderComposer() {
-    typeLink.hidden = !textSupported();
-    fill(typeLink, icon(composerOpen ? "x" : "keyboard", 20), h("span", { text: composerOpen ? t("home.typeClose") : t("home.typeInstead") }));
-    typeLink.setAttribute("aria-expanded", String(composerOpen));
+    composer.hidden = !textSupported();
     inputLabel.textContent = t("home.composer");
     const sending = Boolean(call.sending);
     input.disabled = sending;
@@ -161,7 +210,7 @@ export function createHome() {
     input.setAttribute("aria-invalid", failedText !== null ? "true" : "false");
   }
 
-  /* ---- hero ---- */
+  /* ---- top row ---- */
   function view() {
     return orbView({
       status: call.status, agentState: call.agentState, mode: call.mode, route: call.route, error: call.error,
@@ -174,6 +223,9 @@ export function createHome() {
     const g = t(greetingKey());
     greet.textContent = shop ? `${g}, ${shop}` : g;
     assistant.textContent = t("home.assistant");
+    convoTitle.textContent = t("home.convo");
+    boardTitle.textContent = t("home.board");
+    jump.replaceChildren(icon("chevronDown", 18), h("span", { text: t("home.jumpLatest") }));
   }
 
   function renderState(v) {
@@ -199,7 +251,7 @@ export function createHome() {
     else if (a === "mute") setMuted(true);
     else if (a === "unmute" || a === "openMic") setMuted(false);
     else if (a === "tray") openNeeds(null);
-    else if (a === "type") setComposer(true, true);
+    else if (a === "type") focusInput();
     else if (a === "endOther") endServerCall();
   }
 
@@ -215,6 +267,7 @@ export function createHome() {
       parts.push(b);
     }
     if (s.end) parts.push(button({ word: t(s.end.key), icon: "phoneOff", kind: "danger", size: "hero", cls: "hm-end", label: inCall() ? t("home.endLong") : t(s.end.key), onClick: () => endCall() }));
+    if (s.keyboard) parts.push(button({ word: t("home.type"), icon: "keyboard", kind: "secondary", size: "hero", cls: "hm-typebtn", label: t("home.typeInstead"), onClick: () => focusInput() }));
     fill(actions, ...parts);
     actions.dataset.count = String(parts.length);
   }
@@ -245,34 +298,36 @@ export function createHome() {
     return btns.length ? h("div", { class: "hm-note-actions" }, ...btns) : null;
   }
 
-  /* ---- conversation ---- */
+  /* ---- conversation: every turn, scrolls, newest at the bottom ---- */
+  const atBottom = () => convoList.scrollHeight - convoList.scrollTop - convoList.clientHeight < 32;
+  convoList.addEventListener("scroll", () => { stick = atBottom(); jump.hidden = stick; }, { passive: true });
+  jump.addEventListener("click", () => {
+    stick = true;
+    jump.hidden = true;
+    convoList.scrollTo({ top: convoList.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+
   function renderConvo() {
-    const live = inCall() || busy();
-    if (wasLive && !live) endedAt = Date.now();
-    if (live) endedAt = null;
-    wasLive = live;
-    const turns = call.transcript.filter((x) => (x.role === "owner" || x.role === "agent") && String(x.text || "").trim()).length;
-    const show = showConversation({ live: inCall(), turns, endedAt, typed });
-    convo.hidden = !show;
-    if (!show) { convo.__key = null; return; }
     const biz = (state.business && state.business.name) || "";
-    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), showEarlier: showAll, keep: 4 });
-    const key = JSON.stringify([document.documentElement.lang, v.pinned.text, showAll, v.older, v.shown.map((x) => [x.key, x.text, x.live, x.interrupted, x.via])]);
-    if (convo.__key === key) return;
-    convo.__key = key;
+    const v = conversationView(call.transcript, { disclosure: t("talk.disclosure", { biz }), keep: ALL_TURNS, showEarlier: true });
+    convoPanel.dataset.live = String(inCall());
+    convoPanel.dataset.turns = String(v.count);
+    const key = JSON.stringify([document.documentElement.lang, v.pinned.text, v.shown.map((x) => [x.key, x.text, x.live, x.interrupted, x.via])]);
+    if (convoList.__key === key) return;
+    convoList.__key = key;
     const row = (role, x, pinned) => h("li", { class: `hm-turn is-${role}${x.live ? " is-live" : ""}${pinned ? " is-pinned" : ""}` },
       h("span", { class: "hm-who", text: role === "agent" ? t("home.sahay") : t("home.you") }),
       scripted("p", x.text, { class: "hm-said" }),
       x.via === "text" ? h("span", { class: "hm-flag", text: t("home.typed") }) : null,
       x.live && role === "owner" ? h("span", { class: "hm-flag", text: t("home.hearing") }) : null,
       x.interrupted ? h("span", { class: "hm-flag", text: t("home.cut") }) : null);
-    fill(convoList, row("agent", { text: v.pinned.text }, true), ...v.shown.map((x) => row(x.role, x, false)));
-    fill(convoMore, v.older || showAll
-      ? h("button", { class: "link-btn", type: "button", "aria-expanded": String(showAll), on: { click: () => { showAll = !showAll; convo.__key = null; renderConvo(); } } },
-        h("span", { text: showAll ? t("home.showLess") : t("home.showAll") }))
-      : null);
-    fill(convo, card({ title: t("home.convo"), body: [convoList, convoMore], cls: "hm-convo-card" }));
-    requestAnimationFrame(() => { convoList.scrollTop = convoList.scrollHeight; });
+    fill(convoList,
+      row("agent", { text: v.pinned.text }, true),
+      ...v.shown.map((x) => row(x.role, x, false)),
+      v.count ? null : h("li", { class: "hm-convo-empty" }, scripted("p", t("home.convoHint"))));
+    requestAnimationFrame(() => {
+      if (stick) { convoList.scrollTop = convoList.scrollHeight; jump.hidden = true; } else jump.hidden = false;
+    });
   }
 
   /* ---- Needs you (rows from the Yes card's own state machine, yes.js) ---- */
@@ -352,21 +407,22 @@ export function createHome() {
   function render(parts) {
     ensureData();
     const all = parts.has("all") || parts.has("lang");
-    if (all) { fill(cards); needsBody.__key = null; todayBody.__key = null; convo.__key = null; }
+    if (all) { fill(cards); needsBody.__key = null; todayBody.__key = null; convoList.__key = null; }
     const v = view();
     if (all || parts.has("business")) renderGreeting();
     renderState(v);
     if (all || parts.has("call") || parts.has("business") || parts.has("agent")) { renderActions(); renderNotes(); renderComposer(); }
     if (all || parts.has("call") || parts.has("transcript") || parts.has("business")) renderConvo();
+    boardSlot.update(state, parts);
     renderCards();
     el.dataset.live = String(inCall());
   }
 
   for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
-  // "Type" from elsewhere (sahay:compose) opens the input here.
-  document.addEventListener("sahay:compose", () => { if (!/^#\/(home|sahay|talk)?$/.test(location.hash || "")) location.hash = "#/home"; requestAnimationFrame(() => setComposer(true, true)); });
-  // Minute tick: the greeting follows the time of day and "just after a call" expires.
-  setInterval(() => { if (el.isConnected) { renderGreeting(); renderConvo(); } }, 60000);
+  // "Type" from elsewhere (sahay:compose) focuses the input here.
+  document.addEventListener("sahay:compose", () => { if (!/^#\/(home|sahay|talk)?$/.test(location.hash || "")) location.hash = "#/home"; requestAnimationFrame(focusInput); });
+  // Minute tick: the greeting follows the time of day.
+  setInterval(() => { if (el.isConnected) renderGreeting(); }, 60000);
   // The Yes card's state machine (yes.js) owns the waiting decisions; Home follows it.
   onNeedsRows(() => { renderNeeds(); renderState(view()); });
   onCount(() => renderState(view()));
@@ -381,7 +437,5 @@ export function createHome() {
       ensureData();
       render(new Set(["all"]));
     },
-    leave() { if (composerOpen) setComposer(false, false); },
   };
 }
-

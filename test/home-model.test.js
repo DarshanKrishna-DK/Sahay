@@ -204,17 +204,6 @@ test("figure state, state word and greeting follow the call and the waiting deci
   assert.equal(greetingKey(new Date(2026, 10, 20, 19)), "home.greet.evening");
 });
 
-test("the conversation shows only during a call, just after one, or after typing", async () => {
-  const { showConversation } = await load();
-  const now = 1_000_000;
-  assert.equal(showConversation({ live: true, turns: 0 }), true);
-  assert.equal(showConversation({ live: false, turns: 0, typed: true }), false, "nothing said: nothing shown");
-  assert.equal(showConversation({ live: false, turns: 3, typed: true }), true);
-  assert.equal(showConversation({ live: false, turns: 3, endedAt: now - 60_000, now }), true);
-  assert.equal(showConversation({ live: false, turns: 3, endedAt: now - 11 * 60_000, now }), false);
-  assert.equal(showConversation({ live: false, turns: 3 }), false, "an old transcript with no recent call stays hidden");
-});
-
 test("turn language and time parsing", async () => {
   const { turnLang, parseTime } = await load();
   assert.equal(turnLang({ language: "hi-IN", text: "x" }), "hi");

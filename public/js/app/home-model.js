@@ -270,14 +270,3 @@ export function greetingKey(date = new Date()) {
   const hr = date.getHours();
   return hr < 12 ? "home.greet.morning" : hr < 17 ? "home.greet.afternoon" : "home.greet.evening";
 }
-
-/**
- * The conversation panel shows only during a call, or just after one (for `keepMs`), or when the
- * owner typed in this session; otherwise Home has no conversation at all.
- */
-export function showConversation({ live, turns = 0, endedAt = null, typed = false, now = Date.now(), keepMs = 10 * 60 * 1000 }) {
-  if (live) return true;
-  if (!turns) return false;
-  if (typed) return true;
-  return Boolean(endedAt) && now - endedAt < keepMs;
-}
