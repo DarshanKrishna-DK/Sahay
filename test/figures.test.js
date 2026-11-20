@@ -96,16 +96,3 @@ test("the landing page, its scripts and the figures carry no emoji: icons are SV
     assert.equal(hit, null, `${path.relative(PUBLIC, file)} contains ${hit && JSON.stringify(hit[0])}`);
   }
 });
-
-test("each figure card on the landing page is lazy, labelled and marked as an example", () => {
-  const html = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
-  const cards = [...html.matchAll(/<figure class="iso iso-figure fig-card" data-figure="([a-z]+)">/g)].map((m) => m[1]);
-  assert.deepEqual(cards, ["balance", "printer"]);
-  assert.doesNotMatch(html, /<svg[^>]*class="iso-svg/, "figure art is fetched when near, never inlined");
-  assert.match(html, /href="\/figures\/figures\.css"/);
-  for (const name of cards) {
-    const at = html.indexOf(`data-figure="${name}"`);
-    const scene = html.lastIndexOf('<span class="example-tag"', at);
-    assert.ok(scene > html.lastIndexOf("<section", at), `${name} sits in a scene tagged Example`);
-  }
-});

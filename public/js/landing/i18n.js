@@ -1,6 +1,6 @@
 // Landing page words in English, Hindi (Devanagari) and Kannada (Kannada script).
-// Every picture on the page is an example (each one carries an "Example" tag); names like
-// "seller 01" are placeholders, never real businesses.
+// True copy only: no invented numbers or usage claims; every number on the page is a fact about
+// Sahay itself (3 languages, 7 jobs, 4 steps, 1 yes, 0 orders without you).
 
 export const LANGS = ["hi", "kn", "en"];
 
@@ -10,235 +10,223 @@ const S = {
   aiChip: { en: "Automated assistant", hi: "स्वचालित सहायक", kn: "ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ" },
   navLabel: { en: "Page", hi: "पेज", kn: "ಪುಟ" },
   navHow: { en: "How it works", hi: "कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ" },
+  navDoes: { en: "What it does", hi: "क्या करता है", kn: "ಏನು ಮಾಡುತ್ತದೆ" },
   navBuilt: { en: "Built on", hi: "किस पर बना", kn: "ಯಾವುದರ ಮೇಲೆ" },
+  navLangs: { en: "Languages", hi: "भाषाएँ", kn: "ಭಾಷೆಗಳು" },
+  navFaq: { en: "FAQ", hi: "सवाल", kn: "ಪ್ರಶ್ನೆಗಳು" },
+  menu: { en: "Menu", hi: "मेन्यू", kn: "ಮೆನು" },
+  menuClose: { en: "Close menu", hi: "मेन्यू बंद करें", kn: "ಮೆನು ಮುಚ್ಚಿ" },
   langChoose: { en: "Choose your language", hi: "अपनी भाषा चुनें", kn: "ನಿಮ್ಮ ಭಾಷೆ ಆರಿಸಿ" },
   // "Language: <name>" on the switcher (the name is always in its own script).
   langCurrent: { en: "Language: {name}", hi: "भाषा: {name}", kn: "ಭಾಷೆ: {name}" },
-  // Kept for the shared theme contract (the landing itself is dark only).
+  // Kept for the shared theme contract (the landing has one look).
   toLight: { en: "Switch to light", hi: "हल्का रंग", kn: "ತಿಳಿ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
   toDark: { en: "Switch to dark", hi: "गहरा रंग", kn: "ಗಾಢ ಬಣ್ಣಕ್ಕೆ ಬದಲಿಸಿ" },
-  start: { en: "Start talking", hi: "बोलकर शुरू करें", kn: "ಮಾತನಾಡಿ ಶುರು ಮಾಡಿ" },
   openSahay: { en: "Open Sahay", hi: "सहाय खोलें", kn: "ಸಹಾಯ್ ತೆರೆಯಿರಿ" },
   logIn: { en: "Log in", hi: "लॉग इन", kn: "ಲಾಗ್ ಇನ್" },
-  example: { en: "Example", hi: "उदाहरण", kn: "ಉದಾಹರಣೆ" },
+  prev: { en: "Previous", hi: "पिछला", kn: "ಹಿಂದಿನದು" },
+  next: { en: "Next", hi: "अगला", kn: "ಮುಂದಿನದು" },
 
-  // The hero headline in three lines (the first white, the next two lit).
-  heroL1: { en: "Your shop's assistant.", hi: "आपकी दुकान का सहायक।", kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಸಹಾಯಕ." },
-  heroL2: { en: "It bargains and bills,", hi: "मोलभाव और बिल यह करे,", kn: "ಚೌಕಾಸಿ, ಬಿಲ್ ಅದರ ಕೆಲಸ," },
-  heroL3: { en: "you say yes.", hi: "हाँ आप कहें।", kn: "ಒಪ್ಪಿಗೆ ನಿಮ್ಮದು." },
+  // ---- Hero ----
+  heroKicker: { en: "A voice assistant for Indian shops", hi: "भारतीय दुकानों के लिए आवाज़ वाला सहायक", kn: "ಭಾರತೀಯ ಅಂಗಡಿಗಳಿಗೆ ಧ್ವನಿ ಸಹಾಯಕ" },
+  heroLine: { en: "Your shop's assistant", hi: "आपकी दुकान का सहायक", kn: "ನಿಮ್ಮ ಅಂಗಡಿಯ ಸಹಾಯಕ" },
+  heroJobs: { en: "Buying · Bills · Khata · Stock", hi: "ख़रीद · बिल · खाता · स्टॉक", kn: "ಖರೀದಿ · ಬಿಲ್ · ಖಾತೆ · ದಾಸ್ತಾನು" },
+  heroMore: { en: "See how it works", hi: "देखिए कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ ನೋಡಿ" },
+  heroPromise: { en: "Nothing is ordered without your yes", hi: "आपकी हाँ के बिना कोई ऑर्डर नहीं", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಯಾವ ಆರ್ಡರ್ ಇಲ್ಲ" },
+  heroAlt: {
+    en: "Picture: a kirana shop on a floating island under the moon, with the shopkeeper, a mango tree, and a delivery tempo with its supplier.",
+    hi: "चित्र: चाँद के नीचे तैरते टापू पर एक किराना दुकान, दुकानदार, आम का पेड़, और सप्लायर के साथ डिलीवरी टेम्पो।",
+    kn: "ಚಿತ್ರ: ಚಂದ್ರನ ಕೆಳಗೆ ತೇಲುವ ದ್ವೀಪದ ಮೇಲೆ ಒಂದು ಕಿರಾಣಿ ಅಂಗಡಿ, ಅಂಗಡಿಯವರು, ಮಾವಿನ ಮರ, ಮತ್ತು ಸರಬರಾಜುದಾರರ ಜೊತೆ ಡೆಲಿವರಿ ಟೆಂಪೋ.",
+  },
+  modelAlt: {
+    en: "Picture: a market street with four kirana shops, a vegetable cart, a parked tempo and shoppers.",
+    hi: "चित्र: चार किराना दुकानों वाली बाज़ार की गली, सब्ज़ी का ठेला, खड़ा टेम्पो और ख़रीदार।",
+    kn: "ಚಿತ್ರ: ನಾಲ್ಕು ಕಿರಾಣಿ ಅಂಗಡಿಗಳಿರುವ ಮಾರುಕಟ್ಟೆ ಬೀದಿ, ತರಕಾರಿ ಗಾಡಿ, ನಿಲ್ಲಿಸಿದ ಟೆಂಪೋ ಮತ್ತು ಗ್ರಾಹಕರು.",
+  },
   heroSub: {
     en: "Say what you need in Hindi, Kannada or English, and Sahay finds sellers, bargains, makes bills and tracks stock while you mind the counter.",
     hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बताइए क्या चाहिए, और जब तक आप काउंटर सँभालते हैं, सहाय विक्रेता ढूँढता है, मोलभाव करता है, बिल बनाता है और स्टॉक पर नज़र रखता है।",
     kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ; ನೀವು ಕೌಂಟರ್ ನೋಡಿಕೊಳ್ಳುವಾಗ ಸಹಾಯ್ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತದೆ, ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ಬಿಲ್ ಮಾಡುತ್ತದೆ, ದಾಸ್ತಾನು ನೋಡಿಕೊಳ್ಳುತ್ತದೆ.",
   },
-  heroMore: { en: "See how it works", hi: "देखिए कैसे चलता है", kn: "ಹೇಗೆ ನಡೆಯುತ್ತದೆ ನೋಡಿ" },
-  heroAlt: {
-    en: "Example picture: points of light gather into Sahay's orb and a rupee sign. Labels mark the story: seller 01 comes down from 65 to 55 rupees a kilo, rice stock is 35 kilos, the order waits for your yes, and Sahay speaks Hindi, Kannada and English.",
-    hi: "उदाहरण चित्र: रोशनी के बिंदु जुड़कर सहाय का गोला और रुपये का चिह्न बनाते हैं। निशान कहानी बताते हैं: विक्रेता 01 पैंसठ से पचपन रुपये किलो पर आता है, चावल का स्टॉक पैंतीस किलो है, ऑर्डर आपकी हाँ का इंतज़ार करता है, और सहाय हिन्दी, कन्नड़ और अंग्रेज़ी बोलता है।",
-    kn: "ಉದಾಹರಣೆ ಚಿತ್ರ: ಬೆಳಕಿನ ಚುಕ್ಕೆಗಳು ಸೇರಿ ಸಹಾಯ್‌ನ ಗೋಳ ಮತ್ತು ರೂಪಾಯಿ ಚಿಹ್ನೆ ಆಗುತ್ತವೆ. ಗುರುತುಗಳು ಕಥೆ ಹೇಳುತ್ತವೆ: ಮಾರಾಟಗಾರ 01 ಕಿಲೋಗೆ ಅರವತ್ತೈದರಿಂದ ಐವತ್ತೈದು ರೂಪಾಯಿಗೆ ಇಳಿಯುತ್ತಾರೆ, ಅಕ್ಕಿ ದಾಸ್ತಾನು ಮೂವತ್ತೈದು ಕಿಲೋ, ಆರ್ಡರ್ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ, ಸಹಾಯ್ ಹಿಂದಿ, ಕನ್ನಡ, ಇಂಗ್ಲಿಷ್ ಮಾತನಾಡುತ್ತದೆ.",
-  },
-  hudSeller: { en: "seller 01", hi: "विक्रेता 01", kn: "ಮಾರಾಟಗಾರ 01" },
-  hudStock: { en: "stock, rice", hi: "स्टॉक, चावल", kn: "ದಾಸ್ತಾನು, ಅಕ್ಕಿ" },
-  hudOrder: { en: "order", hi: "ऑर्डर", kn: "ಆರ್ಡರ್" },
-  hudWaits: { en: "waits for your yes", hi: "आपकी हाँ का इंतज़ार", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತಿದೆ" },
-  hudSpeaks: { en: "speaks", hi: "बोलता है", kn: "ಮಾತನಾಡುತ್ತದೆ" },
 
-  howTitle: {
-    en: "How Sahay buys for your shop in three steps",
-    hi: "सहाय तीन क़दम में आपकी दुकान के लिए कैसे ख़रीदता है",
-    kn: "ಸಹಾಯ್ ಮೂರು ಹಂತಗಳಲ್ಲಿ ನಿಮ್ಮ ಅಂಗಡಿಗೆ ಹೇಗೆ ಖರೀದಿಸುತ್ತದೆ",
-  },
-  howSub: {
-    en: "Keep serving customers at the counter. Sahay talks to sellers, bargains, and waits for your yes.",
-    hi: "आप काउंटर पर ग्राहक सँभालिए। फ़ोन, मोलभाव सहाय करता है, और आपकी हाँ का इंतज़ार करता है।",
-    kn: "ನೀವು ಕೌಂಟರ್‌ನಲ್ಲಿ ಗ್ರಾಹಕರನ್ನು ನೋಡಿಕೊಳ್ಳಿ. ಕರೆ, ಚೌಕಾಸಿ ಸಹಾಯ್ ಮಾಡುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
-  },
-  step1Title: { en: "Say what you need", hi: "बताइए क्या चाहिए", kn: "ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ" },
-  step1Copy: {
-    en: "Speak the way you talk to a supplier. No menus, no item codes.",
-    hi: "वैसे ही बोलिए जैसे सप्लायर से बोलते हैं। न मेन्यू, न आइटम कोड।",
-    kn: "ಸರಬರಾಜುದಾರರ ಜೊತೆ ಮಾತನಾಡುವ ಹಾಗೆಯೇ ಹೇಳಿ. ಮೆನು ಇಲ್ಲ, ಐಟಂ ಕೋಡ್ ಇಲ್ಲ.",
-  },
-  step2Title: { en: "Sahay bargains with sellers", hi: "सहाय विक्रेताओं से मोलभाव करता है", kn: "ಸಹಾಯ್ ಮಾರಾಟಗಾರರ ಜೊತೆ ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ" },
-  step2Copy: {
-    en: "It contacts sellers near you, says first that it is an automated assistant, and asks for a better price.",
-    hi: "यह आपके पास के विक्रेताओं से संपर्क करता है, पहले बताता है कि यह स्वचालित सहायक है, और बेहतर दाम माँगता है।",
-    kn: "ಇದು ನಿಮ್ಮ ಹತ್ತಿರದ ಮಾರಾಟಗಾರರನ್ನು ಸಂಪರ್ಕಿಸಿ, ಮೊದಲು ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳಿ, ಉತ್ತಮ ಬೆಲೆ ಕೇಳುತ್ತದೆ.",
-  },
-  step3Title: { en: "You say yes", hi: "आप हाँ कहते हैं", kn: "ನೀವು ಒಪ್ಪಿಗೆ ಕೊಡುತ್ತೀರಿ" },
-  step3Copy: {
-    en: "Sahay reads the deal out loud. Say yes or tap Yes; only then does it order.",
-    hi: "सहाय सौदा पढ़कर सुनाता है। हाँ कहें या हाँ दबाएँ; तभी ऑर्डर जाता है।",
-    kn: "ಸಹಾಯ್ ವ್ಯವಹಾರವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ಹೌದು ಎನ್ನಿ ಅಥವಾ ಹೌದು ಒತ್ತಿ; ಆಗ ಮಾತ್ರ ಆರ್ಡರ್ ಹೋಗುತ್ತದೆ.",
-  },
-  panelVoice: { en: "You said", hi: "आपने कहा", kn: "ನೀವು ಹೇಳಿದ್ದು" },
-  byFriday: { en: "By Friday", hi: "शुक्रवार तक", kn: "ಶುಕ್ರವಾರದೊಳಗೆ" },
-  sellerAsked: { en: "Seller asked", hi: "विक्रेता ने माँगा", kn: "ಮಾರಾಟಗಾರರು ಕೇಳಿದ್ದು" },
-  sahayOffered: { en: "Sahay offered", hi: "सहाय ने कहा", kn: "ಸಹಾಯ್ ಕೊಟ್ಟ ಬೆಲೆ" },
-  agreed: { en: "Agreed", hi: "तय हुआ", kn: "ಒಪ್ಪಿದ ಬೆಲೆ" },
-  yesOrder: { en: "Yes, order it", hi: "हाँ, ऑर्डर करें", kn: "ಹೌದು, ಆರ್ಡರ್ ಮಾಡಿ" },
-  howAlt: {
-    en: "Examples: you say fifty kilos of rice by Friday; seller 01 asks 65 rupees a kilo, Sahay offers 50, they agree at 55; you say yes to 50 kilos at 55 rupees, 2,750 rupees in all.",
-    hi: "उदाहरण: आप कहते हैं शुक्रवार तक पचास किलो चावल; विक्रेता 01 पैंसठ रुपये किलो माँगता है, सहाय पचास कहता है, पचपन पर तय होता है; आप पचपन रुपये पर 50 किलो, कुल दो हज़ार सात सौ पचास रुपये, को हाँ कहते हैं।",
-    kn: "ಉದಾಹರಣೆಗಳು: ಶುಕ್ರವಾರದೊಳಗೆ ಐವತ್ತು ಕಿಲೋ ಅಕ್ಕಿ ಎನ್ನುತ್ತೀರಿ; ಮಾರಾಟಗಾರ 01 ಕಿಲೋಗೆ ಅರವತ್ತೈದು ಕೇಳುತ್ತಾರೆ, ಸಹಾಯ್ ಐವತ್ತು ಹೇಳುತ್ತದೆ, ಐವತ್ತೈದಕ್ಕೆ ಒಪ್ಪಿಗೆ; ಐವತ್ತೈದು ರೂಪಾಯಿಯಂತೆ 50 ಕೆಜಿ, ಒಟ್ಟು ಎರಡು ಸಾವಿರದ ಏಳುನೂರ ಐವತ್ತು ರೂಪಾಯಿಗೆ ನೀವು ಹೌದು ಎನ್ನುತ್ತೀರಿ.",
-  },
-  storyTitle: {
-    en: "The whole loop, step by step",
-    hi: "पूरा चक्र, क़दम-दर-क़दम",
-    kn: "ಇಡೀ ಚಕ್ರ, ಹಂತ ಹಂತವಾಗಿ",
-  },
-  storyIntro: {
-    en: "Eight steps. Sahay does the running around; you say what you need, and you say yes.",
-    hi: "आठ क़दम। भागदौड़ सहाय करता है; आप बस बताते हैं क्या चाहिए, और हाँ कहते हैं।",
-    kn: "ಎಂಟು ಹಂತಗಳು. ಓಡಾಟ ಸಹಾಯ್‌ದು; ನೀವು ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ, ಒಪ್ಪಿಗೆ ಕೊಡಿ ಸಾಕು.",
-  },
-  railLabel: { en: "Steps", hi: "क़दम", kn: "ಹಂತಗಳು" },
-  s1: { en: "Speak", hi: "बोलिए", kn: "ಮಾತನಾಡಿ" },
-  s2: { en: "Real sellers", hi: "असली विक्रेता", kn: "ನಿಜ ಮಾರಾಟಗಾರರು" },
-  s3: { en: "Bargaining", hi: "मोलभाव", kn: "ಚೌಕಾಸಿ" },
-  s4: { en: "Your yes", hi: "आपकी हाँ", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ" },
-  s5: { en: "Sell and khata", hi: "बिक्री और खाता", kn: "ಮಾರಾಟ ಮತ್ತು ಖಾತೆ" },
-  s6: { en: "Stock low", hi: "स्टॉक कम", kn: "ದಾಸ್ತಾನು ಕಡಿಮೆ" },
-  s7: { en: "Buy again", hi: "फिर से ख़रीदें", kn: "ಮತ್ತೆ ಖರೀದಿ" },
-  s8: { en: "Languages", hi: "भाषाएँ", kn: "ಭಾಷೆಗಳು" },
-
-  c1Title: { en: "Say it the way you say it", hi: "जैसे आप बोलते हैं, वैसे बोलिए", kn: "ನೀವು ಮಾತನಾಡುವ ಹಾಗೆಯೇ ಹೇಳಿ" },
-  c1Body: {
-    en: "Talk in Hindi, Kannada or English, or mix them. Sahay writes your words down as a clear need.",
-    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बोलिए, या मिलाकर। सहाय आपकी बात को साफ़ ज़रूरत की तरह लिख लेता है।",
-    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಮಾತನಾಡಿ, ಬೆರೆಸಿಯೂ ಆಗಬಹುದು. ಸಹಾಯ್ ನಿಮ್ಮ ಮಾತನ್ನು ಸ್ಪಷ್ಟ ಅಗತ್ಯವಾಗಿ ಬರೆದುಕೊಳ್ಳುತ್ತದೆ.",
-  },
-  quote1: { en: "“Fifty kilos of rice, by Friday.”", hi: "“पचास किलो चावल, शुक्रवार तक।”", kn: "“ಐವತ್ತು ಕಿಲೋ ಅಕ್ಕಿ, ಶುಕ್ರವಾರದೊಳಗೆ.”" },
-  needWhat: { en: "What", hi: "क्या", kn: "ಏನು" },
-  needQty: { en: "How much", hi: "कितना", kn: "ಎಷ್ಟು" },
-  needBy: { en: "By", hi: "कब तक", kn: "ಯಾವಾಗದೊಳಗೆ" },
-  rice: { en: "Rice", hi: "चावल", kn: "ಅಕ್ಕಿ" },
-  kg50: { en: "50 kg", hi: "50 किलो", kn: "50 ಕೆಜಿ" },
-  kg35: { en: "35 kg", hi: "35 किलो", kn: "35 ಕೆಜಿ" },
-  kg12: { en: "12 kg", hi: "12 किलो", kn: "12 ಕೆಜಿ" },
-  perKg: { en: "/kg", hi: "/किलो", kn: "/ಕೆಜಿ" },
-  friday: { en: "Friday", hi: "शुक्रवार", kn: "ಶುಕ್ರವಾರ" },
-  c1Alt: {
-    en: "Example: the owner says fifty kilos of rice by Friday; Sahay writes the need as rice, 50 kilos, by Friday.",
-    hi: "उदाहरण: मालिक कहते हैं शुक्रवार तक पचास किलो चावल; सहाय ज़रूरत लिखता है: चावल, 50 किलो, शुक्रवार तक।",
-    kn: "ಉದಾಹರಣೆ: ಮಾಲೀಕರು ಶುಕ್ರವಾರದೊಳಗೆ ಐವತ್ತು ಕಿಲೋ ಅಕ್ಕಿ ಎನ್ನುತ್ತಾರೆ; ಸಹಾಯ್ ಅಗತ್ಯವನ್ನು ಅಕ್ಕಿ, 50 ಕೆಜಿ, ಶುಕ್ರವಾರದೊಳಗೆ ಎಂದು ಬರೆಯುತ್ತದೆ.",
-  },
-
-  c2Title: { en: "Sahay finds real sellers near you", hi: "सहाय आपके पास के असली विक्रेता ढूँढता है", kn: "ಸಹಾಯ್ ನಿಮ್ಮ ಹತ್ತಿರದ ನಿಜ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತದೆ" },
-  c2Body: {
-    en: "Sellers who serve your city, from IndiaMART listings. If a source is down, Sahay says so; it never makes sellers up.",
-    hi: "आपके शहर में माल देने वाले विक्रेता, IndiaMART की सूची से। कोई स्रोत बंद हो तो सहाय साफ़ बताता है; वह विक्रेता कभी गढ़ता नहीं।",
-    kn: "ನಿಮ್ಮ ನಗರಕ್ಕೆ ಮಾಲು ಕೊಡುವ ಮಾರಾಟಗಾರರು, IndiaMART ಪಟ್ಟಿಯಿಂದ. ಮೂಲ ಕೆಲಸ ಮಾಡದಿದ್ದರೆ ಸಹಾಯ್ ಹಾಗೆಯೇ ಹೇಳುತ್ತದೆ; ಮಾರಾಟಗಾರರನ್ನು ಕಲ್ಪಿಸುವುದಿಲ್ಲ.",
-  },
+  // ---- About (paper) ----
+  aboutA: { en: "Sahay buys for your shop,", hi: "सहाय आपकी दुकान के लिए ख़रीदता है,", kn: "ಸಹಾಯ್ ನಿಮ್ಮ ಅಂಗಡಿಗೆ ಖರೀದಿಸುತ್ತದೆ," },
+  aboutB: { en: "while you mind the counter.", hi: "जब तक आप काउंटर सँभालते हैं।", kn: "ನೀವು ಕೌಂಟರ್ ನೋಡಿಕೊಳ್ಳುವಾಗಲೇ." },
+  guideKicker: { en: "Shop guide", hi: "दुकान का साथी", kn: "ಅಂಗಡಿಯ ಸಂಗಾತಿ" },
+  guideSub: { en: "Your first order starts with your voice.", hi: "आपका पहला ऑर्डर आपकी आवाज़ से शुरू होता है।", kn: "ನಿಮ್ಮ ಮೊದಲ ಆರ್ಡರ್ ನಿಮ್ಮ ಧ್ವನಿಯಿಂದಲೇ ಶುರು." },
   yourShop: { en: "Your shop", hi: "आपकी दुकान", kn: "ನಿಮ್ಮ ಅಂಗಡಿ" },
-  seller01: { en: "seller 01", hi: "विक्रेता 01", kn: "ಮಾರಾಟಗಾರ 01" },
-  seller02: { en: "seller 02", hi: "विक्रेता 02", kn: "ಮಾರಾಟಗಾರ 02" },
-  seller03: { en: "seller 03", hi: "विक्रेता 03", kn: "ಮಾರಾಟಗಾರ 03" },
-  km4: { en: "4 km", hi: "4 किमी", kn: "4 ಕಿಮೀ" },
-  km6: { en: "6 km", hi: "6 किमी", kn: "6 ಕಿಮೀ" },
-  km9: { en: "9 km", hi: "9 किमी", kn: "9 ಕಿಮೀ" },
-  c2Alt: {
-    en: "Example: three sellers around your shop, 4, 6 and 9 kilometres away.",
-    hi: "उदाहरण: आपकी दुकान के आसपास तीन विक्रेता, 4, 6 और 9 किलोमीटर दूर।",
-    kn: "ಉದಾಹರಣೆ: ನಿಮ್ಮ ಅಂಗಡಿಯ ಸುತ್ತ ಮೂವರು ಮಾರಾಟಗಾರರು, 4, 6 ಮತ್ತು 9 ಕಿಲೋಮೀಟರ್ ದೂರ.",
-  },
+  sellersNear: { en: "Sellers near you", hi: "आपके पास के विक्रेता", kn: "ನಿಮ್ಮ ಹತ್ತಿರದ ಮಾರಾಟಗಾರರು" },
+  statLangs: { en: "Languages", hi: "भाषाएँ", kn: "ಭಾಷೆಗಳು" },
+  statJobs: { en: "Jobs it does", hi: "काम जो यह करता है", kn: "ಅದು ಮಾಡುವ ಕೆಲಸಗಳು" },
+  statSteps: { en: "Steps from need to order", hi: "ज़रूरत से ऑर्डर तक क़दम", kn: "ಅಗತ್ಯದಿಂದ ಆರ್ಡರ್‌ವರೆಗೆ ಹಂತಗಳು" },
+  statYes: { en: "Yes before every order", hi: "हर ऑर्डर से पहले हाँ", kn: "ಪ್ರತಿ ಆರ್ಡರ್‌ಗೂ ಮುನ್ನ ಒಪ್ಪಿಗೆ" },
+  statNone: { en: "Orders without you", hi: "आपके बिना ऑर्डर", kn: "ನಿಮ್ಮಿಲ್ಲದೆ ಆರ್ಡರ್" },
 
-  c3Title: { en: "It bargains, and says who it is", hi: "मोलभाव करता है, और बताता है कि वह कौन है", kn: "ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ, ತಾನು ಯಾರು ಎಂದು ಹೇಳುತ್ತದೆ" },
-  c3Body: {
-    en: "The first sentence of every call says Sahay is an automated assistant. Then it brings the price down, round by round.",
-    hi: "हर कॉल का पहला वाक्य बताता है कि सहाय एक स्वचालित सहायक है। फिर वह दौर-दर-दौर दाम कम कराता है।",
-    kn: "ಪ್ರತಿ ಕರೆಯ ಮೊದಲ ವಾಕ್ಯವೇ ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳುತ್ತದೆ. ನಂತರ ಸುತ್ತು ಸುತ್ತಾಗಿ ಬೆಲೆ ಇಳಿಸುತ್ತದೆ.",
+  // ---- What Sahay does (night carousel) ----
+  doesTitle: { en: "What Sahay does", hi: "सहाय क्या करता है", kn: "ಸಹಾಯ್ ಏನು ಮಾಡುತ್ತದೆ" },
+  fBuy: { en: "Buy", hi: "ख़रीद", kn: "ಖರೀದಿ" },
+  fBuyCat: { en: "Buying", hi: "ख़रीदारी", kn: "ಖರೀದಿ" },
+  fBuyLine: { en: "Say it. Sahay finds the price.", hi: "बस बोलिए। दाम सहाय ढूँढेगा।", kn: "ಹೇಳಿ ಸಾಕು. ಬೆಲೆ ಸಹಾಯ್ ಹುಡುಕುತ್ತದೆ." },
+  fBuyText: {
+    en: "Tell Sahay what you need. It contacts sellers, bargains round by round, and brings you the deal.",
+    hi: "सहाय को बताइए क्या चाहिए। यह विक्रेताओं से बात करता है, दौर-दर-दौर मोलभाव करता है, और सौदा आपके सामने रखता है।",
+    kn: "ಏನು ಬೇಕು ಎಂದು ಸಹಾಯ್‌ಗೆ ಹೇಳಿ. ಅದು ಮಾರಾಟಗಾರರನ್ನು ಸಂಪರ್ಕಿಸಿ, ಸುತ್ತು ಸುತ್ತಾಗಿ ಚೌಕಾಸಿ ಮಾಡಿ, ವ್ಯವಹಾರವನ್ನು ನಿಮ್ಮ ಮುಂದಿಡುತ್ತದೆ.",
   },
-  disclose: {
-    en: "“Namaste, I am Sahay, an automated assistant for your shop.”",
-    hi: "“नमस्ते, मैं सहाय हूँ, आपकी दुकान का स्वचालित सहायक।”",
-    kn: "“ನಮಸ್ಕಾರ, ನಾನು ಸಹಾಯ್, ನಿಮ್ಮ ಅಂಗಡಿಯ ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ.”",
+  fBuyFact: { en: "Orders only after your yes", hi: "ऑर्डर सिर्फ़ आपकी हाँ के बाद", kn: "ಆರ್ಡರ್ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ" },
+  fSell: { en: "Sell", hi: "बिक्री", kn: "ಮಾರಾಟ" },
+  fSellCat: { en: "Bills", hi: "बिल", kn: "ಬಿಲ್" },
+  fSellLine: { en: "Say who bought what.", hi: "बताइए किसने क्या लिया।", kn: "ಯಾರು ಏನು ಕೊಂಡರು ಎಂದು ಹೇಳಿ." },
+  fSellText: {
+    en: "Sahay reads the bill back and makes it after your yes, as a PDF ready to share.",
+    hi: "सहाय बिल पढ़कर सुनाता है और आपकी हाँ के बाद बनाता है, भेजने के लिए तैयार PDF में।",
+    kn: "ಸಹಾಯ್ ಬಿಲ್ ಓದಿ ಹೇಳಿ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರ ಮಾಡುತ್ತದೆ, ಕಳುಹಿಸಲು ಸಿದ್ಧವಾದ PDF ಆಗಿ.",
   },
-
-  c4Title: { en: "Nothing is ordered without your yes", hi: "आपकी हाँ के बिना कोई ऑर्डर नहीं", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಯಾವ ಆರ್ಡರ್ ಇಲ್ಲ" },
-  c4Body: {
-    en: "Sahay reads the deal out loud. You say yes, or tap Yes. Only then does it order, and your yes goes into the record.",
-    hi: "सहाय सौदा पढ़कर सुनाता है। आप हाँ कहें या हाँ दबाएँ। तभी ऑर्डर जाता है, और आपकी हाँ रिकॉर्ड में लिखी जाती है।",
-    kn: "ಸಹಾಯ್ ವ್ಯವಹಾರವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ನೀವು ಹೌದು ಎನ್ನಿ ಅಥವಾ ಹೌದು ಒತ್ತಿ. ಆಗ ಮಾತ್ರ ಆರ್ಡರ್ ಹೋಗುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ದಾಖಲೆಯಲ್ಲಿ ಬರೆಯಲಾಗುತ್ತದೆ.",
-  },
-  c4Alt: {
-    en: "Example deal: seller 01, 55 rupees a kilo, 50 kilos, 2,750 rupees in all.",
-    hi: "उदाहरण सौदा: विक्रेता 01, पचपन रुपये किलो, 50 किलो, कुल दो हज़ार सात सौ पचास रुपये।",
-    kn: "ಉದಾಹರಣೆ ವ್ಯವಹಾರ: ಮಾರಾಟಗಾರ 01, ಕಿಲೋಗೆ ಐವತ್ತೈದು ರೂಪಾಯಿ, 50 ಕೆಜಿ, ಒಟ್ಟು ಎರಡು ಸಾವಿರದ ಏಳುನೂರ ಐವತ್ತು ರೂಪಾಯಿ.",
-  },
-
-  c5Title: { en: "Sell by voice, keep your khata", hi: "बोलकर बेचिए, खाता रखिए", kn: "ಮಾತಿನಲ್ಲೇ ಮಾರಾಟ, ಖಾತೆ ಸರಿಯಾಗಿ" },
-  c5Body: {
-    en: "Say who bought what. Sahay reads the bill back, makes it after your yes, and keeps track of who owes you.",
-    hi: "बताइए किसने क्या लिया। सहाय बिल पढ़कर सुनाता है, आपकी हाँ के बाद बनाता है, और याद रखता है कि किस पर कितना बाक़ी है।",
-    kn: "ಯಾರು ಏನು ಕೊಂಡರು ಎಂದು ಹೇಳಿ. ಸಹಾಯ್ ಬಿಲ್ ಓದಿ ಹೇಳುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರ ಮಾಡುತ್ತದೆ, ಯಾರು ಎಷ್ಟು ಬಾಕಿ ಎಂದು ನೆನಪಿಡುತ್ತದೆ.",
-  },
-  billHead: { en: "Bill", hi: "बिल", kn: "ಬಿಲ್" },
-  billPdf: { en: "PDF, ready to share", hi: "PDF, भेजने के लिए तैयार", kn: "PDF, ಕಳುಹಿಸಲು ಸಿದ್ಧ" },
-  customer01: { en: "customer 01", hi: "ग्राहक 01", kn: "ಗ್ರಾಹಕ 01" },
-  owes: { en: "owes", hi: "पर बाक़ी", kn: "ಬಾಕಿ" },
-  reminder: {
-    en: "A polite reminder goes only after your yes.",
-    hi: "विनम्र याद-दिहानी आपकी हाँ के बाद ही जाती है।",
-    kn: "ವಿನಯದ ನೆನಪೋಲೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ ಹೋಗುತ್ತದೆ.",
-  },
-  c5Alt: {
-    en: "Example: a bill for 12 kilos of rice, 744 rupees, as a PDF; the khata shows customer 01 owes 744 rupees, and a reminder is sent only after your yes.",
-    hi: "उदाहरण: 12 किलो चावल का बिल, सात सौ चवालीस रुपये, PDF में; खाते में ग्राहक 01 पर सात सौ चवालीस रुपये बाक़ी, और याद-दिहानी आपकी हाँ के बाद ही।",
-    kn: "ಉದಾಹರಣೆ: 12 ಕೆಜಿ ಅಕ್ಕಿಯ ಬಿಲ್, ಏಳುನೂರ ನಲವತ್ತನಾಲ್ಕು ರೂಪಾಯಿ, PDF ಆಗಿ; ಖಾತೆಯಲ್ಲಿ ಗ್ರಾಹಕ 01 ಏಳುನೂರ ನಲವತ್ತನಾಲ್ಕು ರೂಪಾಯಿ ಬಾಕಿ, ನೆನಪೋಲೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ.",
-  },
-
+  fSellFact: { en: "Bill after your yes", hi: "बिल आपकी हाँ के बाद", kn: "ಬಿಲ್ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರ" },
+  fStock: { en: "Stock", hi: "स्टॉक", kn: "ದಾಸ್ತಾನು" },
+  fStockCat: { en: "Stock levels", hi: "स्टॉक की सीमा", kn: "ದಾಸ್ತಾನು ಮಟ್ಟ" },
   c6Title: { en: "Every bill takes stock out", hi: "हर बिल से स्टॉक घटता है", kn: "ಪ್ರತಿ ಬಿಲ್ ದಾಸ್ತಾನು ಕಡಿಮೆ ಮಾಡುತ್ತದೆ" },
   c6Body: {
     en: "You set the level for each item. When stock falls below it, Sahay tells you.",
     hi: "हर सामान की सीमा आप तय करते हैं। स्टॉक उससे नीचे जाए तो सहाय बताता है।",
     kn: "ಪ್ರತಿ ವಸ್ತುವಿನ ಮಟ್ಟವನ್ನು ನೀವು ನಿಗದಿ ಮಾಡುತ್ತೀರಿ. ದಾಸ್ತಾನು ಅದಕ್ಕಿಂತ ಕೆಳಗೆ ಹೋದಾಗ ಸಹಾಯ್ ತಿಳಿಸುತ್ತದೆ.",
   },
-  yourLevel: { en: "your level 40 kg", hi: "आपकी सीमा 40 किलो", kn: "ನಿಮ್ಮ ಮಟ್ಟ 40 ಕೆಜಿ" },
-  belowLevel: { en: "Below your level", hi: "आपकी सीमा से नीचे", kn: "ನಿಮ್ಮ ಮಟ್ಟಕ್ಕಿಂತ ಕೆಳಗೆ" },
-  c6Alt: {
-    en: "Example: rice stock falls to 35 kilos, below the owner's level of 40 kilos.",
-    hi: "उदाहरण: चावल का स्टॉक 35 किलो पर आ गया, मालिक की 40 किलो की सीमा से नीचे।",
-    kn: "ಉದಾಹರಣೆ: ಅಕ್ಕಿ ದಾಸ್ತಾನು 35 ಕೆಜಿಗೆ ಇಳಿದಿದೆ, ಮಾಲೀಕರ 40 ಕೆಜಿ ಮಟ್ಟಕ್ಕಿಂತ ಕೆಳಗೆ.",
+  fStockFact: { en: "Alerts below your level", hi: "सीमा से नीचे तो सूचना", kn: "ಮಟ್ಟಕ್ಕಿಂತ ಕೆಳಗಾದರೆ ಸೂಚನೆ" },
+  fKhata: { en: "Khata", hi: "खाता", kn: "ಖಾತೆ" },
+  fKhataCat: { en: "Who owes you", hi: "किस पर बाक़ी", kn: "ಯಾರ ಬಾಕಿ" },
+  fKhataLine: { en: "Who owes you, and how much.", hi: "किस पर कितना बाक़ी है।", kn: "ಯಾರು ಎಷ್ಟು ಬಾಕಿ ಕೊಡಬೇಕು." },
+  fKhataText: {
+    en: "Sahay keeps track of who owes you. A polite reminder goes only after your yes.",
+    hi: "सहाय याद रखता है कि किस पर कितना बाक़ी है। विनम्र याद-दिहानी आपकी हाँ के बाद ही जाती है।",
+    kn: "ಯಾರು ಎಷ್ಟು ಬಾಕಿ ಎಂದು ಸಹಾಯ್ ನೆನಪಿಡುತ್ತದೆ. ವಿನಯದ ನೆನಪೋಲೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರವೇ ಹೋಗುತ್ತದೆ.",
+  },
+  fKhataFact: { en: "Reminders after your yes", hi: "याद-दिहानी आपकी हाँ के बाद", kn: "ನೆನಪೋಲೆ ನಿಮ್ಮ ಒಪ್ಪಿಗೆಯ ನಂತರ" },
+  fMoney: { en: "Money", hi: "पैसा", kn: "ಹಣ" },
+  fMoneyCat: { en: "Payments", hi: "भुगतान", kn: "ಪಾವತಿ" },
+  fMoneyLine: { en: "Owed, to pay, received.", hi: "बाक़ी, देना, मिला।", kn: "ಬಾಕಿ, ಕೊಡಬೇಕಾದ್ದು, ಬಂದದ್ದು." },
+  fMoneyText: {
+    en: "Who owes you, what you must pay, and what came in, in one list.",
+    hi: "किस पर बाक़ी है, आपको क्या चुकाना है, और क्या आया, एक ही सूची में।",
+    kn: "ಯಾರು ಬಾಕಿ ಕೊಡಬೇಕು, ನೀವು ಏನು ಕೊಡಬೇಕು, ಏನು ಬಂತು, ಎಲ್ಲವೂ ಒಂದೇ ಪಟ್ಟಿಯಲ್ಲಿ.",
+  },
+  fMoneyFact: { en: "Razorpay test mode", hi: "Razorpay टेस्ट मोड", kn: "Razorpay ಪರೀಕ್ಷಾ ಮೋಡ್" },
+  fRules: { en: "Rules", hi: "नियम", kn: "ನಿಯಮಗಳು" },
+  fRulesCat: { en: "Your rules", hi: "आपके नियम", kn: "ನಿಮ್ಮ ನಿಯಮಗಳು" },
+  fRulesLine: { en: "You decide how it works.", hi: "यह कैसे काम करे, आप तय करें।", kn: "ಅದು ಹೇಗೆ ಕೆಲಸ ಮಾಡಬೇಕು ಎಂದು ನೀವೇ ನಿರ್ಧರಿಸಿ." },
+  fRulesText: {
+    en: "Choose how hard Sahay bargains, its language and its speaking speed. Asking before every order always stays on.",
+    hi: "चुनिए सहाय कितना मोलभाव करे, किस भाषा में और किस रफ़्तार से बोले। हर ऑर्डर से पहले पूछना हमेशा चालू रहता है।",
+    kn: "ಸಹಾಯ್ ಎಷ್ಟು ಚೌಕಾಸಿ ಮಾಡಲಿ, ಯಾವ ಭಾಷೆ, ಎಷ್ಟು ವೇಗದಲ್ಲಿ ಮಾತನಾಡಲಿ ಎಂದು ಆರಿಸಿ. ಪ್ರತಿ ಆರ್ಡರ್‌ಗೂ ಮುನ್ನ ಕೇಳುವುದು ಯಾವಾಗಲೂ ಆನ್ ಆಗಿರುತ್ತದೆ.",
+  },
+  fRulesFact: { en: "Ask before order: always on", hi: "ऑर्डर से पहले पूछना: हमेशा चालू", kn: "ಆರ್ಡರ್‌ಗೂ ಮುನ್ನ ಕೇಳುವುದು: ಯಾವಾಗಲೂ ಆನ್" },
+  fSellers: { en: "Sellers", hi: "विक्रेता", kn: "ಮಾರಾಟಗಾರರು" },
+  s2: { en: "Real sellers", hi: "असली विक्रेता", kn: "ನಿಜ ಮಾರಾಟಗಾರರು" },
+  fSellersLine: { en: "Sellers who serve your city.", hi: "आपके शहर में माल देने वाले।", kn: "ನಿಮ್ಮ ನಗರಕ್ಕೆ ಮಾಲು ಕೊಡುವವರು." },
+  c2Body: {
+    en: "Sellers who serve your city, from IndiaMART listings. If a source is down, Sahay says so; it never makes sellers up.",
+    hi: "आपके शहर में माल देने वाले विक्रेता, IndiaMART की सूची से। कोई स्रोत बंद हो तो सहाय साफ़ बताता है; वह विक्रेता कभी गढ़ता नहीं।",
+    kn: "ನಿಮ್ಮ ನಗರಕ್ಕೆ ಮಾಲು ಕೊಡುವ ಮಾರಾಟಗಾರರು, IndiaMART ಪಟ್ಟಿಯಿಂದ. ಮೂಲ ಕೆಲಸ ಮಾಡದಿದ್ದರೆ ಸಹಾಯ್ ಹಾಗೆಯೇ ಹೇಳುತ್ತದೆ; ಮಾರಾಟಗಾರರನ್ನು ಕಲ್ಪಿಸುವುದಿಲ್ಲ.",
+  },
+  fSellersFact: { en: "Never made up", hi: "कभी गढ़े नहीं जाते", kn: "ಎಂದೂ ಕಲ್ಪಿತವಲ್ಲ" },
+
+  // ---- From need to order (paper, four frames) ----
+  howTitle: { en: "From need to order", hi: "ज़रूरत से ऑर्डर तक", kn: "ಅಗತ್ಯದಿಂದ ಆರ್ಡರ್‌ವರೆಗೆ" },
+  howSub: {
+    en: "Keep serving customers at the counter. Sahay talks to sellers, bargains, and waits for your yes.",
+    hi: "आप काउंटर पर ग्राहक सँभालिए। फ़ोन, मोलभाव सहाय करता है, और आपकी हाँ का इंतज़ार करता है।",
+    kn: "ನೀವು ಕೌಂಟರ್‌ನಲ್ಲಿ ಗ್ರಾಹಕರನ್ನು ನೋಡಿಕೊಳ್ಳಿ. ಕರೆ, ಚೌಕಾಸಿ ಸಹಾಯ್ ಮಾಡುತ್ತದೆ, ನಿಮ್ಮ ಒಪ್ಪಿಗೆಗೆ ಕಾಯುತ್ತದೆ.",
+  },
+  step1: { en: "Step 1", hi: "क़दम 1", kn: "ಹಂತ 1" },
+  step2: { en: "Step 2", hi: "क़दम 2", kn: "ಹಂತ 2" },
+  step3: { en: "Step 3", hi: "क़दम 3", kn: "ಹಂತ 3" },
+  step4: { en: "Step 4", hi: "क़दम 4", kn: "ಹಂತ 4" },
+  step1Title: { en: "Say what you need", hi: "बताइए क्या चाहिए", kn: "ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ" },
+  step1Copy: {
+    en: "Speak the way you talk to a supplier. No menus, no item codes.",
+    hi: "वैसे ही बोलिए जैसे सप्लायर से बोलते हैं। न मेन्यू, न आइटम कोड।",
+    kn: "ಸರಬರಾಜುದಾರರ ಜೊತೆ ಮಾತನಾಡುವ ಹಾಗೆಯೇ ಹೇಳಿ. ಮೆನು ಇಲ್ಲ, ಐಟಂ ಕೋಡ್ ಇಲ್ಲ.",
+  },
+  stepFindTitle: { en: "Sahay finds sellers", hi: "सहाय विक्रेता ढूँढता है", kn: "ಸಹಾಯ್ ಮಾರಾಟಗಾರರನ್ನು ಹುಡುಕುತ್ತದೆ" },
+  stepFindCopy: {
+    en: "Real sellers who serve your city. If a source is down, Sahay says so.",
+    hi: "आपके शहर में माल देने वाले असली विक्रेता। कोई स्रोत बंद हो तो सहाय बताता है।",
+    kn: "ನಿಮ್ಮ ನಗರಕ್ಕೆ ಮಾಲು ಕೊಡುವ ನಿಜ ಮಾರಾಟಗಾರರು. ಮೂಲ ಕೆಲಸ ಮಾಡದಿದ್ದರೆ ಸಹಾಯ್ ಹೇಳುತ್ತದೆ.",
+  },
+  stepBargainTitle: { en: "It bargains", hi: "यह मोलभाव करता है", kn: "ಅದು ಚೌಕಾಸಿ ಮಾಡುತ್ತದೆ" },
+  step2Copy: {
+    en: "It contacts sellers near you, says first that it is an automated assistant, and asks for a better price.",
+    hi: "यह आपके पास के विक्रेताओं से संपर्क करता है, पहले बताता है कि यह स्वचालित सहायक है, और बेहतर दाम माँगता है।",
+    kn: "ಇದು ನಿಮ್ಮ ಹತ್ತಿರದ ಮಾರಾಟಗಾರರನ್ನು ಸಂಪರ್ಕಿಸಿ, ಮೊದಲು ತಾನು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ ಎಂದು ಹೇಳಿ, ಉತ್ತಮ ಬೆಲೆ ಕೇಳುತ್ತದೆ.",
+  },
+  s4: { en: "Your yes", hi: "आपकी हाँ", kn: "ನಿಮ್ಮ ಒಪ್ಪಿಗೆ" },
+  step3Copy: {
+    en: "Sahay reads the deal out loud. Say yes or tap Yes; only then does it order.",
+    hi: "सहाय सौदा पढ़कर सुनाता है। हाँ कहें या हाँ दबाएँ; तभी ऑर्डर जाता है।",
+    kn: "ಸಹಾಯ್ ವ್ಯವಹಾರವನ್ನು ಓದಿ ಹೇಳುತ್ತದೆ. ಹೌದು ಎನ್ನಿ ಅಥವಾ ಹೌದು ಒತ್ತಿ; ಆಗ ಮಾತ್ರ ಆರ್ಡರ್ ಹೋಗುತ್ತದೆ.",
   },
 
-  c7Title: { en: "It asks before it buys again", hi: "दोबारा ख़रीदने से पहले पूछता है", kn: "ಮತ್ತೆ ಖರೀದಿಸುವ ಮೊದಲು ಕೇಳುತ್ತದೆ" },
-  c7Body: {
-    en: "Sahay offers the last good deal again. Say yes and the loop starts over; say no and nothing happens.",
-    hi: "सहाय पिछला अच्छा सौदा फिर से सामने रखता है। हाँ कहें तो चक्र फिर शुरू; ना कहें तो कुछ नहीं होता।",
-    kn: "ಸಹಾಯ್ ಹಿಂದಿನ ಒಳ್ಳೆಯ ವ್ಯವಹಾರವನ್ನು ಮತ್ತೆ ಮುಂದಿಡುತ್ತದೆ. ಹೌದು ಎಂದರೆ ಚಕ್ರ ಮತ್ತೆ ಶುರು; ಬೇಡ ಎಂದರೆ ಏನೂ ಆಗುವುದಿಲ್ಲ.",
-  },
-  loopSell: { en: "Sold", hi: "बिका", kn: "ಮಾರಾಟ" },
-  loopLow: { en: "Stock low", hi: "स्टॉक कम", kn: "ದಾಸ್ತಾನು ಕಡಿಮೆ" },
-  loopBuy: { en: "Buy again", hi: "फिर ख़रीदें", kn: "ಮತ್ತೆ ಖರೀದಿ" },
-  askAgain: {
-    en: "Rice is at 35 kg. Buy 50 kg again from seller 01 at ₹55 a kilo?",
-    hi: "चावल 35 किलो बचा है। विक्रेता 01 से ₹55 किलो पर फिर 50 किलो लें?",
-    kn: "ಅಕ್ಕಿ 35 ಕೆಜಿ ಇದೆ. ಮಾರಾಟಗಾರ 01 ಇಂದ ಕಿಲೋಗೆ ₹55 ರಂತೆ ಮತ್ತೆ 50 ಕೆಜಿ ತರೋಣವೇ?",
-  },
-  yes: { en: "Yes", hi: "हाँ", kn: "ಹೌದು" },
-  no: { en: "No", hi: "नहीं", kn: "ಬೇಡ" },
-  c7Alt: {
-    en: "Example: Sahay asks whether to buy 50 kilos of rice again from seller 01 at 55 rupees a kilo, with a yes and a no. Nothing is bought until the owner says yes.",
-    hi: "उदाहरण: सहाय पूछता है कि क्या विक्रेता 01 से पचपन रुपये किलो पर फिर 50 किलो चावल लें, हाँ और नहीं के साथ। मालिक की हाँ तक कुछ नहीं ख़रीदा जाता।",
-    kn: "ಉದಾಹರಣೆ: ಮಾರಾಟಗಾರ 01 ಇಂದ ಕಿಲೋಗೆ ಐವತ್ತೈದು ರೂಪಾಯಿಗೆ ಮತ್ತೆ 50 ಕೆಜಿ ಅಕ್ಕಿ ತರಲೇ ಎಂದು ಸಹಾಯ್ ಕೇಳುತ್ತದೆ, ಹೌದು ಮತ್ತು ಬೇಡ ಜೊತೆ. ಮಾಲೀಕರು ಹೌದು ಎನ್ನುವವರೆಗೆ ಏನೂ ಖರೀದಿಯಾಗುವುದಿಲ್ಲ.",
-  },
-
-  c8Title: { en: "Your language, both ways", hi: "आपकी भाषा, दोनों तरफ़", kn: "ನಿಮ್ಮ ಭಾಷೆ, ಎರಡೂ ಕಡೆ" },
-  c8Body: {
-    en: "Sahay answers in the language you spoke, in its own script. Choose the language for this page here.",
-    hi: "सहाय उसी भाषा में जवाब देता है जिसमें आप बोले, उसकी अपनी लिपि में। इस पेज की भाषा यहाँ चुनें।",
-    kn: "ನೀವು ಮಾತನಾಡಿದ ಭಾಷೆಯಲ್ಲೇ, ಅದರ ಸ್ವಂತ ಲಿಪಿಯಲ್ಲೇ ಸಹಾಯ್ ಉತ್ತರಿಸುತ್ತದೆ. ಈ ಪುಟದ ಭಾಷೆಯನ್ನು ಇಲ್ಲಿ ಆರಿಸಿ.",
-  },
-
+  // ---- Built on (night islands) ----
   creditsTitle: { en: "Built on", hi: "किस पर बना", kn: "ಯಾವುದರ ಮೇಲೆ ನಿರ್ಮಿತ" },
   creditsNote: {
     en: "Agora runs the live voice call, Sarvam hears Hindi, Kannada and English, and Murf Falcon speaks the replies.",
-    hi: "Agora लाइव कॉल चलाता है, Sarvam हिन्दी, कन्नड़ और अंग्रेज़ी सुनता है, और Murf Falcon जवाब बोलता है।",
+    hi: "Agora लाइव आवाज़ कॉल चलाता है, Sarvam हिन्दी, कन्नड़ और अंग्रेज़ी सुनता है, और Murf Falcon जवाब बोलता है।",
     kn: "Agora ನೇರ ಧ್ವನಿ ಕರೆ ನಡೆಸುತ್ತದೆ, Sarvam ಹಿಂದಿ, ಕನ್ನಡ, ಇಂಗ್ಲಿಷ್ ಕೇಳುತ್ತದೆ, Murf Falcon ಉತ್ತರಗಳನ್ನು ಹೇಳುತ್ತದೆ.",
   },
+  isleAgoraK: { en: "Voice · Agora", hi: "आवाज़ · Agora", kn: "ಧ್ವನಿ · Agora" },
+  isleAgora: { en: "Runs the live voice call", hi: "लाइव आवाज़ कॉल चलाता है", kn: "ನೇರ ಧ್ವನಿ ಕರೆ ನಡೆಸುತ್ತದೆ" },
+  isleSarvamK: { en: "Ears · Sarvam", hi: "कान · Sarvam", kn: "ಕಿವಿ · Sarvam" },
+  isleSarvam: { en: "Hears Hindi, Kannada and English", hi: "हिन्दी, कन्नड़ और अंग्रेज़ी सुनता है", kn: "ಹಿಂದಿ, ಕನ್ನಡ, ಇಂಗ್ಲಿಷ್ ಕೇಳುತ್ತದೆ" },
+  isleMurfK: { en: "Speech · Murf Falcon", hi: "बोली · Murf Falcon", kn: "ಮಾತು · Murf Falcon" },
+  isleMurf: { en: "Speaks the replies", hi: "जवाब बोलता है", kn: "ಉತ್ತರಗಳನ್ನು ಹೇಳುತ್ತದೆ" },
 
+  // ---- Languages (billboards) ----
+  langsA: { en: "Speaks", hi: "बोलता है", kn: "ಮಾತನಾಡುತ್ತದೆ" },
+  langsB: { en: "your language", hi: "आपकी भाषा", kn: "ನಿಮ್ಮ ಭಾಷೆ" },
+  langsBody: {
+    en: "Talk in Hindi, Kannada or English, or mix them. Sahay answers in the language you spoke, in its own script.",
+    hi: "हिन्दी, कन्नड़ या अंग्रेज़ी में बोलिए, या मिलाकर। सहाय उसी भाषा में जवाब देता है जिसमें आप बोले, उसकी अपनी लिपि में।",
+    kn: "ಹಿಂದಿ, ಕನ್ನಡ ಅಥವಾ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ ಮಾತನಾಡಿ, ಬೆರೆಸಿಯೂ ಆಗಬಹುದು. ನೀವು ಮಾತನಾಡಿದ ಭಾಷೆಯಲ್ಲೇ, ಅದರ ಸ್ವಂತ ಲಿಪಿಯಲ್ಲೇ ಸಹಾಯ್ ಉತ್ತರಿಸುತ್ತದೆ.",
+  },
+  langsCount: { en: "Languages, both ways", hi: "भाषाएँ, दोनों तरफ़", kn: "ಭಾಷೆಗಳು, ಎರಡೂ ಕಡೆ" },
+  mixedK: { en: "Mixed", hi: "मिली-जुली", kn: "ಬೆರೆಸಿದ" },
+  mixedWord: { en: "Mix them", hi: "मिलाकर", kn: "ಬೆರೆಸಿ" },
+  mixedSub: { en: "Sahay follows", hi: "सहाय समझ लेता है", kn: "ಸಹಾಯ್ ಅರ್ಥ ಮಾಡಿಕೊಳ್ಳುತ್ತದೆ" },
 
+  // ---- FAQ (paper) ----
+  faqTitle: { en: "Questions", hi: "सवाल", kn: "ಪ್ರಶ್ನೆಗಳು" },
+  faqLead: { en: "What shop owners ask first.", hi: "दुकानदार सबसे पहले यही पूछते हैं।", kn: "ಅಂಗಡಿಯವರು ಮೊದಲು ಕೇಳುವುದು ಇದನ್ನೇ." },
+  mapAlt: {
+    en: "Picture: a guide map with your shop and the sellers around it, joined by dotted routes.",
+    hi: "चित्र: एक नक़्शा, जिसमें आपकी दुकान और आसपास के विक्रेता बिंदीदार रास्तों से जुड़े हैं।",
+    kn: "ಚಿತ್ರ: ನಿಮ್ಮ ಅಂಗಡಿ ಮತ್ತು ಸುತ್ತಲಿನ ಮಾರಾಟಗಾರರನ್ನು ಚುಕ್ಕೆ ದಾರಿಗಳಿಂದ ಜೋಡಿಸಿದ ನಕ್ಷೆ.",
+  },
+  q1: { en: "Is Sahay a person?", hi: "क्या सहाय कोई इंसान है?", kn: "ಸಹಾಯ್ ಒಬ್ಬ ವ್ಯಕ್ತಿಯೇ?" },
+  a1: {
+    en: "No. Sahay is an automated assistant, and it says so in the first sentence of every call.",
+    hi: "नहीं। सहाय एक स्वचालित सहायक है, और हर कॉल के पहले वाक्य में यही बताता है।",
+    kn: "ಇಲ್ಲ. ಸಹಾಯ್ ಒಂದು ಸ್ವಯಂಚಾಲಿತ ಸಹಾಯಕ, ಪ್ರತಿ ಕರೆಯ ಮೊದಲ ವಾಕ್ಯದಲ್ಲೇ ಅದನ್ನು ಹೇಳುತ್ತದೆ.",
+  },
+  q2: { en: "Can it order without me?", hi: "क्या यह मेरे बिना ऑर्डर कर सकता है?", kn: "ನನ್ನ ಒಪ್ಪಿಗೆ ಇಲ್ಲದೆ ಆರ್ಡರ್ ಮಾಡಬಹುದೇ?" },
+  a2: {
+    en: "No. No order, bill or payment link is made without your spoken yes or the Yes button. Sahay bargains and prepares the deal; you decide.",
+    hi: "नहीं। आपकी बोली हुई हाँ या हाँ बटन के बिना कोई ऑर्डर, बिल या भुगतान लिंक नहीं बनता। सहाय मोलभाव करके सौदा तैयार करता है; फ़ैसला आपका।",
+    kn: "ಇಲ್ಲ. ನಿಮ್ಮ ಮಾತಿನ ಹೌದು ಅಥವಾ ಹೌದು ಬಟನ್ ಇಲ್ಲದೆ ಯಾವುದೇ ಆರ್ಡರ್, ಬಿಲ್ ಅಥವಾ ಪಾವತಿ ಲಿಂಕ್ ಆಗುವುದಿಲ್ಲ. ಸಹಾಯ್ ಚೌಕಾಸಿ ಮಾಡಿ ವ್ಯವಹಾರ ಸಿದ್ಧಪಡಿಸುತ್ತದೆ; ನಿರ್ಧಾರ ನಿಮ್ಮದು.",
+  },
+  q3: { en: "Which languages does it speak?", hi: "यह कौन-सी भाषाएँ बोलता है?", kn: "ಅದು ಯಾವ ಭಾಷೆಗಳನ್ನು ಮಾತನಾಡುತ್ತದೆ?" },
+  q4: { en: "Where do the sellers come from?", hi: "विक्रेता कहाँ से आते हैं?", kn: "ಮಾರಾಟಗಾರರು ಎಲ್ಲಿಂದ ಬರುತ್ತಾರೆ?" },
+  q5: { en: "Are the payments real?", hi: "क्या भुगतान असली हैं?", kn: "ಪಾವತಿಗಳು ನಿಜವೇ?" },
+  a5: {
+    en: "Not yet. Payments run in Razorpay test mode, and a simulated vendor is always labelled \"simulated vendor\".",
+    hi: "अभी नहीं। भुगतान Razorpay टेस्ट मोड में चलते हैं, और सिम्युलेटेड विक्रेता पर हमेशा \"simulated vendor\" लिखा रहता है।",
+    kn: "ಇನ್ನೂ ಇಲ್ಲ. ಪಾವತಿಗಳು Razorpay ಪರೀಕ್ಷಾ ಮೋಡ್‌ನಲ್ಲಿ ನಡೆಯುತ್ತವೆ, ಅನುಕರಿಸಿದ ಮಾರಾಟಗಾರರ ಮೇಲೆ ಯಾವಾಗಲೂ \"simulated vendor\" ಎಂದು ಬರೆದಿರುತ್ತದೆ.",
+  },
+  q6: { en: "What do I need to start?", hi: "शुरू करने के लिए क्या चाहिए?", kn: "ಶುರು ಮಾಡಲು ಏನು ಬೇಕು?" },
+  a6: {
+    en: "A phone or laptop with a microphone. Open Sahay, sign up with your phone number and a PIN, and say what you need.",
+    hi: "माइक वाला फ़ोन या लैपटॉप। सहाय खोलिए, अपने मोबाइल नंबर और पिन से खाता बनाइए, और बताइए क्या चाहिए।",
+    kn: "ಮೈಕ್ ಇರುವ ಫೋನ್ ಅಥವಾ ಲ್ಯಾಪ್‌ಟಾಪ್. ಸಹಾಯ್ ತೆರೆಯಿರಿ, ನಿಮ್ಮ ಮೊಬೈಲ್ ನಂಬರ್ ಮತ್ತು ಪಿನ್‌ನಿಂದ ಖಾತೆ ಮಾಡಿ, ಏನು ಬೇಕು ಎಂದು ಹೇಳಿ.",
+  },
+
+  // ---- Footer (kept from commit 1425810) ----
   footLine: {
     en: "A voice assistant for Indian shops: buying, bills, khata and stock.",
     hi: "भारतीय दुकानों के लिए आवाज़ वाला सहायक: ख़रीद, बिल, खाता और स्टॉक।",
