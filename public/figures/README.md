@@ -76,10 +76,10 @@ Markup (in `public/index.html`, written by FIG):
 5. Re-labels on the `landing:language` event via `setLanguage()`.
 
 ## Themes and tokens
-`public/figures/figures.css` maps the kit tokens (`--anatomy-*`) to Sahay: dark by default,
-light under `:root[data-theme="light"]` and under `prefers-color-scheme: light` when no theme is
-chosen. The one lit accent (`--anatomy-lit`, data-lit solids, `data-tone="lit"` lines) is
-marigold in dark and deep saffron in light. Never type a colour into SVG or JS.
+`public/figures/figures.css` maps the kit tokens (`--anatomy-*`) to Sahay v3: dark (the landing
+is dark only); a light set exists only under an explicit `:root[data-theme="light"]` (the preview
+page). The one lit accent (`--anatomy-lit`, data-lit solids, `data-tone="lit"` lines) is
+lime (#B6F23C) on green-tinted piano blacks; the landing is dark only. Never type a colour into SVG or JS.
 
 ## Checking a figure
 Run a scratch server from your worktree (`PORT=39xx DB_FILE=<scratch>.db node server.js`) and open

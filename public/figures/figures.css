@@ -1,35 +1,29 @@
-/* Landing figures: the anatomy kit's styles (ISO_CSS, MIT, scripts/figures/kit/LICENSE) with
-   Sahay's tokens. Dark by default; light follows tokens.css (data-theme, then the system). Every
-   colour in a figure comes from these variables, never from the SVG or the live code. */
+/* Landing figures: the anatomy kit's styles (ISO_CSS, MIT, scripts/figures/kit/LICENSE) tinted for
+   the v3 landing: green-tinted piano blacks, one lime accent. Dark only, like the landing page.
+   Every colour in a figure comes from these variables, never from the SVG or the live code. */
 
 .iso {
-  --anatomy-card: var(--ink-1, #121826);
-  --anatomy-text: var(--text-lo, #A9B1C2);
-  --anatomy-strong: var(--text-hi, #F5F2EA);
-  --anatomy-muted: var(--text-lo, #A9B1C2);
-  --anatomy-paper: #121826; --anatomy-face: #1A2232; --anatomy-top: #1C2435;
-  --anatomy-shade-0: #0D121D; --anatomy-shade-1: #111725; --anatomy-shade-2: #151C2B; --anatomy-shade-3: #192131;
-  --anatomy-lit-top: #2E2716; --anatomy-lit-shade: #241F13;
-  --anatomy-hi: #DCE0E8; --anatomy-mid: #737C90; --anatomy-lo: #434B5E; --anatomy-faint: #2C3346; --anatomy-lit: #FFB020;
-  --anatomy-halo: #03050A; --anatomy-halo-opacity: .9; --anatomy-dot: #E6E9F0;
+  --anatomy-card: #0B0D0A;
+  --anatomy-text: var(--text-lo, #A9B39A);
+  --anatomy-strong: var(--text-hi, #F2F6EA);
+  --anatomy-muted: var(--text-lo, #A9B39A);
+  --anatomy-paper: #0B0D0A; --anatomy-face: #171B12; --anatomy-top: #1A1F14;
+  --anatomy-shade-0: #070806; --anatomy-shade-1: #0C0E09; --anatomy-shade-2: #11140D; --anatomy-shade-3: #161A11;
+  --anatomy-lit-top: #2C3A12; --anatomy-lit-shade: #1F2A0C;
+  --anatomy-hi: #E4EDD4; --anatomy-mid: #7C8A6A; --anatomy-lo: #485240; --anatomy-faint: #262D20; --anatomy-lit: #B6F23C;
+  --anatomy-halo: #020302; --anatomy-halo-opacity: .9; --anatomy-dot: #E2EBD2;
   --anatomy-weight: .6px; --anatomy-ease: cubic-bezier(.32, .72, 0, 1);
-  --anatomy-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --anatomy-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .iso {
-    --anatomy-paper: #FFFFFF; --anatomy-face: #FFFFFF; --anatomy-top: #FFFFFF;
-    --anatomy-shade-0: #D5DBE6; --anatomy-shade-1: #DFE4EC; --anatomy-shade-2: #E9EDF3; --anatomy-shade-3: #F2F4F8;
-    --anatomy-lit-top: #FFF4DC; --anatomy-lit-shade: #F7E6C2;
-    --anatomy-hi: #182030; --anatomy-mid: #778197; --anatomy-lo: #AAB2C2; --anatomy-faint: #D0D6E0; --anatomy-lit: #B86E00;
-    --anatomy-halo: #7D8699; --anatomy-halo-opacity: .32; --anatomy-dot: #343B4C;
-  }
-}
+/* The preview page may still ask for light; the landing never does. */
 :root[data-theme="light"] .iso {
-  --anatomy-paper: #FFFFFF; --anatomy-face: #FFFFFF; --anatomy-top: #FFFFFF;
-  --anatomy-shade-0: #D5DBE6; --anatomy-shade-1: #DFE4EC; --anatomy-shade-2: #E9EDF3; --anatomy-shade-3: #F2F4F8;
-  --anatomy-lit-top: #FFF4DC; --anatomy-lit-shade: #F7E6C2;
-  --anatomy-hi: #182030; --anatomy-mid: #778197; --anatomy-lo: #AAB2C2; --anatomy-faint: #D0D6E0; --anatomy-lit: #B86E00;
-  --anatomy-halo: #7D8699; --anatomy-halo-opacity: .32; --anatomy-dot: #343B4C;
+  --anatomy-card: #F4F7EE;
+  --anatomy-paper: #F4F7EE; --anatomy-face: #FFFFFF; --anatomy-top: #FFFFFF;
+  --anatomy-shade-0: #D3DAC8; --anatomy-shade-1: #DDE3D3; --anatomy-shade-2: #E7ECDF; --anatomy-shade-3: #F0F3EA;
+  --anatomy-lit-top: #EEF8D2; --anatomy-lit-shade: #DDEDB4;
+  --anatomy-hi: #172012; --anatomy-mid: #6E7A60; --anatomy-lo: #A6B096; --anatomy-faint: #CCD4C0; --anatomy-lit: #4F7A00;
+  --anatomy-halo: #7A8670; --anatomy-halo-opacity: .32; --anatomy-dot: #2E3826;
+  --anatomy-text: #3C4632; --anatomy-strong: #121A0C; --anatomy-muted: #4D5842;
 }
 
 /* ---- kit drawing rules (ISO_CSS) ---- */
@@ -82,11 +76,16 @@
 .iso-figure { margin: 0; color: var(--anatomy-text); }
 .iso-plate {
   position: relative; padding: 56px 20px 60px;
-  border-radius: var(--r-soft, 28px);
-  background: var(--anatomy-card);
-  box-shadow: 0 0 0 1px var(--glass-border, rgba(255, 255, 255, .14)), var(--shadow-float, none);
+  border: 1px solid transparent;
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 60% at 22% 0%, rgba(255, 255, 255, .07), transparent 55%) padding-box,
+    linear-gradient(180deg, #13160F 0%, var(--anatomy-card) 45%, #070806 100%) padding-box,
+    linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(255, 255, 255, .06) 42%, rgba(182, 242, 60, .24)) border-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .7), 0 3px 0 #020302, 0 24px 44px -24px #000;
   --anatomy-paper: var(--anatomy-card);
 }
+:root[data-theme="light"] .iso-plate { background: var(--anatomy-card); box-shadow: 0 0 0 1px #C9D1BC; }
 .iso-plate-corners { position: absolute; inset: 18px 22px; pointer-events: none; }
 .iso-plate-corner {
   position: absolute; color: var(--anatomy-muted);
@@ -100,9 +99,9 @@
   font-variant-numeric: tabular-nums;
 }
 .iso-stage { position: relative; outline: none; touch-action: pan-y; cursor: pointer; border-radius: 18px; }
-.iso-stage:focus-visible { box-shadow: var(--focus, 0 0 0 3px #FFB020); }
+.iso-stage:focus-visible { outline: 2px solid var(--anatomy-lit); outline-offset: 2px; }
 .iso-stage .iso-svg { margin: 0 auto; }
-.iso-legend { display: grid; gap: 8px; margin-top: 14px; padding: 0 6px; color: var(--anatomy-muted); font-size: 1rem; line-height: 1.55; }
+.iso-legend { display: grid; gap: 8px; margin-top: 14px; padding: 0 6px; color: var(--anatomy-muted); font-size: 0.97rem; line-height: 1.5; }
 
 /* Designed states: loading keeps the card's shape with a quiet pulse; error says so in words. */
 .fig-status { display: none; margin: 0; font-size: 1rem; color: var(--anatomy-muted); text-align: center; }
@@ -117,7 +116,7 @@
   background: radial-gradient(closest-side, var(--anatomy-shade-3), transparent);
   animation: fig-wait 1.6s ease-in-out infinite;
 }
-.iso-figure[data-state="error"] .fig-status { color: var(--coral-text, #FF8A8A); }
+.iso-figure[data-state="error"] .fig-status { color: var(--anatomy-strong); }
 .iso-figure[data-state="error"] .iso-plate-corner[data-corner="readout"],
 .iso-figure[data-state="error"] .iso-plate-corner[data-corner="hint"] { visibility: hidden; }
 @keyframes fig-wait { 50% { opacity: .35; } }
