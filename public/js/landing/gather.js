@@ -131,7 +131,7 @@ export const SLOTS = Object.freeze({
     seller: { x: 0.78, y: -0.98, ax: 0, ay: 1 },
     stock: { x: 1.2, y: 0.12, ax: 0, ay: 0.5 },
     yes: { x: 0.62, y: 1.06, ax: 0, ay: 0 },
-    lang: { x: -0.8, y: -1.02, ax: 1, ay: 1 },
+    lang: { x: -0.35, y: -1.12, ax: 0.5, ay: 1 },
   },
   mid: {
     seller: { x: -1.05, y: -0.75, ax: 1, ay: 0.5 },
@@ -339,6 +339,7 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
   }
 
   function drawLinks() {
+    if (phaseName === "swarm") return; // the labels are faded out while the points drift
     const on = trackers.filter((tr) => tr.on && tr.rect);
     if (!on.length) return;
     ctx.globalCompositeOperation = "source-over";
@@ -412,10 +413,10 @@ export function initGather(host, { reducedQuery = matchMedia("(prefers-reduced-m
     const want = pointCount({ width: W, height: H, coarse });
     if (!n || Math.abs(want - n) / n > 0.2) build(want);
     else seedPositions();
+    host.dataset.state = "ready"; // before measuring: the labels are display:none until ready
     placeTags();
     if (reducedQuery.matches) stillFrame();
     draw();
-    host.dataset.state = "ready";
   }
 
   function loop(now) {

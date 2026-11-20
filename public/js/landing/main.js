@@ -42,17 +42,17 @@ function initSmoothScroll() {
   if (!Lenis || reducedQuery.matches || matchMedia("(pointer: coarse)").matches) return;
   lenis = new Lenis({ lerp: 0.11 });
   if (gsap?.ticker) {
-    gsap.ticker.add((time) => lenis.raf(time * 1000));
+    gsap.ticker.add((time) => lenis?.raf(time * 1000));
     gsap.ticker.lagSmoothing(0);
   } else {
-    const raf = (time) => { lenis.raf(time); requestAnimationFrame(raf); };
+    const raf = (time) => { if (!lenis) return; lenis.raf(time); requestAnimationFrame(raf); };
     requestAnimationFrame(raf);
   }
   reducedQuery.addEventListener?.("change", () => { if (reducedQuery.matches) { lenis?.destroy(); lenis = null; } });
 }
-function scrollToY(y) {
-  if (lenis) lenis.scrollTo(y);
-  else window.scrollTo({ top: y, behavior: reducedQuery.matches ? "auto" : "smooth" });
+function scrollToY(y, { immediate = false } = {}) {
+  if (lenis) lenis.scrollTo(y, { immediate });
+  else window.scrollTo({ top: y, behavior: immediate || reducedQuery.matches ? "auto" : "smooth" });
 }
 // In-page links go through the same path, so Lenis and the native scroll never fight.
 for (const a of document.querySelectorAll('a[href^="#"]')) {

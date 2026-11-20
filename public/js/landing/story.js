@@ -43,7 +43,7 @@ export function chapterScrollTop(trackTop, trackHeight, viewH, i, n) {
 
 /**
  * @param {Element} story  the .story section
- * @param {{ reducedQuery: MediaQueryList, figures?: { cards: any[] }, scrollTo?: (y:number)=>void }} opts
+ * @param {{ reducedQuery: MediaQueryList, figures?: { cards: any[] }, scrollTo?: (y:number, o?:{immediate?:boolean})=>void }} opts
  */
 export function initStory(story, { reducedQuery, figures, scrollTo }) {
   const track = story.querySelector(".story-track");
@@ -126,7 +126,8 @@ export function initStory(story, { reducedQuery, figures, scrollTo }) {
     const i = chapters.findIndex((ch) => ch.contains(e.target));
     if (i < 0 || i === current) return;
     const m = metrics();
-    window.scrollTo({ top: chapterScrollTop(m.top, m.height, m.vh, i, n), behavior: "auto" });
+    const y = chapterScrollTop(m.top, m.height, m.vh, i, n);
+    if (scrollTo) scrollTo(y, { immediate: true }); else window.scrollTo({ top: y, behavior: "auto" });
   });
 
   const decide = () => setStaged(stagedQuery.matches && !reducedQuery.matches);
