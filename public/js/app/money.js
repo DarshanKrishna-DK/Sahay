@@ -7,7 +7,7 @@
 //      opens its sheet (vendor, simulated vendor labelled, amount, Pay with "Test mode").
 // Data: store-sell.js (khata) and the purchase orders in GET /api/state (D3, no new route).
 
-import { h, patch, safeUrl, toDate, money, button, pageHead, emptyState, skeleton, segmented, openSheet, scripted, icon } from "./ui.js";
+import { h, patch, safeUrl, toDate, money, button, pageHead, emptyState, skeleton, openSheet, scripted, icon } from "./ui.js";
 import { t, when, addStrings } from "./i18n.js";
 import { state as appState } from "./store.js";
 import { sell, loadSell, customerOf } from "./store-sell.js";
@@ -15,7 +15,7 @@ import { st } from "./sell-i18n.js";
 import { sumOf, ordersToPay, ageBucket } from "./sell-facts.js";
 import { daysSince } from "./format.js";
 import { openAskForMoney, openCustomerSheet, openAddPhone, remindOnWhatsApp, remindNote, owedName } from "./money-pad.js";
-import { dataRow, rowsCard, statusWord, warnWord } from "./sell-rows.js";
+import { dataRow, rowsCard, statusWord, warnWord, countedTabs } from "./sell-rows.js";
 
 addStrings({
   "mn5.sentence": ["Who owes you, what you must pay, and what came in.", "किससे लेना है, किसे देना है, और क्या आया।", "ಯಾರಿಂದ ಬರಬೇಕು, ಯಾರಿಗೆ ಕೊಡಬೇಕು, ಮತ್ತು ಏನು ಬಂತು."],
@@ -183,9 +183,9 @@ export function createMoney() {
       }
       const counts = { owed: sell.owed.length, pay: toPay.length, got: sell.receipts.length };
       const totals = { owed: sumOf(sell.owed), pay: sumOf(toPay), got: sumOf(sell.receipts) };
-      const seg = segmented({
+      const seg = countedTabs({
         label: st("mn5.show"), value: tab, onPick: (id) => { tab = id; render(true); },
-        options: TABS.map((id) => ({ id, word: `${st(`mn5.${id}`)} ${counts[id]}` })),
+        options: TABS.map((id) => ({ id, word: st(`mn5.${id}`), n: counts[id] })),
       });
       const total = counts[tab]
         ? h("p", { class: "sv5-total" }, h("span", { text: st("mn5.total") }), h("span", { class: `amount sv5-total-amt is-${tab}`, text: money(totals[tab]) }))

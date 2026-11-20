@@ -10,7 +10,7 @@
 //      mode) or the customer (Got paid, Remind).
 // Data: store-sell.js; rules: sell-facts.js (node:test). Styles: css/sell.css.
 
-import { h, icon, scripted, patch, safeUrl, toDate, money, qtyText, itemName, button, pageHead, section, card, emptyState, skeleton, segmented, openSheet } from "./ui.js";
+import { h, icon, scripted, patch, safeUrl, toDate, money, qtyText, itemName, button, pageHead, section, card, emptyState, skeleton, openSheet } from "./ui.js";
 import { t, when, addStrings } from "./i18n.js";
 import { state as appState } from "./store.js";
 import { sell, loadSell, pendingInvoices, invoiceCustomer, itemOf } from "./store-sell.js";
@@ -18,7 +18,7 @@ import { st } from "./sell-i18n.js";
 import { billStatus, gstRows, lineAmount, dueOf, filterBills, shortBillNo } from "./sell-facts.js";
 import { shopMissing, shopNeedCard, shopLink } from "./shop-settings.js";
 import { addPhoneButton, openCustomerSheet } from "./money-pad.js";
-import { dataRow, rowsCard, statusWord, warnWord } from "./sell-rows.js";
+import { dataRow, rowsCard, statusWord, warnWord, countedTabs } from "./sell-rows.js";
 import { createYesCard, waitingItems, openNeeds, onCount } from "./yes.js";
 
 addStrings({
@@ -266,11 +266,11 @@ export function createSell() {
     const owedBy = new Map(sell.owed.map((o) => [String(o.customerId), o.amount]));
     const customers = [...sell.customers.values()].sort((a, b) => (owedBy.get(String(b.id)) || 0) - (owedBy.get(String(a.id)) || 0) || String(a.name || "").localeCompare(String(b.name || "")));
     const pick = (id) => { view = id; render(true); };
-    const head = segmented({
+    const head = countedTabs({
       label: st("sl5.show"), value: view, onPick: pick,
       options: [
-        { id: "bills", word: `${st("sl5.bills")} ${bills.length}` },
-        { id: "customers", word: `${st("sl5.customers")} ${customers.length}` },
+        { id: "bills", word: st("sl5.bills"), n: bills.length },
+        { id: "customers", word: st("sl5.customers"), n: customers.length },
       ],
     });
     return view === "customers"

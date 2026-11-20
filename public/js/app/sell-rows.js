@@ -4,7 +4,7 @@
 // whole row opens the details sheet; the action is its own button beside it. Five rows, then
 // "Show all". Styles: css/sell.css.
 
-import { h, icon, scripted, fill } from "./ui.js";
+import { h, icon, scripted, fill, segmented } from "./ui.js";
 import { t } from "./i18n.js";
 
 /** A status word with its 8px dot (spec: status colours only as a dot + the word, never a fill). */
@@ -56,4 +56,21 @@ export function rowsCard({ label, head, total, rows, empty, limit = 5, id }) {
     head ? h("div", { class: "sv5-card-head" }, head) : null,
     total || null,
     listWrap);
+}
+
+/**
+ * The kit's segmented tabs with a count after each word: { label, value, onPick, options: [{ id,
+ * word, n }] }. The count is its own span in the display face with tabular digits (in the HUD face
+ * a "1" reads as "I").
+ */
+export function countedTabs({ label, value, onPick, options }) {
+  const el = segmented({ label, value, onPick, options: options.map(({ id, word }) => ({ id, word })) });
+  for (const o of options) {
+    const btn = el.querySelector(`.seg-opt[data-id="${o.id}"]`);
+    if (!btn) continue;
+    const word = btn.querySelector("span");
+    if (word) word.classList.add("sv5-seg-w");
+    if (o.n !== undefined && o.n !== null) btn.append(h("span", { class: "sv5-seg-n", text: String(o.n) }));
+  }
+  return el;
 }

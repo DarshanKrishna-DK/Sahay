@@ -1,4 +1,4 @@
-/* Money (UI v5, W4B; screens.md section 07) and its sheets: ask for money, a customer's sheet,
+/* Money (UI v7 look on the v5 layout, W4B; screens.md section 07) and its sheets: ask for money, a customer's sheet,
    an order's sheet, the pay pad and Add phone. The list card itself is in css/sell.css. W1 kit
    underneath (tokens.css, components.css). Tokens only; no gradients, glows or blur. */
 
@@ -7,7 +7,7 @@
 
 /* Initials in a quiet square (customer rows in sheets). */
 .mp-initials {
-  display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 12px;
+  display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 0;
   background: var(--surface); border: 1px solid var(--line); color: var(--text); font: var(--t-label); font-weight: 700;
 }
 .mp-initials-lg { width: 56px; height: 56px; font: var(--t-title); }
@@ -17,7 +17,7 @@
 .mp-cust-phone { margin: 0; font: var(--t-body); font-variant-numeric: tabular-nums; }
 .mp-cust-phone.is-none { color: var(--muted); }
 .mp-vendor { margin: 0; font: var(--t-body); font-weight: 700; overflow-wrap: anywhere; }
-.mp-owes-block { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px; border-radius: var(--r-input); background: var(--surface); border: 1px solid var(--line); }
+.mp-owes-block { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px; border-radius: 0; background: var(--surface); border: 1px solid var(--line); }
 .mp-owes-figure { color: var(--warn); }
 .mp-label { margin: 0; font: var(--t-label); color: var(--muted); }
 .mp-of { margin: 0; font: var(--t-meta); color: var(--muted); }
@@ -31,7 +31,7 @@
 .mp-pad { display: flex; flex-direction: column; gap: 14px; outline: none; }
 .mp-display {
   display: flex; flex-direction: column; gap: 2px; padding: 12px 18px 14px;
-  border-radius: var(--r-input); border: 1px solid var(--line); background: var(--surface);
+  border-radius: 0; border: 1px solid var(--line); background: var(--surface);
 }
 .mp-amount { white-space: nowrap; }
 .mp-amount.is-zero { color: var(--text-faint); }
@@ -41,12 +41,12 @@
 .mp-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .mp-mode {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; padding: 0 16px;
-  border-radius: var(--r-pill); border: 1px solid var(--line-strong); background: transparent; color: var(--text);
+  border-radius: 0; border: 1px solid var(--line-strong); background: transparent; color: var(--text);
   font: var(--t-body); font-weight: 600; cursor: pointer;
 }
 .mp-mode:hover { background: var(--surface); }
-.mp-mode:focus-visible { outline: 2px solid var(--pink-hover); outline-offset: 3px; }
-.mp-mode[aria-checked="true"] { background: var(--pink); border-color: var(--pink); color: var(--on-pink); }
+.mp-mode:focus-visible { outline: 2px solid var(--lime-hover); outline-offset: 3px; }
+.mp-mode[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .mp-keys { align-self: center; }
 .mp-cc { color: var(--muted); margin-right: 10px; }
 .mp-phone-who { margin: 0; font: var(--t-body); font-weight: 700; overflow-wrap: anywhere; }

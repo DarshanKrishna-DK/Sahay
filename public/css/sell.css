@@ -1,4 +1,4 @@
-/* Sell (UI v5, W4B; screens.md section 05) and the list card Sell and Money share (sell-rows.js):
+/* Sell (UI v7 look on the v5 layout, W4B; screens.md section 05) and the list card Sell and Money share (sell-rows.js):
    card header with the segmented control, an optional totals line, 72px rows of [24px muted icon]
    [main line + meta line] [amount + status word with an 8px dot] [one action]. Built on the W1 kit
    (tokens.css, components.css). Tokens only; no gradients, glows or blur; sentence case. */
@@ -7,6 +7,10 @@
 .sv5-card { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; }
 .sv5-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 16px; }
 .sv5-card-head .seg { max-width: 100%; }
+/* The count beside each tab word is in the display face with tabular digits, so "1" never reads as
+   the HUD face's "I" (QA v7 #12). */
+.sv5-seg-n { font: var(--fw-display, 400) 1.125rem/1 var(--font-display); letter-spacing: .02em; text-transform: none; font-variant-numeric: tabular-nums; }
+.sv5-seg-w { min-width: 0; }
 .sv5-total {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   margin: 0; padding: 12px 24px; border-top: 1px solid var(--line); font: var(--t-label); color: var(--muted);
@@ -24,7 +28,7 @@
 }
 .sv5-row-open.is-static { cursor: default; }
 button.sv5-row-open:hover { background: var(--surface-2); }
-button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outline-offset: -2px; }
+button.sv5-row-open:focus-visible { outline: 2px solid var(--lime-hover); outline-offset: -2px; }
 .sv5-row:has(> button.sv5-row-open:hover) { background: var(--surface-2); }
 .sv5-row-ico { flex: none; display: grid; place-items: center; width: 24px; color: var(--muted); }
 .sv5-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -42,7 +46,7 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 .sv5-row-note { flex: 1 1 100%; padding: 0 24px 16px; }
 .sv5-row:has(> .sv5-row-note) { flex-wrap: wrap; }
 .sv5-status { display: inline-flex; align-items: center; gap: 6px; font: var(--t-meta); color: var(--muted); white-space: nowrap; }
-.sv5-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.sv5-dot { display: inline-block; width: 8px; height: 8px; border-radius: 0; background: var(--muted); flex: none; }
 .sv5-status.is-good .sv5-dot { background: var(--good); }
 .sv5-status.is-warn .sv5-dot { background: var(--warn); }
 .sv5-status.is-needs .sv5-dot { background: var(--needs); }
@@ -54,8 +58,14 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 /* Phone: the action drops under the row, right-aligned; the amount stays beside the name. */
 @media (max-width: 767px) {
   .sv5-card-head { padding: 16px 16px 12px; }
-  .sv5-card-head .seg { width: 100%; }
-  .sv5-card-head .seg-opt { flex: 1 1 0; justify-content: center; }
+  /* Three tabs share the width equally and wrap their words onto two lines rather than clip
+     (QA v7 #3: "RECEIV" at 390). */
+  .sv5-card-head .seg { width: 100%; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-columns: minmax(0, 1fr); }
+  .sv5-card-head .seg-opt {
+    min-width: 0; min-height: 48px; padding: 4px 6px; gap: 4px 6px; flex-wrap: wrap; justify-content: center;
+    white-space: normal; text-align: center; line-height: 1.15; letter-spacing: .06em; overflow-wrap: anywhere;
+  }
+  :lang(hi) .sv5-card-head .seg-opt, :lang(kn) .sv5-card-head .seg-opt { letter-spacing: 0; }
   .sv5-total, .sv5-empty { padding-left: 16px; padding-right: 16px; }
   .sv5-row { flex-wrap: wrap; padding-right: 0; gap: 0; }
   .sv5-row.has-act { padding-right: 0; }
@@ -78,7 +88,7 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 
 /* The bill sheet. */
 .sl5-sheet-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--muted); font: var(--t-label); }
-.sl5-sheet-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 14px 16px; border-radius: var(--r-input); background: var(--surface); border: 1px solid var(--line); }
+.sl5-sheet-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 14px 16px; border-radius: 0; background: var(--surface); border: 1px solid var(--line); }
 .sl5-sheet-who > svg { color: var(--muted); }
 .sl5-sheet-name { font: var(--t-body); font-weight: 700; overflow-wrap: anywhere; }
 .sl5-sheet-phone { color: var(--muted); font: var(--t-label); font-variant-numeric: tabular-nums; }
@@ -89,7 +99,7 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 .sl5-line-name { font: var(--t-body); font-weight: 600; overflow-wrap: anywhere; }
 .sl5-line-qty { font: var(--t-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sl5-line-amt { flex: none; }
-.sl5-sum { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: var(--r-input); background: var(--surface); border: 1px solid var(--line); }
+.sl5-sum { display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: 0; background: var(--surface); border: 1px solid var(--line); }
 .sl5-sum-row { display: flex; justify-content: space-between; gap: 12px; margin: 0; color: var(--muted); }
 .sl5-sum-row .num { color: var(--text); font-variant-numeric: tabular-nums; }
 .sl5-sum-tax { padding-top: 6px; border-top: 1px solid var(--line); font-weight: 600; }
@@ -103,21 +113,21 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 .shop-choices { display: flex; flex-direction: column; gap: 8px; }
 .shop-choice {
   display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 10px 16px; width: 100%;
-  border-radius: var(--r-input); border: 1px solid var(--line-strong); background: transparent; color: var(--text);
+  border-radius: 0; border: 1px solid var(--line-strong); background: transparent; color: var(--text);
   font: inherit; text-align: left; cursor: pointer;
 }
 .shop-choice:hover { background: var(--surface); }
-.shop-choice:focus-visible { outline: 2px solid var(--pink-hover); outline-offset: 3px; }
-.shop-choice[aria-checked="true"] { border-color: var(--pink); background: var(--pink-soft); }
+.shop-choice:focus-visible { outline: 2px solid var(--lime-hover); outline-offset: 3px; }
+.shop-choice[aria-checked="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--lime) 12%, transparent); }
 .shop-choice-ico { flex: none; display: grid; color: var(--muted); }
-.shop-choice[aria-checked="true"] .shop-choice-ico { color: var(--pink); }
+.shop-choice[aria-checked="true"] .shop-choice-ico { color: var(--accent); }
 .shop-choice-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .shop-choice-word { font: var(--t-body); font-weight: 600; }
 .shop-choice-sub { font: var(--t-meta); color: var(--muted); }
-.shop-choice-tick { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--on-pink); background: var(--pink); visibility: hidden; }
+.shop-choice-tick { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 0; color: var(--on-accent); background: var(--accent); visibility: hidden; }
 .shop-choice[aria-checked="true"] .shop-choice-tick { visibility: visible; }
 .shop-gstin { font-variant-numeric: tabular-nums; letter-spacing: .06em; }
-.shop-pick { border-radius: var(--r-input); border: 1px solid var(--line); background: var(--surface); min-height: 64px; cursor: pointer; }
+.shop-pick { border-radius: 0; border: 1px solid var(--line); background: var(--surface); min-height: 64px; cursor: pointer; }
 .shop-pick:hover { border-color: var(--line-strong); }
 .shop-pick[aria-invalid] { border-color: var(--needs); }
 .shop-pick.is-empty .row-title { color: var(--muted); font-weight: 500; }
@@ -125,8 +135,8 @@ button.sv5-row-open:focus-visible { outline: 2px solid var(--pink-hover); outlin
 .shop-derived > svg { color: var(--good); }
 .shop-picker-title { margin: 4px 0 0; font: var(--t-title); }
 .shop-states .list { max-height: none; }
-.shop-states button.row[aria-pressed="true"] .row-title { color: var(--pink); }
-.shop-state-tick { color: var(--pink); }
+.shop-states button.row[aria-pressed="true"] .row-title { color: var(--accent); }
+.shop-state-tick { color: var(--accent); }
 .shop-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .shop-ok { color: var(--good); }
 .shop-ok > svg { color: var(--good); }
