@@ -16,6 +16,9 @@ addStrings({
   "shell.saved": ["Saved", "सेव हो गया", "ಉಳಿಸಲಾಗಿದೆ"],
   "shell.locked": ["Locked. Try again in {n} minutes.", "बंद है। {n} मिनट बाद फिर कोशिश करें।", "ಲಾಕ್ ಆಗಿದೆ. {n} ನಿಮಿಷದ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."],
   "shell.offlineShort": ["Offline", "ऑफ़लाइन", "ಆಫ್‌ಲೈನ್"],
+  "shell.menuShop": ["Shop details", "दुकान की जानकारी", "ಅಂಗಡಿ ವಿವರ"],
+  "shell.waitingWord": ["waiting", "इंतज़ार में", "ಕಾಯುತ್ತಿವೆ"],
+  "shell.account": ["Account and settings", "खाता और सेटिंग", "ಖಾತೆ ಮತ್ತು ಸೆಟ್ಟಿಂಗ್"],
   "shell.talk": ["Speak", "बोलें", "ಮಾತಾಡಿ"],
   "shell.missingTitle": ["Not on this server yet", "यह अभी इस सर्वर पर नहीं है", "ಇದು ಈ ಸರ್ವರ್‌ನಲ್ಲಿ ಇನ್ನೂ ಇಲ್ಲ"],
 });

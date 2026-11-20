@@ -183,7 +183,7 @@ function interimBadges() {
 
 function syncShell() {
   const b = state.business;
-  setShop({ name: b && b.name ? b.name : "", stream: state.stream });
+  setShop({ name: b && b.name ? b.name : "", city: b && b.city ? b.city : "", stream: state.stream });
   setNavAgentState(agentState());
   interimBadges();
 }

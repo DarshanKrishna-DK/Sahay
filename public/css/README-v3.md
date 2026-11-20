@@ -194,9 +194,20 @@ under the title on phones; up to 3 actions, primary first). No chips or pills in
 - Auth (W5): use `createLangSwitch()` and call `setUiLang()` instead of `setLang()` when a language is picked;
   do not switch the UI to `business.language` after log in.
 
-### Sidebar (concave)
-Full width at both ends (100px tablet, 120px from 1280), the right edge curving in to its narrowest at
-the vertical centre (64 / 76px). Items follow the curve; the marker slides along it. `--nav-w` is the full width.
+### Sidebar (concave; Stitch v4 layout)
+- 1280px and up (`--nav-w` 232): wide glass sidebar, logo + "Sahay" wordmark on top, rows of icon + word (Sahay,
+  Buy, Sell, Stock, Money, My Sahay), active row = lime pill that slides along the edge; waiting badge on Buy.
+- 600-1279 (`--nav-w` 100): narrow concave rail (logo, orb socket, icon over word, My Sahay at the foot).
+- Both: full width at top and bottom, right edge curving inward to its narrowest at the vertical centre; items
+  follow the curve; hex dots show through the glass. Phone landscape: a straight 72px rail.
+
+### Top bar (600px and up) / capsule (phone)
+- Top bar: shop initials tile, shop name + city chip (only when the shop has a city), live dot + "Automated
+  assistant" under the name; right: language switcher, "N waiting" lime-outline pill (only when N > 0; opens
+  the tray), account initials (menu: My Sahay, Shop details, History, light/dark screen).
+- Phone capsule: logo, shop name + live dot, waiting count, account; row 2: the notice chip + language switcher.
+- `pageHead({ title, accent, sub, actions, speakKey })`: `accent` is the lime part of the title
+  ("Namaste, " + accent shop name).
 
 ## 6. Removed (do not reference)
 - Files gone: the v2 edge module, `js/app/nav.js`, the v2 token file, the temporary bridge sheet.

@@ -95,14 +95,18 @@ export function bigNumber(text, { kind = "amount", unit = null, tag = "p" } = {}
 }
 
 /**
- * pageHead({ title, sub, actions: [node], speakKey }) - v4: every screen starts with it. A big display
- * title (left), one plain line under it, the screen's primary action(s) on the right on laptops and
- * under the title on phones. No chips or pills in the head.
+ * pageHead({ title, accent, sub, actions: [node], speakKey }) - v4 (Stitch): every screen starts with
+ * it. A big display title (left) whose `accent` part is lime ("Namaste, " + accent "Lakshmi Provision
+ * Mart"), one plain line under it, the screen's primary action(s) on the right on laptops and under
+ * the title on phones. No chips or pills in the head.
  */
-export function pageHead({ title, sub, actions = [], speakKey } = {}) {
+export function pageHead({ title, accent, sub, actions = [], speakKey } = {}) {
+  const h1 = h("h1", { class: "page-title" },
+    title ? scripted("span", title) : null,
+    accent ? scripted("span", accent, { class: "page-title-accent" }) : null);
   return h("header", { class: "page-head" },
     h("div", { class: "page-head-text" },
-      scripted("h1", title || "", { class: "page-title" }),
+      h1,
       sub ? scripted("p", sub, { class: "page-sub" }) : null),
     actions.length || speakKey ? h("div", { class: "page-actions" },
       ...actions.slice(0, 3),

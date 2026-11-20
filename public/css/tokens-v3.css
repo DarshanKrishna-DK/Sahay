@@ -245,7 +245,7 @@
 
 @media (min-width: 600px) { :root { --pad-x: 24px; --nav-w: 100px; --content-top: calc(28px + var(--safe-t) + var(--capsule-h) + 12px); } }
 @media (min-width: 1024px) { :root { --pad-x: 32px; } }
-@media (min-width: 1280px) { :root { --nav-w: 120px; } }
+@media (min-width: 1280px) and (min-height: 501px) { :root { --nav-w: 232px; } }  /* wide labelled sidebar (Stitch v4) */
 @media (min-width: 1280px) { :root { --agent-col: 320px; } }  /* 1280-1439: the screen keeps two columns */
 @media (min-width: 1440px) { :root { --agent-col: 380px; } }
 @media (min-width: 1600px) { :root { --agent-col: 420px; } }

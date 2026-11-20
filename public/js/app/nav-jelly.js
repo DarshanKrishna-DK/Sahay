@@ -8,6 +8,11 @@
 // active item with a short jelly stretch (a fade under reduced motion). Bottom: My Sahay and theme.
 // The UI language switcher lives in the top bar (lang-switch.js), not here. In the rail the depth is 0.
 //
+// From 1280px (Stitch v4, 03-home-laptop) it is a wide glass sidebar: logo + "Sahay" wordmark on top,
+// rows of icon + word (Sahay, Buy, Sell, Stock, Money, My Sahay), the active row a lime pill that slides
+// along the concave edge. Below 1280 it is the narrow rail (orb socket, icon over word, My Sahay below).
+// CSS sets --nj-mode: wide | rail; the extra rows (Sahay, My Sahay) only show in the wide mode.
+//
 // The container (nav.nav-jelly) carries no filter, mask, opacity or transform.
 //
 // createNavJelly({ items, onOrb, onTheme }) -> { el, update(model), relayout() }
@@ -56,9 +61,15 @@ export function createNavJelly({ items, onOrb, onTheme }) {
     h("span", { class: "nj-word nj-orb-word" }));
   orbLink.addEventListener("click", (e) => onOrb(e));
 
-  const links = items.map((it) => h("a", { class: "nj-item", href: `#/${it.id}`, dataset: { route: it.id } },
-    h("span", { class: "nj-ico", "aria-hidden": "true" }, icon(it.icon, 28), h("span", { class: "badge nj-badge", hidden: true })),
-    h("span", { class: "nj-word" })));
+  const rows = [
+    { id: "sahay", icon: "home", key: "nav.sahay", wideOnly: true },
+    ...items,
+    { id: "me", icon: "user", key: "nav.me", wideOnly: true },
+  ];
+  const links = rows.map((it) => h("a", { class: `nj-item${it.wideOnly ? " nj-wide-only" : ""}`, href: `#/${it.id}`, dataset: { route: it.id } },
+    h("span", { class: "nj-ico", "aria-hidden": "true" }, icon(it.icon, 26), h("span", { class: "badge nj-badge", hidden: true })),
+    h("span", { class: "nj-word" }),
+    it.id === "sahay" ? h("span", { class: "nj-live", "aria-hidden": "true" }) : null));
 
   const marker = h("span", { class: "nj-marker", "aria-hidden": "true" });
   const me = h("a", { class: "nj-me", href: "#/me", dataset: { route: "me" } },
@@ -66,7 +77,7 @@ export function createNavJelly({ items, onOrb, onTheme }) {
     h("span", { class: "nj-word" }));
   const themeBtn = h("button", { class: "nj-tool nj-theme tip-right", type: "button" });
   themeBtn.addEventListener("click", () => onTheme());
-  const brand = h("a", { class: "nj-brand", href: "#/sahay" }, brandMark({ size: 40 }));
+  const brand = h("a", { class: "nj-brand", href: "#/sahay" }, brandMark({ size: 44, word: true }));
 
   const el = h("nav", { class: "nav-jelly" },
     shadow, glass, rim,
@@ -79,8 +90,15 @@ export function createNavJelly({ items, onOrb, onTheme }) {
   let markerAt = null; // { x, y, route }
   let geo = { w: 0, h: 0, depth: 0 };
 
-  /** Centre of an item's icon in nav coordinates, after its curve offset. */
+  const wide = () => getComputedStyle(el).getPropertyValue("--nj-mode").trim() === "wide";
+  const shown = (l) => l.getClientRects().length > 0;
+
+  /** Where the marker sits for an item: its icon (rail) or the whole row (wide), after the curve offset. */
   function iconCentre(link) {
+    if (wide()) {
+      const dxw = Number(link.dataset.dx || 0);
+      return { x: link.offsetLeft + dxw + link.offsetWidth / 2, y: link.offsetTop + link.offsetHeight / 2 };
+    }
     const ico = link.querySelector(".nj-ico");
     const dx = Number(link.dataset.dx || 0);
     return { x: link.offsetLeft + dx + ico.offsetLeft + ico.offsetWidth / 2, y: link.offsetTop + ico.offsetTop + ico.offsetHeight / 2 };
@@ -104,6 +122,7 @@ export function createNavJelly({ items, onOrb, onTheme }) {
     cutPath.setAttribute("d", d);
     for (const [k, v] of Object.entries({ x: -80, y: -80, width: w + 160, height: hgt + 160 })) { cut.setAttribute(k, v); cutRect.setAttribute(k, v); }
     for (const link of links) {
+      if (!shown(link)) continue;
       const yc = link.offsetTop + link.offsetHeight / 2;
       const dx = Math.round(concaveX(yc, w, hgt, depth) - w / 2);
       link.dataset.dx = String(dx);
@@ -114,7 +133,7 @@ export function createNavJelly({ items, onOrb, onTheme }) {
   }
 
   function placeMarker(animate) {
-    const active = links.find((l) => l.dataset.route === model.route);
+    const active = links.find((l) => l.dataset.route === model.route && shown(l));
     if (!active) {
       marker.classList.remove("is-on");
       markerAt = null;
@@ -170,11 +189,12 @@ export function createNavJelly({ items, onOrb, onTheme }) {
     orbLink.dataset.agent = model.agentState || "idle";
     orb.set(model.agentState || "idle");
     for (const link of links) {
-      const it = items.find((x) => x.id === link.dataset.route);
+      const it = rows.find((x) => x.id === link.dataset.route);
       const word = t(it.key);
       link.querySelector(".nj-word").textContent = word;
       setBadge(link, badges[it.id] || 0, word);
       if (model.route === it.id) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
+      if (it.id === "sahay") link.dataset.agent = model.agentState || "idle";
     }
     me.querySelector(".nj-word").textContent = t("nav.me");
     setBadge(me, badges.me || 0, t("nav.me"));

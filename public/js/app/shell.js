@@ -42,6 +42,7 @@ let agent = "idle";
 let agentLabel = "";
 let action = null;
 let shopName = "";
+let shopCity = "";
 let stream = "connecting";
 let offline = typeof navigator !== "undefined" && navigator.onLine === false;
 let mounted = false;
@@ -50,7 +51,7 @@ let mounted = false;
 const hex = createHexField();
 const nav = createNavJelly({ items: NAV_ITEMS, onOrb, onTheme: toggleTheme });
 const dock = createNavDock({ items: NAV_ITEMS, onOrb });
-const capsule = createTopCapsule({ onWaiting: () => openTray() });
+const capsule = createTopCapsule({ onWaiting: () => openTray(), onTheme: () => toggleTheme(), themeLabel: () => (themeNow() === "dark" ? t("theme.light") : t("theme.dark")) });
 
 const main = h("main", { id: "main", tabindex: "-1" });
 const bannerSlot = h("div", { class: "banner-slot", "aria-live": "polite" });
@@ -200,7 +201,7 @@ function render() {
   };
   nav.update(model);
   dock.update(model);
-  capsule.update({ shopName, stream, offline, waiting: badges.waiting, route, action });
+  capsule.update({ shopName, city: shopCity, stream, offline, waiting: badges.waiting, route, action });
 }
 
 /* --------------------------------------------------------------- API -- */
@@ -233,8 +234,9 @@ export function setTitle(text) {
   document.title = text && text !== app && text !== t("nav.sahay") ? `${text} · ${app}` : app;
 }
 export function setAction(spec) { action = spec || null; render(); }
-export function setShop({ name, stream: s } = {}) {
+export function setShop({ name, city, stream: s } = {}) {
   if (name !== undefined) shopName = name || "";
+  if (city !== undefined) shopCity = city || "";
   if (s !== undefined) stream = s || "connecting";
   render();
 }
