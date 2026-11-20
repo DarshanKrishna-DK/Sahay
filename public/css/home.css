@@ -184,11 +184,12 @@
 
 /* =============================================================== laptop -- */
 /* One screen: the bar (66px) and the notice strip (26px) are above #main, the page keeps 48px of
-   bottom padding, so the three columns get 100dvh - 140px and nothing scrolls the page. */
+   bottom padding, so the three columns get 100dvh - 140px and nothing scrolls the page. The centre
+   column is the widest so TALK TO SAHAY, a Needs-you row and the four Today chips fit in it. */
 @media (min-width: 1024px) {
   .hm {
     display: grid; gap: 20px; align-items: stretch;
-    grid-template-columns: minmax(300px, 1fr) minmax(320px, .9fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.15fr) minmax(300px, 1fr);
     grid-template-rows: minmax(0, 1fr);
     height: max(480px, calc(100dvh - 140px - var(--safe-t) - var(--safe-b)));
   }
@@ -200,28 +201,51 @@
   /* The centre column: head, mascot, controls, then compact Needs you and Today; it scrolls by
      itself only when many decisions wait. */
   .hm-centre {
-    grid-column: 2; display: flex; flex-direction: column; align-items: stretch; gap: var(--s3);
+    grid-column: 2; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
     min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 6px; scrollbar-width: thin;
   }
   .hm-centre > * { order: 0; flex: none; }
+  .hm-head { gap: 4px; }
   .hm-figure { align-self: center; }
 
-  /* Compact cards for the centre column. */
-  .hm-card { padding: var(--s3) var(--s4); gap: var(--s2); }
-  .hm-card .card-title { font-size: 1.5rem; line-height: 1.05; }
-  .hm-card .card-head { margin-bottom: 0; }
-  .hm-tiles { gap: 10px; }
-  .hm-tile { min-height: 64px; padding: 10px 12px; gap: 4px; }
-  .hm-tile .tile-value { font-size: 1.75rem; }
-  .hm-tile-word { font-size: 12px; letter-spacing: .04em; }
-  .hm-need { min-height: 56px; padding: 8px var(--s4); gap: 10px; }
-  .hm-need .row-ico { width: 36px; height: 36px; }
-  .hm-need-end { flex-direction: column; align-items: flex-end; gap: 4px; }
-  .hm-need-end .amount { font-size: 1.125rem; }
+  /* TALK TO SAHAY full width, TYPE full width under it; in a call MUTE + END share a row, TYPE under. */
+  .hm-actions { flex-wrap: wrap; gap: 6px; }
+  .hm-actions .btn { padding-inline: 16px; }
+  .hm-talk, .hm-typebtn { flex: 1 1 100%; }
+  .hm-talk, .hm-mute, .hm-end { min-height: 52px; }
+  .hm-mute, .hm-end { flex: 1 1 calc(50% - 3px); }
+  .hm-typebtn { min-height: 44px; }
+
+  /* Compact cards: HUD titles, tight padding. */
+  .hm-card { padding: 10px 12px; gap: 6px; }
+  .hm-card .card-title { font: var(--t-label); text-transform: var(--hud-case); letter-spacing: var(--hud-track); color: var(--text); }
+  .hm-card .card-head { margin: 0; min-height: 0; }
+  .hm-cards { gap: 8px; }
+
+  /* Needs-you row as a vertical stack: what (up to 2 lines), who, then amount left and CHECK right. */
+  .hm-needs-list { margin: 0 -12px; }
+  .hm-need {
+    display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-areas: "ico main" "end end";
+    align-items: start; gap: 4px 10px; min-height: 0; padding: 6px 12px;
+  }
+  .hm-need .row-ico { grid-area: ico; width: 36px; height: 36px; }
+  .hm-need .row-main { grid-area: main; }
+  .hm-need .row-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.35; }
+  .hm-need-end { grid-area: end; display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: var(--s2); }
+  .hm-need-end .amount { font-size: 1.25rem; }
+  .hm-check { min-height: 32px; padding: 0 14px; }
+
+  /* Today: one row of four small chips, icon + number on top, the word under it. */
+  .hm-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .hm-tile {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "ico val" "word word";
+    align-items: center; justify-content: stretch; gap: 2px 4px; min-height: 52px; padding: 6px 8px;
+  }
+  .hm-tile .tile-label { display: contents; }
+  .hm-tile .tile-label > svg { grid-area: ico; width: 14px; height: 14px; }
+  .hm-tile .tile-value { grid-area: val; font-size: 1.25rem; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hm-tile-word { grid-area: word; font-size: 11px; letter-spacing: .04em; color: var(--muted); }
 }
 @media (min-width: 1024px) and (max-height: 760px) {
-  .hm-centre { gap: var(--s2); }
-  .hm-actions .btn { min-height: 56px; }
-  .hm-tile { min-height: 58px; padding: 8px 10px; }
-  .hm-tile .tile-value { font-size: 1.5rem; }
+  .hm-centre { gap: 6px; }
 }

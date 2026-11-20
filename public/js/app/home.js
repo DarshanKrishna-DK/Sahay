@@ -59,7 +59,7 @@ function figureSize() {
   if (mq("(max-width: 767px)")) return mq("(max-height: 700px)") ? 120 : 144;
   if (mq("(max-width: 1023px)")) return 144;
   // Laptop: the mascot sits in the centre column of a one-screen layout.
-  return mq("(max-height: 760px)") ? 120 : mq("(max-height: 900px)") ? 144 : 168;
+  return mq("(max-height: 760px)") ? 112 : mq("(max-height: 900px)") ? 144 : 168;
 }
 function createFigure() {
   preloadAgent();
@@ -81,42 +81,41 @@ function createFigure() {
 }
 
 /**
- * The Discovery board (W4A, discovery.js). Imported defensively: until the module lands, or when it
- * reports nothing to show, the panel shows its own empty state. Accepted shapes:
- * createDiscoveryBoard() -> { el, update?(state, parts), isEmpty?(), onChange?(fn), pause?(), destroy?() }.
- * pause() stops Listen in (Home left); destroy() also unhooks it (Home torn down).
+ * The Discovery board (W4A, discovery.js): createDiscoveryBoard() -> { el, update(), pause(), destroy() }.
+ * Imported defensively. Once it loads, the board is always shown and shows its own empty state
+ * ("Nothing being bought right now"); Home's empty picture is only the placeholder until then.
+ * `onChange(hasContent)` tells the panel whether the board shows more than its empty state (phones
+ * show the board only then).
  */
 function createBoardSlot(onChange) {
   const body = h("div", { class: "hm-board-body" });
-  const empty = h("div", { class: "hm-board-empty" },
+  const placeholder = h("div", { class: "hm-board-empty" },
     h("span", { class: "hm-board-art", "aria-hidden": "true" }),
     scripted("p", "", { class: "hm-board-empty-text" }));
   let board = null;
-  const isEmpty = () => {
-    if (!board) return true;
-    if (typeof board.isEmpty === "function") { try { return Boolean(board.isEmpty()); } catch { return false; } }
-    if (board.el && board.el.dataset && board.el.dataset.empty !== undefined) return board.el.dataset.empty === "true";
-    return !(board.el && board.el.childElementCount);
-  };
+  // The board's own empty state is the kit's emptyState() (class "empty") as its only child.
+  const hasContent = () => Boolean(board && board.el && board.el.childElementCount
+    && !(board.el.childElementCount === 1 && board.el.firstElementChild.classList.contains("empty")));
   function paint() {
-    const e = isEmpty();
-    empty.querySelector(".hm-board-empty-text").textContent = t("home.boardEmpty");
-    empty.hidden = !e;
-    if (board && board.el) board.el.hidden = e && typeof board.isEmpty === "function";
-    onChange(e);
+    placeholder.querySelector(".hm-board-empty-text").textContent = t("home.boardEmpty");
+    placeholder.hidden = Boolean(board);
+    onChange(hasContent());
   }
-  body.append(empty);
+  body.append(placeholder);
   import("./discovery.js").then((m) => {
     if (!m || typeof m.createDiscoveryBoard !== "function") return;
     board = m.createDiscoveryBoard();
-    if (board && board.el) body.append(board.el);
-    if (board && typeof board.onChange === "function") board.onChange(paint);
+    if (board && board.el) {
+      body.append(board.el);
+      // The board re-renders itself from the store; follow its content for the phone rule.
+      new MutationObserver(() => onChange(hasContent())).observe(board.el, { childList: true });
+    }
     paint();
-  }).catch(() => { /* no board module on this build yet: the empty state stays */ });
+  }).catch(() => { /* no board module on this build yet: the placeholder stays */ });
   return {
     el: body,
-    update(s, parts) {
-      if (board && typeof board.update === "function") { try { board.update(s, parts); } catch (err) { console.error(err); } }
+    update() {
+      if (board && typeof board.update === "function") { try { board.update(); } catch (err) { console.error(err); } }
       paint();
     },
     /** Home left (route change, page hidden away): stop Listen in. */
@@ -162,7 +161,7 @@ export function createHome() {
   /* ---- discovery board panel ---- */
   const boardTitle = h("h2", { class: "hm-panel-title", id: "hm-board-title" });
   const boardPanel = h("section", { class: "hm-panel hm-board-panel", "aria-labelledby": "hm-board-title", dataset: { empty: "true" } });
-  const boardSlot = createBoardSlot((isEmpty) => { boardPanel.dataset.empty = String(isEmpty); });
+  const boardSlot = createBoardSlot((hasContent) => { boardPanel.dataset.empty = String(!hasContent); });
   boardPanel.append(h("header", { class: "hm-panel-head" }, boardTitle), boardSlot.el);
 
   const centre = h("section", { class: "hm-centre", "aria-labelledby": "hm-title" });
@@ -430,7 +429,7 @@ export function createHome() {
     renderState(v);
     if (all || parts.has("call") || parts.has("business") || parts.has("agent")) { renderActions(); renderNotes(); renderComposer(); }
     if (all || parts.has("call") || parts.has("transcript") || parts.has("business")) renderConvo();
-    boardSlot.update(state, parts);
+    boardSlot.update();
     renderCards();
     el.dataset.live = String(inCall());
   }
