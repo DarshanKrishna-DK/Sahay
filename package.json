@@ -1,8 +1,9 @@
 {
   "name": "sahay",
   "version": "2.0.0",
-  "description": "Voice-first procurement agent for small Indian businesses: finds vendors, negotiates, asks for approval, then raises the purchase order and a test-mode payment link.",
+  "description": "Voice-first AI assistant for Indian kirana owners: buys (IndiaMART discovery and bargaining), sells with GST bills, keeps the khata and stock, in Hindi, Kannada and English; nothing involving money happens without the owner's yes.",
   "main": "server.js",
+  "license": "MIT",
   "type": "commonjs",
   "engines": {
     "node": ">=22.5.0"
@@ -22,8 +23,7 @@
     "pdfkit": "^0.15.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "sileo": "0.1.6",
-    "thinking-orbs": "0.3.2"
+    "sileo": "0.1.6"
   },
   "devDependencies": {
     "esbuild": "0.24.2"

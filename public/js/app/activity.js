@@ -37,7 +37,7 @@ export function nowLine() {
 }
 
 /**
- * One word for what the agent is doing, for the thinking orbs (thinking-orb.js maps it to an orb
+ * One word for what the agent is doing (Home maps it to the agent figure
  * state): connecting | listening | thinking | speaking | bargaining | searching | composing |
  * working | idle. Call states win (they answer the owner now); then running work.
  */

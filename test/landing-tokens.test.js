@@ -182,3 +182,17 @@ test("the footer keeps its content (1425810) and follows v7: navy night, square 
   for (const f of fills) assert.ok(v7.has(f), `footer art colour ${f} is in the v7 palette`);
   assert.ok(fills.has("#A8E27C") && fills.has("#E3EDA6") && fills.has("#112A60"), "lime Sahay, the moon, a navy sky");
 });
+
+test("the landing page and its scripts carry no emoji: icons are SVG", () => {
+  const files = [
+    path.join(PUBLIC, "index.html"),
+    path.join(CSS, "landing.css"),
+    ...fs.readdirSync(path.join(PUBLIC, "js", "landing")).map((f) => path.join(PUBLIC, "js", "landing", f)),
+  ];
+  const emoji = /[←-⇿⌀-⏿☀-➿⬀-⯿️]|[\u{1F000}-\u{1FAFF}]/u;
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8");
+    const hit = text.match(emoji);
+    assert.equal(hit, null, `${path.relative(PUBLIC, file)} contains ${hit && JSON.stringify(hit[0])}`);
+  }
+});

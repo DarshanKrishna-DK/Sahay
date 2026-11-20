@@ -1,4 +1,0 @@
-/* Preview page for one figure: /figures/preview.html?fig=<name>&theme=dark|light&lang=en|hi|kn */
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--ink-0); color: var(--text-hi); font-family: var(--font-body); }
-.preview-page { width: min(640px, 100% - 32px); margin: 48px auto 96px; }
