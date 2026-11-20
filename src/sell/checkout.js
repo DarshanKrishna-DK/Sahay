@@ -7,12 +7,18 @@
  * shop as the one being paid and the customer as the payer; nothing here is a simulated vendor.
  *
  *   ensureCheckout(businessId, invoiceId) -> the pay page PUBLIC_URL/pay/<token>, where token =
- *     "inv_" + 128 random bits (only its SHA-256 is stored, on the invoice), bound to a Razorpay
- *     order for what is still open on the invoice. Only an issued invoice (consumed approval:
- *     gate.assertIssued) gets one.
- *   checkoutForToken(token) -> what the public pay page shows. The amount is what is open NOW: when
- *     money came in since the bound order was made (a cash receipt, a part payment), a new
- *     test-mode order is made for the open amount and bound to the same link before Checkout opens.
+ *     "inv_" + 128 random bits, bound to a Razorpay order for what is still open on the invoice.
+ *     The token is LOOKED UP only by its SHA-256 (invoices.pay_token_hash), but the full URL is also
+ *     kept (invoices.pay_url and the invoice.pay_link audit row) so the owner's screen and Telegram
+ *     can show the link again: whoever can read this business's data can open its pay pages. That
+ *     is intended (the owner hands the link out); a pay page shows the bill and lets it be paid,
+ *     nothing else. Only an issued invoice (consumed approval: gate.assertIssued) gets one.
+ *   checkoutForToken(token) -> what the public pay page shows. First it reconciles: a payment
+ *     Razorpay captured on one of the invoice's orders that Sahay never recorded (the browser
+ *     closed before its verify call) is recorded now, through the same amount and order checks as
+ *     verify. Then the amount is what is open NOW: when money came in since the bound order was
+ *     made (a cash receipt, a part payment), a new test-mode order is made for the open amount and
+ *     bound to the same link before Checkout opens.
  *   verifyPayment(token, {razorpay_payment_id, razorpay_order_id, razorpay_signature}) -> checks
  *     HMAC-SHA256(<order id>|payment id) with the key secret for an order made for this invoice
  *     (never one the browser invents), checks Razorpay was paid exactly that order's amount, and
@@ -52,6 +58,9 @@ function openPaise(businessId, invoice) {
 }
 
 /* ------------------------------------------------------ pay orders --- */
+
+/** Orders of one invoice the pay page re-checks with Razorpay on every load (newest first). */
+const RECONCILE_ORDERS = 5;
 
 /** The invoice_pay_orders row of `razorpayOrderId` for this invoice, or null. */
 function payOrder(businessId, invoiceId, razorpayOrderId) {
@@ -195,6 +204,7 @@ async function checkoutForToken(token, { razorpay = config.razorpay, now = Date.
   return oneAtATime(`${found.business_id}:${found.id}`, async () => {
     const row = rowForToken(token);
     let invoice = gate.assertIssued(row.business_id, row.id);
+    if (invoice.status !== "paid" && (await reconcile(row, invoice, { razorpay, authorization }))) invoice = gate.assertIssued(row.business_id, row.id);
     const paid = invoice.status === "paid";
     if (Date.parse(row.pay_expires_at) <= now() && !paid) throw new payments.PaymentError("PAY_LINK_EXPIRED", "This payment link has expired; ask the shop for a new one.");
     const amountPaise = paid ? 0 : openPaise(row.business_id, invoice);
@@ -262,25 +272,80 @@ async function verifyPayment(token, payment, { razorpay = config.razorpay } = {}
   if (paidAlready(row.business_id, paymentId)) return { invoiceId: invoice.id, number: invoice.number, status: invoices.get(row.business_id, row.id).status, already: true };
 
   const order = await payments.razorpayCall(razorpay, authorization, "GET", `/orders/${encodeURIComponent(orderId)}`);
-  const amountPaise = Number.isInteger(order?.amount_paid) && order.amount_paid > 0 ? order.amount_paid : null;
-  if (!amountPaise || order.id !== orderId) throw new payments.PaymentError("RAZORPAY_BAD_RESPONSE", "Razorpay does not show this order as paid.");
-  // An order made before this table existed has no recorded amount: it must at least be paid in full.
+  if (!(Number.isInteger(order?.amount_paid) && order.amount_paid > 0) || order.id !== orderId) {
+    throw new payments.PaymentError("RAZORPAY_BAD_RESPONSE", "Razorpay does not show this order as paid.");
+  }
+  return recordPaid(row, invoice, { orderId, paymentId, made, order, via: "verify" });
+}
+
+/**
+ * The one way an invoice payment is recorded (verify and reconcile). Razorpay's order must be for
+ * exactly the amount this invoice's order was made for and show exactly that paid (an order made
+ * before invoice_pay_orders existed has no recorded amount: it must at least be paid in full);
+ * with `paymentAmount` (reconcile) the captured payment must be that amount too. Emits invoice.paid
+ * once per payment id; a mismatch is reported as an error event and throws PAYMENT_AMOUNT_MISMATCH.
+ */
+function recordPaid(row, invoice, { orderId, paymentId, made, order, via, paymentAmount }) {
+  const amountPaise = order.amount_paid;
   const due = made?.amount_paise ?? order.amount;
-  if (order.amount !== due || amountPaise !== due) {
-    events.emit(row.business_id, "error", { code: "PAYMENT_AMOUNT_MISMATCH", scope: "invoice.pay", invoiceId: row.id, message: `Razorpay shows ${amountPaise} paise paid on an order made for ${due}; nothing was recorded.` });
+  if (order.amount !== due || amountPaise !== due || (paymentAmount !== undefined && paymentAmount !== due)) {
+    events.emit(row.business_id, "error", {
+      code: "PAYMENT_AMOUNT_MISMATCH", scope: "invoice.pay", via, invoiceId: row.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId,
+      message: `Razorpay shows ${paymentAmount ?? amountPaise} paise paid on an order made for ${due}; nothing was recorded.`,
+    });
     throw new payments.PaymentError("PAYMENT_AMOUNT_MISMATCH", "The amount paid is not the amount of this bill's payment order.");
   }
-
+  const status = () => invoices.get(row.business_id, row.id).status;
   return db.transaction(() => {
-    if (paidAlready(row.business_id, paymentId)) return { invoiceId: invoice.id, number: invoice.number, status: invoices.get(row.business_id, row.id).status, already: true };
+    if (paidAlready(row.business_id, paymentId)) return { invoiceId: invoice.id, number: invoice.number, status: status(), already: true };
     events.emit(
       row.business_id,
       "invoice.paid",
-      { invoiceId: invoice.id, number: invoice.number, customerId: invoice.customerId, amountPaise, razorpayPaymentId: paymentId, razorpayOrderId: orderId, testMode: true },
+      { invoiceId: invoice.id, number: invoice.number, customerId: invoice.customerId, amountPaise, razorpayPaymentId: paymentId, razorpayOrderId: orderId, testMode: true, via },
       { actor: "system" },
     );
-    return { invoiceId: invoice.id, number: invoice.number, status: invoices.get(row.business_id, row.id).status, already: false };
+    return { invoiceId: invoice.id, number: invoice.number, status: status(), already: false };
   });
+}
+
+const mismatchReported = (businessId, paymentId) =>
+  repo.listAudit(businessId, { type: "error", limit: 1000 }).some((r) => r.detail?.code === "PAYMENT_AMOUNT_MISMATCH" && r.detail?.razorpayPaymentId === paymentId);
+
+/**
+ * Record payments Razorpay captured on this invoice's orders that Sahay never heard about (the
+ * customer's browser closed before /verify). Checks the newest RECONCILE_ORDERS orders and the bound
+ * one; fetches an order's payments (GET /orders/:id/payments) only when Razorpay shows that order
+ * paid; records each captured payment through recordPaid. A wrong amount is reported once and
+ * skipped, so the page still opens for what is open. A Razorpay failure throws: no page from a
+ * guess. Returns true when something was recorded.
+ */
+async function reconcile(row, invoice, { razorpay, authorization }) {
+  const orders = db
+    .prepare("SELECT razorpay_order_id, amount_paise FROM invoice_pay_orders WHERE business_id = ? AND invoice_id = ? ORDER BY seq DESC LIMIT ?")
+    .all(row.business_id, row.id, RECONCILE_ORDERS)
+    .map((made) => ({ orderId: made.razorpay_order_id, made }));
+  if (row.razorpay_order_id && !orders.some((o) => o.orderId === row.razorpay_order_id)) {
+    orders.push({ orderId: row.razorpay_order_id, made: payOrder(row.business_id, row.id, row.razorpay_order_id) });
+  }
+  let recorded = false;
+  for (const { orderId, made } of orders) {
+    if (!RAZORPAY_ORDER_ID.test(orderId ?? "")) continue;
+    const order = await payments.razorpayCall(razorpay, authorization, "GET", `/orders/${encodeURIComponent(orderId)}`);
+    if (order?.id !== orderId || !(Number.isInteger(order.amount_paid) && order.amount_paid > 0)) continue;
+    const listed = await payments.razorpayCall(razorpay, authorization, "GET", `/orders/${encodeURIComponent(orderId)}/payments`);
+    const captured = (Array.isArray(listed?.items) ? listed.items : []).filter(
+      (p) => p?.status === "captured" && p.order_id === orderId && p.currency === "INR" && typeof p.id === "string" && PAYMENT_ID.test(p.id) && Number.isInteger(p.amount),
+    );
+    for (const payment of captured) {
+      if (paidAlready(row.business_id, payment.id) || mismatchReported(row.business_id, payment.id)) continue;
+      try {
+        if (!recordPaid(row, invoice, { orderId, paymentId: payment.id, made, order, via: "reconcile", paymentAmount: payment.amount }).already) recorded = true;
+      } catch (err) {
+        if (err?.code !== "PAYMENT_AMOUNT_MISMATCH") throw err;
+      }
+    }
+  }
+  return recorded;
 }
 
 module.exports = { ensureCheckout, checkoutForToken, verifyPayment, isInvoiceToken, TOKEN_TEXT };

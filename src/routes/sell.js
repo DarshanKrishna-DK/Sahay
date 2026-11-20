@@ -18,6 +18,7 @@
  *   POST /api/pay/:token/verify       -> {status, number, already}
  */
 
+const crypto = require("node:crypto");
 const express = require("express");
 const auth = require("../auth");
 const limits = require("../limits");
@@ -30,10 +31,13 @@ const checkout = require("../sell/checkout");
 const invoicePdf = require("../sell/invoice-pdf");
 const { invoiceView, khata } = require("../sell/view");
 const { sellToolError } = require("../tools/sell");
+const { rateCheck } = require("../client-address");
+const { RATE } = require("./api");
 
 const MINUTE = 60 * 1000;
-const PAY_LIMIT = { max: 60, windowMs: 10 * MINUTE };
 const WRITE_LIMIT = { max: 60, windowMs: MINUTE };
+/** Retry-After for a 429 on the public pay routes (their windows, src/routes/api.js RATE). */
+const PAY_RETRY_SECONDS = Math.ceil(RATE.payPage.perToken.windowMs / 1000);
 
 class SellRouteError extends Error {
   constructor(status, code, message) {
@@ -49,7 +53,7 @@ const languageOf = (businessId) => (businessId ? repo.getBusiness(businessId)?.l
 /** A Sell error as `{code, message, say}` with its status; anything unknown goes to the app's handler. */
 function sendError(err, req, res, next) {
   if (err?.name === "SellRouteError") {
-    if (err.status === 429) res.set("Retry-After", String(PAY_LIMIT.windowMs / 1000));
+    if (err.status === 429) res.set("Retry-After", String(err.retryAfterSeconds ?? PAY_RETRY_SECONDS));
     return res.status(err.status).json({ code: err.code, message: err.message });
   }
   if (["SellError", "GstError", "StockError", "PaymentError", "ApprovalError"].includes(err?.name)) {
@@ -63,7 +67,29 @@ function sendError(err, req, res, next) {
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch((err) => sendError(err, req, res, next));
 
 function limit(key, { max, windowMs }) {
-  if (!limits.allow(key, max, windowMs)) throw new SellRouteError(429, "RATE_LIMITED", "Too many requests. Wait a few minutes and try again.");
+  if (!limits.allow(key, max, windowMs)) {
+    throw Object.assign(new SellRouteError(429, "RATE_LIMITED", "Too many requests. Wait a few minutes and try again."), { retryAfterSeconds: Math.ceil(windowMs / 1000) });
+  }
+}
+
+/**
+ * Run a public invoice pay route under its own per-token limit (security review r2 #4), so a flood on
+ * one link, or from one network, never starves another customer's page or verify. A token that
+ * matches no link counts against the caller's address (one shared bucket when the address is not
+ * trusted, src/client-address.js), and past that limit answers 429.
+ */
+const tokenKey = (token) => crypto.createHash("sha256").update(String(token)).digest("base64url").slice(0, 22);
+async function payLimited(req, kind, run) {
+  limit(`invoice-pay:${kind}:token:${tokenKey(req.params.token)}`, RATE[kind].perToken);
+  try {
+    return await run();
+  } catch (err) {
+    if (err?.code === "PAY_LINK_INVALID") {
+      const { key, ...window } = rateCheck(req, "pay:bad-token", RATE.badPayToken);
+      limit(key, window);
+    }
+    throw err;
+  }
 }
 
 function body(req) {
@@ -107,8 +133,8 @@ function createSellRouter() {
     "/api/pay/:token",
     wrap(async (req, res, next) => {
       if (!checkout.isInvoiceToken(req.params.token)) return next();
-      limit(`pay:ip:${req.socket?.remoteAddress ?? "unknown"}`, PAY_LIMIT);
-      res.set("Cache-Control", "no-store").json(await checkout.checkoutForToken(req.params.token));
+      const page = await payLimited(req, "payPage", () => checkout.checkoutForToken(req.params.token));
+      res.set("Cache-Control", "no-store").json(page);
     }),
   );
   router.post(
@@ -116,8 +142,7 @@ function createSellRouter() {
     (req, res, next) => (checkout.isInvoiceToken(req.params.token) ? next() : next("route")),
     express.json({ limit: "4kb" }),
     wrap(async (req, res) => {
-      limit(`pay:ip:${req.socket?.remoteAddress ?? "unknown"}`, PAY_LIMIT);
-      const { status, number, already } = await checkout.verifyPayment(req.params.token, body(req));
+      const { status, number, already } = await payLimited(req, "payVerify", () => checkout.verifyPayment(req.params.token, body(req)));
       res.set("Cache-Control", "no-store").json({ status, number, already });
     }),
   );

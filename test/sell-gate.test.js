@@ -175,6 +175,8 @@ async function fakeRazorpay(t) {
       const order = { id: `order_Inv${String(ordersMade).padStart(10, "0")}`, entity: "order", amount: body.amount, amount_paid: 0, currency: body.currency, receipt: body.receipt, status: "created" };
       orders.set(order.id, order);
       answer = [200, order];
+    } else if (req.method === "GET" && /^\/v1\/orders\/[^/]+\/payments$/.test(req.url)) {
+      answer = [200, { entity: "collection", count: 0, items: [] }]; // the pay page reconciles; no captured payment here
     } else if (req.method === "GET" && req.url.startsWith("/v1/orders/")) {
       const order = orders.get(decodeURIComponent(req.url.slice("/v1/orders/".length)));
       answer = order ? [200, { ...order, amount_paid: paidAmounts.get(order.id) ?? order.amount, status: "paid" }] : [404, { error: { description: "no order" } }];
