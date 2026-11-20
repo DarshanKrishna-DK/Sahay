@@ -2,7 +2,7 @@
 // Voxel props shared by every Sahay scene. Axes: x runs to the screen's lower right, y to the lower
 // left, z up. Fronts face +y (the lit left face) unless a prop is added with {swap:true}.
 const { Vox } = require("./voxel");
-const { rng, hash3 } = require("./pix");
+const { rng, hash3, mix } = require("./pix");
 const P = require("./palette");
 
 const pick = (h, arr) => arr[Math.min(arr.length - 1, Math.floor(h * arr.length))];
@@ -62,15 +62,20 @@ function person(o = {}) {
   return v;
 }
 
-/** Sack with a striped band and the grain showing at the top. Origin = back-left-bottom. */
+/** Sack with a striped band, a folded rim and a mound of grain on top. Origin = back-left-bottom. */
 function sack(v, x, y, z, c = P.rice, fill = P.rice, w = 3, d = 3, h = 3, stripe = P.riceStripe) {
+  const rim = mix(c, "#5A4030", 0.18);
   for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) for (let k = 0; k < h; k++) {
-    const corner = (i === 0 || i === w - 1) && (j === 0 || j === d - 1);
-    if (corner && k === h - 1) continue;
-    v.set(x + i, y + j, z + k, stripe && k === 1 && (i === 0 || j === d - 1 || i === w - 1) ? stripe : c);
+    const edge = i === 0 || j === 0 || i === w - 1 || j === d - 1, corner = (i === 0 || i === w - 1) && (j === 0 || j === d - 1);
+    if (corner && (k === h - 1 || k === 0) && w > 2) continue;
+    let col = c;
+    if (stripe && h > 3 && k === Math.floor(h / 2) && edge) col = stripe;
+    if (k === h - 1 && edge) col = rim;
+    if (k === h - 1 && !edge) col = fill;
+    v.set(x + i, y + j, z + k, col);
   }
-  for (let i = 1; i < w - 1; i++) for (let j = 1; j < d - 1; j++) v.set(x + i, y + j, z + h - 1, fill);
-  if (w >= 3 && d >= 3) v.set(x + (w >> 1), y + (d >> 1), z + h, fill);
+  const fillHi = mix(fill, "#FFFFFF", 0.2);
+  if (w >= 3 && d >= 3) for (let i = 1; i < w - 1; i++) for (let j = 1; j < d - 1; j++) if (w < 5 || (i > 1 && j > 1 && i < w - 2 && j < d - 2) || (i + j) % 2 === 0) v.set(x + i, y + j, z + h, fillHi);
 }
 
 /** Indian kirana shop: open front (+y), striped awning, Devanagari-like sign, shelves, counter, roof tank. */
