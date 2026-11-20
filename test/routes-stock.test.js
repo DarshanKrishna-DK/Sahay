@@ -63,6 +63,9 @@ test("every stock route needs the session cookie", async () => {
     assert.equal((await call(base, "GET", "/api/stock")).status, 401);
     assert.equal((await call(base, "POST", "/api/orders/ord_x/delivered")).status, 401);
     assert.equal((await call(base, "POST", "/api/stock/reorders/rop_x/decision", { body: { decision: "yes" } })).status, 401);
+    // The session is checked before the body is parsed: no cookie, no JSON parsing at all.
+    const raw = await realFetch(`${base}/api/stock/reorders/rop_x/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{not json" });
+    assert.equal(raw.status, 401);
   });
 });
 

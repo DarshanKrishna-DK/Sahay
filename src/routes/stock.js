@@ -74,8 +74,8 @@ function createStockRouter() {
 
   router.post(
     "/api/stock/reorders/:id/decision",
+    auth.requireSession, // before the body is parsed: nobody without a session gets JSON parsing
     json,
-    auth.requireSession,
     wrap(async (req, res) => {
       const { businessId } = req.auth;
       const sessionId = liveSessionId(businessId);

@@ -199,15 +199,22 @@ test("passkeys are stored per account, found by credential id, and the counter o
 
 /* ------------------------------------------------- passkey relying party --- */
 
-test("the relying party is the PUBLIC_URL host, or localhost when the page is on localhost", () => {
+test("the relying party is the PUBLIC_URL host; localhost only when PUBLIC_URL is unset or itself localhost", () => {
   assert.deepEqual(passkeys.relyingParty({ hostname: "sahay.example.in", protocol: "https", host: "sahay.example.in" }, "https://sahay.example.in"), {
     rpID: "sahay.example.in",
     origin: "https://sahay.example.in",
   });
+  // A public server never lets a request pick "localhost" (a forged X-Forwarded-Host under trust proxy).
   assert.deepEqual(passkeys.relyingParty({ hostname: "localhost", protocol: "http", host: "localhost:3000" }, "https://sahay.example.in"), {
-    rpID: "localhost",
-    origin: "http://localhost:3000",
+    rpID: "sahay.example.in",
+    origin: "https://sahay.example.in",
   });
+  for (const publicUrl of [null, "http://localhost:3000"]) {
+    assert.deepEqual(passkeys.relyingParty({ hostname: "localhost", protocol: "http", host: "localhost:3000" }, publicUrl), {
+      rpID: "localhost",
+      origin: "http://localhost:3000",
+    }, String(publicUrl));
+  }
   // Any other host (an IP, a forged Host header) still gets the public relying party.
   assert.deepEqual(passkeys.relyingParty({ hostname: "127.0.0.1", protocol: "http", host: "127.0.0.1:3000" }, "https://sahay.example.in").rpID, "sahay.example.in");
 });

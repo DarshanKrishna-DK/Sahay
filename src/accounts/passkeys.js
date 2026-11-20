@@ -3,8 +3,9 @@
 /**
  * Passkeys (WebAuthn) with @simplewebauthn/server 14.0.3.
  *
- * Relying party: the PUBLIC_URL host and origin; a page opened on localhost uses rpID
- * "localhost" and its own origin (local development). User verification is "preferred"
+ * Relying party: the PUBLIC_URL host and origin. Only when PUBLIC_URL is unset or is itself a
+ * localhost URL (local development) does a page on localhost get rpID "localhost" and its own
+ * origin; a public server never lets a request (Host / X-Forwarded-Host) pick it. User verification is "preferred"
  * (fingerprint / screen lock when the device has one); verification does not require it.
  *
  * A challenge is remembered in this process for 5 minutes with what it was issued for
@@ -12,6 +13,7 @@
  * once: the challenge inside the browser's response names it, so no cookie is needed.
  */
 
+const crypto = require("node:crypto");
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -31,10 +33,12 @@ const rejected = (status = 400) => new AccountError("PASSKEY_REJECTED", "That pa
 
 /**
  * `{rpID, origin}` for a request. `req` needs hostname, protocol and host (the Host header with port).
- * Only "localhost" gets its own relying party; any other host, forged or not, gets PUBLIC_URL's.
+ * "localhost" gets its own relying party only on a server whose PUBLIC_URL is unset or localhost;
+ * any other host, forged or not, gets PUBLIC_URL's (security review r2 #13).
  */
 function relyingParty({ hostname, protocol, host }, publicUrl = config.publicUrl) {
-  if (hostname === "localhost") return { rpID: "localhost", origin: `${protocol}://${host}` };
+  const local = !publicUrl || new URL(publicUrl).hostname === "localhost";
+  if (hostname === "localhost" && local) return { rpID: "localhost", origin: `${protocol}://${host}` };
   if (!publicUrl) throw new AccountError("PASSKEY_UNAVAILABLE", "Passkeys need PUBLIC_URL to be set on this server.", 503);
   const url = new URL(publicUrl);
   return { rpID: url.hostname, origin: url.origin };
@@ -128,13 +132,28 @@ async function verifyRegistration(account, response) {
 /* ------------------------------------------------------- authentication --- */
 
 /**
+ * A credential id that belongs to no passkey, the same every time for one phone (HMAC with the
+ * session secret), shaped like a real one (32 bytes, base64url).
+ */
+function decoyCredential(phone) {
+  const id = crypto.createHmac("sha256", config.sessionSecret ?? "").update(`passkey-decoy:${phone}`).digest("base64url");
+  return { id, transports: ["internal", "hybrid"] };
+}
+
+/**
  * Options for navigator.credentials.get.
  * - `restrict: false`: any saved passkey may sign its own account in (discoverable credential).
- * - `restrict: true`: the owner typed a phone; only that account's passkeys are listed and only
- *   they can sign in. `accountId` null (no account for that phone) lists none and admits none.
+ * - `restrict: true`: the owner typed `phone`; only that account's passkeys are listed and only
+ *   they can sign in. `accountId` null (no account for that phone) admits none. When nothing would
+ *   be listed (no account, or an account without passkeys), one decoy credential stable per phone
+ *   is listed instead, so the answer never tells who has an account (security review r2 #7).
  */
-async function authenticationOptions(rp, { restrict = false, accountId = null } = {}) {
-  const allow = restrict ? (accountId ? store.listPasskeys(accountId) : []).map((p) => ({ id: p.credential_id, transports: p.transports })) : undefined;
+async function authenticationOptions(rp, { restrict = false, accountId = null, phone = null } = {}) {
+  let allow;
+  if (restrict) {
+    allow = store.listPasskeys(accountId ?? "").map((p) => ({ id: p.credential_id, transports: p.transports }));
+    if (allow.length === 0) allow = [decoyCredential(phone ?? "")];
+  }
   const options = await generateAuthenticationOptions({
     rpID: rp.rpID,
     timeout: TIMEOUT_MS,

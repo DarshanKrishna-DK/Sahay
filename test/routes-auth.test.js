@@ -664,6 +664,33 @@ test("passkey login rejects a replay, a reused counter, an unknown key, a forged
   });
 });
 
+test("passkey login options do not tell an unknown phone (or one without passkeys) from an account with a passkey", async () => {
+  await withApp(async (base) => {
+    const withKey = await register(base);
+    const { device } = await addPasskey(base, withKey);
+    const noKey = await register(base);
+    const unknownPhone = freshPhone();
+    const optionsFor = async (phone) => (await call(base, "POST", "/api/auth/passkey/login/options", { body: { phone } })).json;
+
+    const real = await optionsFor(withKey.body.phone);
+    const unknown = await optionsFor(unknownPhone);
+    const empty = await optionsFor(noKey.body.phone);
+    for (const decoy of [unknown, empty]) {
+      assert.deepEqual(Object.keys(decoy).sort(), Object.keys(real).sort(), "same fields");
+      assert.equal(decoy.allowCredentials.length, 1, "one credential listed, like an account with one passkey");
+      assert.deepEqual(Object.keys(decoy.allowCredentials[0]).sort(), Object.keys(real.allowCredentials[0]).sort());
+      assert.match(decoy.allowCredentials[0].id, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(store.passkeyByCredentialId(decoy.allowCredentials[0].id), null, "a decoy is no real credential");
+    }
+    assert.deepEqual((await optionsFor(unknownPhone)).allowCredentials, unknown.allowCredentials, "stable per phone, so asking twice tells nothing");
+    assert.notDeepEqual(empty.allowCredentials, unknown.allowCredentials, "different phones, different decoys");
+    assert.equal(real.allowCredentials[0].id, device.id);
+
+    const stranger = await call(base, "POST", "/api/auth/passkey/login/verify", { body: device.login(unknown) });
+    assert.equal(stranger.status, 401, "a decoy challenge signs nobody in");
+  });
+});
+
 test("passkey login options validate the phone", async () => {
   await withApp(async (base) => {
     const bad = await call(base, "POST", "/api/auth/passkey/login/options", { body: { phone: "12" } });

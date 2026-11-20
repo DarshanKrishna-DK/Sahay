@@ -285,8 +285,9 @@ function createAuthRouter() {
         if (body.phone === undefined || body.phone === null || body.phone === "") {
           return res.json(await passkeys.authenticationOptions(rp));
         }
-        const accountId = store.findByPhone(accounts.normalisePhone(body.phone))?.id ?? null;
-        res.json(await passkeys.authenticationOptions(rp, { restrict: true, accountId }));
+        const phone = accounts.normalisePhone(body.phone);
+        const accountId = store.findByPhone(phone)?.id ?? null;
+        res.json(await passkeys.authenticationOptions(rp, { restrict: true, accountId, phone }));
       } catch (err) {
         throw asHttp(err, body.language);
       }
