@@ -542,7 +542,8 @@ function place() {
 
 function shellSlot(name) {
   const s = shell && shell.slots && shell.slots[name];
-  return s && s.nodeType === 1 ? s : null;
+  // A slot counts only once the shell is mounted in the page (old main.js imports it without mounting).
+  return s && s.nodeType === 1 && s.isConnected ? s : null;
 }
 
 function sheetIsOpen() {
@@ -565,6 +566,7 @@ export function openTray(key = null) {
       title: t("wt.tray"),
       body: sheetView.el,
       opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+      kind: "yes", // sheet.js places it per spec 6.3: phone sheet, landscape / 1024+ drawer, tablet centred sheet
       place: p === "drawer" || p === "landDrawer" ? "drawer" : undefined,
       onClose: () => { sheetApi = null; settleOnClose(); },
     });
@@ -685,6 +687,8 @@ export function attachShell(s) {
   if (!s || shell === s) return;
   shell = s;
   ensureMounted();
+  // The waiting count is ours now: the shell drops its interim approvals-only badge.
+  if (typeof s.claimBadges === "function") { try { s.claimBadges(); } catch { /* older shell */ } }
   mountPill();
   mountColumn();
   if (typeof s.onLayout === "function") s.onLayout((l) => { layout = l; onResize(); });
@@ -731,6 +735,9 @@ function areaCounts() {
 
 function renderAll() {
   if (typeof document === "undefined") return;
+  // The shell may mount after this module loaded: move the pill into its slot and open the column then.
+  if (pillEl && (!pillEl.isConnected || (fallbackHost && pillEl.parentNode === fallbackHost && shellSlot("waitingPill")))) mountPill();
+  if (!columnView) mountColumn();
   const n = model.count();
   const per = areaCounts();
   const badgeSig = JSON.stringify([n, per, Boolean(shell)]);

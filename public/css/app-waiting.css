@@ -162,7 +162,7 @@
 
 .wt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); min-width: 0; }
 .wt-item { min-width: 0; }
-.wt-item.row { list-style: none; }
+.wt-item.row { list-style: none; padding: 10px 12px; border-radius: var(--r-md); background: var(--piano-1); border: 1px solid var(--hairline); }
 
 /* Collapsed rows (the second card onwards). */
 .yc-row { width: 100%; min-height: var(--touch); text-align: start; }
@@ -240,6 +240,7 @@
 /* Phone: the card sits in a bottom sheet over the dock; Yes / No at its bottom edge (thumb zone). */
 @media (max-width: 599px) {
   .yc { gap: var(--s-3); }
+  .yc.card-pad-lg { padding: 20px 18px 22px; }
   .yc-body { gap: var(--s-3); }
   .yc-title { font-size: var(--fs-h3); }
   .yc-link { flex-basis: 120px; }
