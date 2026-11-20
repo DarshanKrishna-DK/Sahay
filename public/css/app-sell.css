@@ -69,11 +69,13 @@
 .sl-waiting-cards { display: grid; gap: var(--s-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); align-items: start; }
 
 .sl-cols { display: grid; gap: var(--s-6); align-items: start; }
-/* Spec 6.2: bills 2/3, customers + shop 1/3, once the side column gets at least 300 px (content of
-   900 px and up); narrower, customers and the shop card go under the bills, two across when there
-   is room. Names are never cut to a letter (see .sl-person). */
-@container sv (min-width: 900px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); } }
-@container sv (min-width: 680px) and (max-width: 899px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Spec 6.2: bills 2/3, customers + shop 1/3 once the side column gets at least 260 px (content of
+   800 px and up, e.g. 1440 with the Yes column docked, about 830 px). At 260 px a customer row
+   keeps about 180 px for the name: it wraps to two lines and the amount owed moves under it (see
+   .sl-person), so no name is cut. Narrower content puts customers and the shop card under the
+   bills, two across when there is room. */
+@container sv (min-width: 800px) { .sl-cols { grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); } }
+@container sv (min-width: 640px) and (max-width: 799px) { .sl-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sl-bills { container: slbills / inline-size; min-width: 0; }
 .sl-side { display: grid; gap: var(--s-4); min-width: 0; align-content: start; }
 .sl-quiet { max-width: 52ch; }
@@ -301,8 +303,9 @@
 .mn-total-sub { display: flex; align-items: center; gap: 6px; color: var(--text-lo); font-size: var(--fs-sm); }
 
 .mn-cols { display: grid; gap: var(--s-6); align-items: start; }
-/* Spec 6.2: to collect left, to pay + received right, once the right column gets 320 px. */
-@container sv (min-width: 820px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); } }
+/* Spec 6.2: to collect left, to pay + received right, from 680 px of content (1280 with the Yes
+   column docked); the right column keeps at least 300 px, the to-pay rows follow its width. */
+@container sv (min-width: 680px) { .mn-cols { grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr); } }
 .mn-side { display: grid; gap: var(--s-5); min-width: 0; align-content: start; }
 .mn-quiet { max-width: 52ch; }
 
