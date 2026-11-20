@@ -21,7 +21,7 @@ const approvals = require("../approvals");
 const agent = require("../agora/agent");
 const { unitWord } = require("../procurement/units");
 const { cityIn } = require("../discovery/slug");
-const { langKey } = require("../tools/errors");
+const { langKey, ToolError } = require("../tools/errors");
 const rules = require("./rules");
 const memories = require("./memories");
 const profile = require("./profile");
@@ -287,12 +287,26 @@ async function murfAudio(text, { language, voiceSpeed }) {
   return audio;
 }
 
+const READBACK_PENDING = {
+  "hi-IN": "अभी एक सवाल आपकी हाँ या ना का इंतज़ार कर रहा है; पहले उसका जवाब दीजिए या स्क्रीन पर बटन दबाइए।",
+  "kn-IN": "ಈಗ ಒಂದು ಪ್ರಶ್ನೆ ನಿಮ್ಮ ಹೌದು ಅಥವಾ ಇಲ್ಲ ಉತ್ತರಕ್ಕೆ ಕಾಯುತ್ತಿದೆ; ಮೊದಲು ಅದಕ್ಕೆ ಉತ್ತರಿಸಿ ಅಥವಾ ಪರದೆಯ ಮೇಲಿನ ಬಟನ್ ಒತ್ತಿ.",
+  "en-IN": "A question is waiting for your yes or no; please answer it first, or use the buttons on the screen.",
+};
+
 /**
  * Read the card `key` aloud. With `agentId` (the owner's live call) the agent says it and the
  * result is `{kind: "spoken"}`; otherwise `{kind: "audio", audio}` (MP3 bytes).
+ *
+ * While a read-back waits for the owner's answer in that call, nothing is spoken (409
+ * READBACK_PENDING): a card line between the question and the answer would make the owner's next
+ * words an answer to it (security review r2 #3). It is not played in the browser either, where the
+ * owner's microphone could pick it up as the owner's own turn.
  */
 async function speak(businessId, key, { agentId = null } = {}) {
   const { text, language } = sentenceFor(businessId, key);
+  if (agentId && require("../agora/confirm-watch").readbackWaiting(businessId, agentId)) {
+    throw new ToolError("READBACK_PENDING", READBACK_PENDING[language], { status: 409, message: "A read-back is waiting for the owner's answer in this call; nothing else is spoken until it is answered." });
+  }
   if (agentId) {
     await agent.speak(agentId, text, { priority: "APPEND", interruptable: true });
     return { kind: "spoken" };

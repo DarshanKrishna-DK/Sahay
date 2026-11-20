@@ -42,3 +42,16 @@ test("calls: registry.callTool marks every tool call, also one that is refused",
   assert.equal(calls.startedSince(businessId, ["confirm_invoice"], since), true);
   assert.equal(calls.inFlight(businessId), false, "ended after the refusal");
 });
+
+test("calls: startedSince with no names counts any tool, except the ones named in except", () => {
+  let now = 1000;
+  calls.reset({ now: () => now });
+  calls.begin("biz_e", "confirm_invoice")();
+  assert.equal(calls.startedSince("biz_e", null, 1000), true);
+  assert.equal(calls.startedSince("biz_e", null, 1000, { except: ["confirm_invoice"] }), false);
+  now = 2000;
+  calls.begin("biz_e", "get_stock")();
+  assert.equal(calls.startedSince("biz_e", null, 1500, { except: ["confirm_invoice"] }), true);
+  assert.equal(calls.startedSince("biz_e", null, 2001), false);
+  calls.reset();
+});

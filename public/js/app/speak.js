@@ -30,7 +30,7 @@ export class SpeakError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-/** speak(key) -> "played" | "spoken"; throws SpeakError(code) with code NOT_READY | LIMIT | FAILED. */
+/** speak(key) -> "played" | "spoken"; throws SpeakError(code) with code NOT_READY | LIMIT | BUSY | FAILED. */
 export async function speak(key) {
   stopSpeaking();
   let res;
@@ -51,6 +51,13 @@ export async function speak(key) {
     throw new SpeakError(body && body.code && body.code !== "NOT_FOUND" ? "FAILED" : "NOT_READY", t(body && body.code && body.code !== "NOT_FOUND" ? "speak.failed" : "speak.notReady"));
   }
   if (res.status === 429) throw new SpeakError("LIMIT", t("speak.limit"));
+  if (res.status === 409) {
+    // READBACK_PENDING: a question read out in the call waits for the owner's yes or no; the server's
+    // own sentence (in the owner's language) says so. Nothing is played over that question.
+    let body = null;
+    try { body = await res.json(); } catch { /* not json */ }
+    throw new SpeakError("BUSY", (body && body.say) || t("speak.failed"));
+  }
   if (!res.ok) throw new SpeakError("FAILED", t("speak.failed"));
   const type = res.headers.get("content-type") || "";
   if (type.includes("application/json")) {

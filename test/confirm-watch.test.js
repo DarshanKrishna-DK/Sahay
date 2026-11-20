@@ -251,3 +251,123 @@ test("a late model call after the server acted is told it is done, not 'there is
   // Another tool's refusal is untouched.
   await assert.rejects(registry.callTool(ctx, "record_payment", { decision: "confirm" }), (err) => err.code === "NO_PENDING_PAYMENT");
 });
+
+/* ---------------------------------------------- security review r2 #3, #9 --- */
+
+const toolCalls = require("../src/tools/calls");
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Drive the watchdog past the grace and report what it ended up doing. */
+async function settle(clock) {
+  const first = await clock.tick();
+  clock.advance(7000);
+  return [first, await clock.tick()];
+}
+
+test("r2 #3: the watchdog never acts when any other tool started after the read-back", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  await pause(5);
+  toolCalls.begin(businessId, "get_stock")(); // the model ran something else after the bill was read out
+  call.owner("हाँ");
+  const [, last] = await settle(clock);
+  assert.notEqual(last, "acted");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
+  assert.deepEqual(watchdogRows(businessId), []);
+});
+
+test("r2 #3: the watchdog acts only on the owner's first answer, and never after another model question", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  call.owner("एक मिनट");
+  call.owner("हाँ");
+  assert.deepEqual(await settle(clock), ["waiting", "waiting"], "the first answer was not a yes");
+
+  const other = shop();
+  const call2 = fakeCall(t);
+  const asked2 = await billReadOut(other.ctx, call2);
+  const clock2 = watching(t, other);
+  call2.items.push({ role: "assistant", content: "क्या मैं स्टॉक भी देख लूँ?", metadata: { source: "llm" }, turn_id: ++call2.turn });
+  call2.owner("हाँ");
+  assert.deepEqual(await settle(clock2), ["waiting", "waiting"]);
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
+  assert.equal(invoices.get(other.businessId, asked2.invoiceId).status, "pending");
+});
+
+test("r2 #3: the live one-yes flow still works: the model's short question, then हाँ, is acted on after the grace", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  call.items.push({ role: "assistant", content: asked.say, metadata: { source: "llm" }, turn_id: ++call.turn });
+  call.owner("हाँ");
+  assert.deepEqual(await settle(clock), ["grace", "acted"]);
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "issued");
+});
+
+test("echo: an owner turn that repeats the agent's own line, or a bare 'ठीक है' within 1.5 s of the agent's speech, is not acted on", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const asked = await billReadOut(ctx, call);
+  const clock = watching(t, shopRow);
+  const end = 1_000_000;
+  call.items.push({ role: "assistant", content: asked.say, metadata: { source: "llm" }, turn_id: ++call.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call.items.push({ role: "user", content: "ठीक है", metadata: { source: "asr" }, turn_id: ++call.turn, speech_start_ms: end + 600, speech_end_ms: end + 1200 });
+  assert.deepEqual(await settle(clock), ["waiting", "waiting"], "possible speaker echo");
+  assert.equal(invoices.get(businessId, asked.invoiceId).status, "pending");
+
+  // Same words, said 2 s after the agent stopped: the owner's own answer.
+  const later = shop();
+  const call2 = fakeCall(t);
+  const asked2 = await billReadOut(later.ctx, call2);
+  const clock2 = watching(t, later);
+  call2.items.push({ role: "assistant", content: asked2.say, metadata: { source: "llm" }, turn_id: ++call2.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call2.items.push({ role: "user", content: "ठीक है", metadata: { source: "asr" }, turn_id: ++call2.turn, speech_start_ms: end + 2000, speech_end_ms: end + 2600 });
+  assert.deepEqual(await settle(clock2), ["grace", "acted"]);
+
+  // A real yes right after the question is never taken for an echo.
+  const quick = shop();
+  const call3 = fakeCall(t);
+  const asked3 = await billReadOut(quick.ctx, call3);
+  const clock3 = watching(t, quick);
+  call3.items.push({ role: "assistant", content: asked3.say, metadata: { source: "llm" }, turn_id: ++call3.turn, speech_start_ms: end - 2000, speech_end_ms: end });
+  call3.items.push({ role: "user", content: "हाँ", metadata: { source: "asr" }, turn_id: ++call3.turn, speech_start_ms: end + 400, speech_end_ms: end + 700 });
+  assert.deepEqual(await settle(clock3), ["grace", "acted"]);
+
+  // The agent's own question heard back as the owner's words.
+  const echo = shop();
+  const call4 = fakeCall(t);
+  const asked4 = await billReadOut(echo.ctx, call4);
+  const clock4 = watching(t, echo);
+  call4.items.push({ role: "assistant", content: asked4.say, metadata: { source: "llm" }, turn_id: ++call4.turn });
+  call4.owner("बिल बनाऊँ हाँ या ना");
+  assert.deepEqual(await settle(clock4), ["waiting", "waiting"]);
+});
+
+test("r2 #9: the watchdog's audit row names the deal, so a simulated vendor's deal is labelled 'simulated vendor'", async (t) => {
+  const shopRow = shop();
+  const { businessId, ctx } = shopRow;
+  const call = fakeCall(t);
+  const need = repo.createRequirement(businessId, { item: "चावल", quantity: 50, unit: "kg", city: "Bengaluru" });
+  const vendor = repo.createVendor(businessId, { requirement_id: need.id, source: "simulated", name: "BS Foods" });
+  const neg = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: vendor.id, counterpart: "simulated" });
+  const quote = repo.createQuote(businessId, { requirement_id: need.id, vendor_id: vendor.id, negotiation_id: neg.id, unit_price: 62, unit: "kg", freight: 0, landed_cost: 3100, lead_time_days: 2 });
+  assert.equal(repo.getQuote(businessId, quote.id).simulated, true);
+  const asked = await registry.callTool(ctx, "request_approval", { quoteId: quote.id });
+  const clock = watching(t, shopRow, { callTool: async () => ({ ok: true }) });
+  call.owner("हाँ");
+  assert.deepEqual(await settle(clock), ["grace", "acted"]);
+  const [row] = watchdogRows(businessId);
+  assert.equal(row.kind, "approval");
+  assert.equal(row.approvalId, asked.approvalId);
+  assert.equal(row.simulated, true);
+  assert.equal(row.vendorLabel, "simulated vendor");
+});

@@ -56,10 +56,13 @@ function inFlight(businessId, names = null) {
   return false;
 }
 
-/** True when one of `names` started at or after `since` (ms); with `answer`, only a call that answered a read-back counts. */
-function startedSince(businessId, names, since, { answer = false } = {}) {
+/**
+ * True when one of `names` (any tool when null) started at or after `since` (ms); with `answer`, only a
+ * call that answered a read-back counts; tools named in `except` never count.
+ */
+function startedSince(businessId, names, since, { answer = false, except = [] } = {}) {
   const state = byBusiness.get(businessId);
-  return Boolean(state?.starts.some((s) => matches(names, s.name) && s.at >= since && (!answer || s.answer)));
+  return Boolean(state?.starts.some((s) => matches(names, s.name) && !except.includes(s.name) && s.at >= since && (!answer || s.answer)));
 }
 
 /** Tests: forget everything, and optionally replace the clock. */

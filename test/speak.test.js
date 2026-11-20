@@ -395,3 +395,62 @@ test("POST /api/speak with key khata is Murf audio under the per-business speak 
     assert.ok(calls.at(-1).body.text.length > 0);
   });
 });
+
+/* ------------------------------- security review r2 #3: nothing between a read-back and its answer --- */
+
+/** A deal read out in this business's live call through `agentId`, waiting for the owner's answer. */
+function dealReadOut(businessId, agentId) {
+  const need = repo.createRequirement(businessId, { item: "चावल", quantity: 50, unit: "kg", city: "Bengaluru" });
+  const vendor = repo.createVendor(businessId, { requirement_id: need.id, source: "indiamart", name: "BS Foods" });
+  const neg = repo.createNegotiation(businessId, { requirement_id: need.id, vendor_id: vendor.id, counterpart: "human" });
+  const quote = repo.createQuote(businessId, { requirement_id: need.id, vendor_id: vendor.id, negotiation_id: neg.id, unit_price: 62, unit: "kg", freight: 0, landed_cost: 3100 });
+  const { approval } = approvals.requestApproval(businessId, quote.id);
+  approvals.recordReadbackSpoken(businessId, approval.id, { agentId, text: approval.readback });
+  return approval;
+}
+
+test("r2 #3: while a read-back waits for the owner's answer in the call, a card is never spoken into it (409 READBACK_PENDING)", async (t) => {
+  const murf = fakeMurf(t);
+  const spoken = [];
+  agent.setFetch(async (url, init) => {
+    spoken.push(JSON.parse(init.body).text);
+    return new Response("{}", { status: 200 });
+  });
+  t.after(() => agent.setFetch(null));
+  const biz = seedBusiness("hi-IN");
+  const approval = dealReadOut(biz, "AGP");
+  for (const key of ["now", `approval:${approval.id}`]) {
+    await assert.rejects(speak.speak(biz, key, { agentId: "AGP" }), (err) => {
+      assert.equal(err.code, "READBACK_PENDING");
+      assert.equal(err.status, 409);
+      assert.ok(err.say && !/[A-Za-z]/.test(err.say), "a Hindi sentence in Devanagari");
+      return true;
+    });
+  }
+  assert.deepEqual(spoken, [], "nothing was spoken into the call");
+  assert.equal(murf.length, 0, "and nothing was played beside it");
+
+  // Another call's agent, or no call at all, is not held back.
+  assert.deepEqual(await speak.speak(biz, "now", { agentId: "AG-OTHER" }), { kind: "spoken" });
+  assert.equal((await speak.speak(biz, "now")).kind, "audio");
+  // Once the owner has answered, cards are read again.
+  approvals.confirmApproval(biz, approval.id, { decision: "reject", via: "button" });
+  assert.deepEqual(await speak.speak(biz, "now", { agentId: "AGP" }), { kind: "spoken" });
+});
+
+test("r2 #3: POST /api/speak answers 409 READBACK_PENDING with a sentence to show while the owner's yes is awaited", async (t) => {
+  fakeMurf(t);
+  agent.setFetch(async () => new Response("{}", { status: 200 }));
+  t.after(() => agent.setFetch(null));
+  await withApp(async (base) => {
+    const me = await signUp(base);
+    dealReadOut(me.business.id, "AGQ");
+    voice.set(me.business.id, { sessionId: null, channel: "own-q", agentId: "AGQ" });
+    t.after(() => voice.delete(me.business.id));
+    const res = await post(base, me.cookie, { key: "now" });
+    assert.equal(res.status, 409);
+    const body = await res.json();
+    assert.equal(body.code, "READBACK_PENDING");
+    assert.ok(body.say);
+  });
+});

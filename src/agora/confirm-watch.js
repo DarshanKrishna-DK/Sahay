@@ -15,6 +15,13 @@
  * left alone, and a gate refusal is said aloud as "अभी हुआ नहीं। <the gate's reason>". A success
  * is said by the tool itself (src/agora/outcome.js).
  *
+ * Security review r2 #3: it acts only on the owner's FIRST spoken turn after the read-back, with no
+ * other model line, server line or tool call in between (answerAfterSpoken), never when any tool
+ * other than this question's confirm tool started after the read-back, and never on a turn that may
+ * be the agent's own voice heard back (possibleEcho). Its audit row names the subject by its real
+ * key (approvalId, invoiceId, receiptDraftId, ruleId, proposalId; r2 #9), so a simulated vendor's
+ * deal is labelled as one (events.js).
+ *
  * In memory per live call; it never runs without a live owner call (narrator.liveCall).
  */
 
@@ -38,6 +45,7 @@ const settings = { pollMs: 1500, graceMs: 6000, maxAgeMs: 3 * 60 * 1000, history
 const KINDS = {
   approval: {
     tool: "confirm_approval",
+    ref: (s) => ({ approvalId: s.id }),
     args: (s, answer) => ({ approvalId: s.id, decision: answer === "affirmative" ? "approve" : "reject" }),
     pending: (businessId, agentId) =>
       grouped(
@@ -49,6 +57,7 @@ const KINDS = {
   },
   invoice: {
     tool: "confirm_invoice",
+    ref: (s) => ({ invoiceId: s.invoiceId, invoiceApprovalId: s.id }),
     args: (s, answer) => ({ invoiceId: s.invoiceId, decision: answer === "affirmative" ? "approve" : "reject" }),
     pending: (businessId, agentId) =>
       grouped(
@@ -60,6 +69,7 @@ const KINDS = {
   },
   receipt: {
     tool: "record_payment",
+    ref: (s) => ({ receiptDraftId: s.id }),
     args: (s, answer) => ({ decision: answer === "affirmative" ? "confirm" : "cancel" }),
     pending: (businessId, agentId) =>
       grouped(
@@ -71,6 +81,7 @@ const KINDS = {
   },
   rule: {
     tool: "confirm_rule",
+    ref: (s) => ({ ruleId: s.id }),
     args: (s, answer) => ({ ruleId: s.id, decision: answer === "affirmative" ? "keep" : "forget" }),
     pending: (businessId, agentId) =>
       grouped(
@@ -82,6 +93,7 @@ const KINDS = {
   },
   reorder: {
     tool: "confirm_reorder",
+    ref: (s) => ({ proposalId: s.id }),
     args: (s, answer) => ({ decision: answer === "affirmative" ? "yes" : "no" }),
     pending: (businessId, agentId) =>
       grouped(
@@ -117,6 +129,19 @@ function latestWaiting(businessId, agentId, now = Date.now()) {
   return latest;
 }
 
+/**
+ * True while something the server read out through this call's agent still waits for the owner's
+ * answer (any watched kind, or an item's tax), read out within maxAgeMs. Nothing else may be spoken
+ * into the call meanwhile (agent/speak.js, security review r2 #3); after maxAgeMs a line may be spoken,
+ * and the gate then refuses that stale read-back's yes anyway (READBACK_SUPERSEDED).
+ */
+function readbackWaiting(businessId, agentId, now = Date.now()) {
+  if (!agentId) return false;
+  if (latestWaiting(businessId, agentId, now)) return true;
+  const tax = require("../sell/item-tax").pendingFor(businessId, agentId);
+  return Boolean(tax && now - Date.parse(tax.spoken_at) <= settings.maxAgeMs);
+}
+
 /* ------------------------------------------------------------- polling --- */
 
 let historyImpl = (agentId) => require("./agent").history(agentId, { timeoutMs: settings.historyTimeoutMs });
@@ -127,6 +152,44 @@ let callToolImpl = (ctx, name, args) => require("../tools/registry").callTool(ct
 const watching = new Map();
 /** businessId -> { tool, at }: the confirm tool the server ran last for an owner's answer. */
 const done = new Map();
+
+/**
+ * True when a tool other than this subject's own confirm tool started after its read-back was spoken
+ * (the confirm tool is the model answering this very question: inFlight / the "model" check handle it).
+ */
+function otherToolSince(businessId, subject) {
+  const since = Date.parse(subject.spokenAt) + 1;
+  return Number.isFinite(since) && toolCalls.startedSince(businessId, null, since, { except: [KINDS[subject.kind].tool] });
+}
+
+/** How soon after the agent stopped speaking a bare acknowledgement may be its own voice heard back. */
+const ECHO_WINDOW_MS = 1500;
+/** Acknowledgements that are a yes to the classifier but are also what an echo or a backchannel sounds like. */
+const FILLERS = new Set(["ठीक है", "ठीक", "ओके", "okay", "ok", "alright", "all right", "fine", "theek hai", "thik hai", "ಸರಿ", "ಓಕೆ", "ಆಯ್ತು"].map(normaliseWords));
+
+function normaliseWords(text) {
+  return String(text ?? "").normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
+}
+
+/**
+ * Security review r2 (reviewer's echo question): the owner's turn at `index` may be the agent's own
+ * voice heard back through the owner's speaker: it repeats the agent's line just before it, or it is
+ * a bare acknowledgement that started within ECHO_WINDOW_MS of that line's end. The server then leaves
+ * it to the model; a real yes ("हाँ") right after the question is never taken for an echo.
+ */
+function possibleEcho(contents, index) {
+  const said = contents[index];
+  let agentLine = null;
+  for (let i = index - 1; i >= 0 && !agentLine; i--) {
+    const item = contents[i];
+    if (item?.role === "assistant" && typeof item.content === "string" && item.content.trim()) agentLine = item;
+  }
+  if (!said || !agentLine) return false;
+  const words = normaliseWords(said.content);
+  if (words && words === normaliseWords(agentLine.content)) return true;
+  const start = Number.isFinite(said.speech_start_ms) ? said.speech_start_ms : said.metadata?.speech_timing?.speech_start_ms;
+  return FILLERS.has(words) && Number.isFinite(start) && Number.isFinite(agentLine.speech_end_ms) && start - agentLine.speech_end_ms < ECHO_WINDOW_MS;
+}
 
 /** True while this subject still waits for the owner's answer. */
 const stillWaiting = (businessId, agentId, subject) => KINDS[subject.kind].pending(businessId, agentId).some((s) => s.id === subject.id);
@@ -217,6 +280,7 @@ async function look(businessId, state, call, now) {
   }
   const kindOfAnswer = approvals.classifyUtterance(answer.text);
   if (kindOfAnswer !== "affirmative" && kindOfAnswer !== "negative") return "waiting"; // a maybe or a question is the model's to handle
+  if (possibleEcho(history, answer.index)) return "waiting"; // maybe the agent's own voice, heard back: the model decides
 
   const key = answerKey(subject, answer.turnId);
   if (state.acted.has(key)) return "waiting";
@@ -227,9 +291,13 @@ async function look(businessId, state, call, now) {
     state.acted.add(key);
     return "model";
   }
+  // Any other tool the model ran after the read-back means the owner's words may answer something
+  // else (security review r2 #3): the server never acts on them (the model's own call still goes
+  // through the gate). The tool that spoke the read-back started before it.
+  if (otherToolSince(businessId, subject)) return "waiting";
   if (now() - firstSeen < settings.graceMs) return "grace";
-  // Look again right before acting: the model may have started the tool while /history was read.
-  if (toolCalls.inFlight(businessId, [spec.tool]) || !stillWaiting(businessId, call.agentId, subject)) return "waiting";
+  // Look again right before acting: the model may have started a tool while /history was read.
+  if (toolCalls.inFlight(businessId, [spec.tool]) || otherToolSince(businessId, subject) || !stillWaiting(businessId, call.agentId, subject)) return "waiting";
 
   state.acted.add(key);
   const ctx = { businessId, sessionId: call.sessionId ?? null, agentId: call.agentId, actor: "agent", toolScope: "owner" };
@@ -249,7 +317,7 @@ async function look(businessId, state, call, now) {
   events.emit(
     businessId,
     "confirm.watchdog",
-    { kind: subject.kind, subjectId: subject.id, tool: spec.tool, answer: kindOfAnswer, turnId: answer.turnId, ok, ...(code ? { code } : {}) },
+    { kind: subject.kind, subjectId: subject.id, ...spec.ref(subject), tool: spec.tool, answer: kindOfAnswer, turnId: answer.turnId, ok, ...(code ? { code } : {}) },
     { sessionId: call.sessionId ?? null, actor: "system" },
   );
   return "acted";
@@ -290,4 +358,4 @@ function configure({ history, live, callTool, pollMs, graceMs, maxAgeMs, seenSla
   Object.assign(settings, Object.fromEntries(Object.entries({ pollMs, graceMs, maxAgeMs, seenSlackMs }).filter(([, v]) => v !== undefined)));
 }
 
-module.exports = { start, stop, watch, unwatch, tick, latestWaiting, doneRecently, configure, KINDS, settings };
+module.exports = { start, stop, watch, unwatch, tick, latestWaiting, readbackWaiting, possibleEcho, doneRecently, configure, KINDS, settings };
