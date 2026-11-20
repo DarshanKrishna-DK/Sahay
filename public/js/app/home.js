@@ -79,7 +79,8 @@ function createFigure() {
 /**
  * The Discovery board (W4A, discovery.js). Imported defensively: until the module lands, or when it
  * reports nothing to show, the panel shows its own empty state. Accepted shapes:
- * createDiscoveryBoard() -> { el, update?(state, parts), isEmpty?(), onChange?(fn), destroy?() }.
+ * createDiscoveryBoard() -> { el, update?(state, parts), isEmpty?(), onChange?(fn), pause?(), destroy?() }.
+ * pause() stops Listen in (Home left); destroy() also unhooks it (Home torn down).
  */
 function createBoardSlot(onChange) {
   const body = h("div", { class: "hm-board-body" });
@@ -112,6 +113,18 @@ function createBoardSlot(onChange) {
     el: body,
     update(s, parts) {
       if (board && typeof board.update === "function") { try { board.update(s, parts); } catch (err) { console.error(err); } }
+      paint();
+    },
+    /** Home left (route change, page hidden away): stop Listen in. */
+    pause() {
+      if (board && typeof board.pause === "function") { try { board.pause(); } catch (err) { console.error(err); } }
+    },
+    /** Home torn down: the board stops and unhooks itself. */
+    destroy() {
+      const b = board;
+      board = null;
+      if (b && typeof b.destroy === "function") { try { b.destroy(); } catch (err) { console.error(err); } }
+      if (b && b.el) b.el.remove();
       paint();
     },
   };
@@ -419,6 +432,8 @@ export function createHome() {
   }
 
   for (const ev of ["online", "offline"]) window.addEventListener(ev, () => render(new Set(["call"])));
+  // The page going away (tab closed, app reloaded) also stops Listen in.
+  window.addEventListener("pagehide", () => boardSlot.pause());
   // "Type" from elsewhere (sahay:compose) focuses the input here.
   document.addEventListener("sahay:compose", () => { if (!/^#\/(home|sahay|talk)?$/.test(location.hash || "")) location.hash = "#/home"; requestAnimationFrame(focusInput); });
   // Minute tick: the greeting follows the time of day.
@@ -437,5 +452,8 @@ export function createHome() {
       ensureData();
       render(new Set(["all"]));
     },
+    // Leaving Home stops the board's Listen in; tearing Home down destroys the board.
+    leave() { boardSlot.pause(); },
+    destroy() { boardSlot.destroy(); },
   };
 }
